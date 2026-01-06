@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+#define cHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 char *cHTTPX_strdup(const char *s);
 
 #ifdef __cplusplus

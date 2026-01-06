@@ -1,9 +1,10 @@
-#include "libchttpx.h"
-#include "libchttpx_utils.h"
+#include "cHTTPX/libchttpx.h"
+#include "cHTTPX/libchttpx_utils.h"
 #include <string.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 typedef struct {
     char *uuid;
@@ -19,30 +20,30 @@ chttpx_response_t create_user(chttpx_request_t *req) {
     user_t user;
     char *error_msg = NULL;
 
-    cHTTPX_FieldValidation fields[] = {
-        cHTTPX_FIELD_STRING("uuid", 1, 0, 36, &user.uuid),
-        cHTTPX_FIELD_STRING("password", 1, 6, 16, &user.password),
-        cHTTPX_FIELD_BOOL("is_admin", 0, &user.is_admin)
+    chttpx_validation_t fields[] = {
+        chttpx_validation_str("uuid", true, 0, 36, &user.uuid),
+        chttpx_validation_str("password", true, 6, 16, &user.password),
+        chttpx_validation_bool("is_admin", false, &user.is_admin)
     };
 
-    if (!cHTTPX_Parse(req, fields, 3, &error_msg)) {
-        chttpx_response_t res = (chttpx_response_t){cHTTPX_StatusBadRequest, cHTTPX_CTYPE_JSON, cHTTPX_strdup(error_msg)};
-        free(error_msg);
-        return res;
+    if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields), &error_msg)) {
+        return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", error_msg);
     }
 
-    return (chttpx_response_t){cHTTPX_StatusCreated, cHTTPX_CTYPE_JSON, "{\"message\":\"user has been successeful created!\"}"};
+    if (!cHTTPX_Validate(fields, cHTTPX_ARRAY_LEN(fields), &error_msg)) {
+        return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", error_msg);
+    }
+
+    return cHTTPX_JsonResponse(cHTTPX_StatusCreated, "{\"message\":\"user has been successeful created!\"}");
 }
 
 chttpx_response_t get_user(chttpx_request_t *req) {
     const char *uuid = cHTTPX_Param(req, "uuid");
     if (!uuid) {
-        return (chttpx_response_t){cHTTPX_StatusNotFound, cHTTPX_CTYPE_JSON, "{\"error\": \"uuid not found\"}"};
+        return cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"uuid not found\"}");
     }
 
-    char buffer[256];
-    snprintf(buffer, sizeof(buffer), "{\"uuid\": \"%s\"}", uuid);
-    return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_JSON, cHTTPX_strdup(buffer)};
+    return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\"}}", uuid);
 }
 
 int main() {
@@ -50,6 +51,7 @@ int main() {
 
     cHTTPX_Route("GET", "/", home_index);
     cHTTPX_Route("GET", "/users/{uuid}", get_user);
+    cHTTPX_Route("POST", "/users", create_user);
 
     cHTTPX_Listen();
 }

@@ -15,7 +15,7 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 2048
 
 // HTTP Content Types
 // HTML document. Use this for web pages, responses that browsers render as HTML.
@@ -44,10 +44,10 @@ typedef struct {
 
 // REQuest
 typedef struct {
-    const char *method;
-    const char *path;
-    const char *body;
-    const char *query;
+    char *method;
+    char *path;
+    char *body;
+    char *query;
 
     route_param_t params[MAX_ROUTE_PARAMS];
     int param_count;
@@ -73,16 +73,16 @@ typedef enum {
     FIELD_STRING,
     FIELD_INT,
     FIELD_BOOL
-} FieldType;
+} validation_t;
 
 typedef struct {
     const char *name;
-    FieldType type;
+    validation_t type;
     int required;
     size_t min_length;
     size_t max_length;
     void *target;
-} cHTTPX_FieldValidation;
+} chttpx_validation_t;
 
 /**
  * Initialize the HTTP server.
@@ -125,7 +125,14 @@ void cHTTPX_Listen(void);
  * @return 1 if parsing and validation succeed, 0 if there is an error.
  * This function automatically checks required fields, string length, boolean types, etc.
  */
-int cHTTPX_Parse(chttpx_request_t *req, cHTTPX_FieldValidation *fields, size_t field_count, char **error_msg);
+int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count, char **error_msg);
+
+/*
+ * Validates an array of cHTTPX_FieldValidation structures.
+ * This function ensures that required fields are present, string lengths are within limits,
+ * and basic validation for integers and boolean fields is performed.
+ */
+int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **error_msg);
 
 /**
  * Get a route parameter value by its name.
@@ -136,9 +143,11 @@ int cHTTPX_Parse(chttpx_request_t *req, cHTTPX_FieldValidation *fields, size_t f
  */
 const char* cHTTPX_Param(chttpx_request_t *req, const char *name);
 
-#define cHTTPX_FIELD_STRING(name, required, min_length, max_length, ptr) (cHTTPX_FieldValidation){name, FIELD_STRING, required, min_length, max_length, ptr}
-#define cHTTPX_FIELD_INT(name, required, ptr) (cHTTPX_FieldValidation){name, FIELD_INT required, 0, 0, ptr}
-#define cHTTPX_FIELD_BOOL(name, required, ptr) (cHTTPX_FieldValidation){name, FIELD_BOOL, required, 0, 0, ptr}
+chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...);
+
+#define chttpx_validation_str(name, required, min_length, max_length, ptr) (chttpx_validation_t){name, FIELD_STRING, required, min_length, max_length, ptr}
+#define chttpx_validation_int(name, required, ptr) (chttpx_validation_t){name, FIELD_INT required, 0, 0, ptr}
+#define chttpx_validation_bool(name, required, ptr) (chttpx_validation_t){name, FIELD_BOOL, required, 0, 0, ptr}
 
 // HTTP statuses
 // 1xx

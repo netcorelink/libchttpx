@@ -22,7 +22,7 @@
 
 #include "libchttpx.h"
 #include "libchttpx_utils.h"
-#include "lib/cJSON.h"
+#include "include/cJSON.h"
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,7 +148,7 @@ static route_t* find_route(const char *method, const char *path, chttpx_request_
 static void send_response(int client_fd, chttpx_response_t res) {
     char buffer[BUFFER_SIZE];
 
-    log_serv("HTTP %d %s %d", res.status, res.content_type, strlen(res.body));
+    log_serv("HTTP/1.1 %d %s %d", res.status, res.content_type, strlen(res.body));
 
     int len = snprintf(buffer, BUFFER_SIZE, "HTTP/1.1 %d\r\nContent-Type: %s\r\nContent-Length: %zu\r\n\r\n%s", res.status, res.content_type, strlen(res.body), res.body);
     send(client_fd, buffer, len, 0);
@@ -268,76 +268,108 @@ void cHTTPX_Listen(void) {
     }
 }
 
-int cHTTPX_Parse(chttpx_request_t *req, cHTTPX_FieldValidation *fields, size_t field_count, char **error_msg) {
+/**
+ * Parse a JSON body and validate fields according to the provided definitions.
+ * @param body JSON string to parse.
+ * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
+ * @param field_count Number of fields in the array.
+ * @param error_msg Output pointer to a string describing the first validation error, if any.
+ * @return 1 if parsing and validation succeed, 0 if there is an error.
+ * This function automatically checks required fields, string length, boolean types, etc.
+ */
+int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count, char **error_msg) {
     cJSON *json = cJSON_Parse(req->body);
     if (!json) {
-        *error_msg = strdup("Invalid JSON");
+        *error_msg = cHTTPX_strdup("Invalid JSON");
         return 0;
     }
 
     for (size_t i = 0; i < field_count; i++) {
-        cHTTPX_FieldValidation *f = &fields[i];
+        chttpx_validation_t *f = &fields[i];
         cJSON *item = cJSON_GetObjectItem(json, f->name);
 
         if (!item) {
-            if (f->required) {
-                *error_msg = malloc(128);
-                snprintf(*error_msg, 128, "Field '%s' is required", f->name);
-                cJSON_Delete(json);
-                return 0;
-            }
-
             continue;
         }
 
         switch (f->type)
         {
         case FIELD_STRING:
-            if (!cJSON_IsString(item)) {
-                *error_msg = malloc(128);
-                snprintf(*error_msg, 128, "Field '%s' must be a string", f->name);
-                cJSON_Delete(json);
-                return 0;
+            if (cJSON_IsString(item)) {
+                *(char **)f->target = cHTTPX_strdup(item->valuestring);
             }
-            if (f->min_length && strlen(item->valuestring) < f->min_length) {
-                *error_msg = malloc(128);
-                snprintf(*error_msg, 128, "Field '%s' min length is %zu", f->name, f->min_length);
-                cJSON_Delete(json);
-                return 0;
-            }
-            if (f->max_length && strlen(item->valuestring) > f->max_length) {
-                *error_msg = malloc(128);
-                snprintf(*error_msg, 128, "Field '%s' max length is %zu", f->name, f->max_length);
-                cJSON_Delete(json);
-                return 0;
-            }
-            *(char **)f->target = item->valuestring;
             break;
 
         case FIELD_INT:
-            if (!cJSON_IsNumber(item)) {
-                *error_msg = malloc(128);
-                snprintf(*error_msg, 128, "Field '%s' must be an integer", f->name);
-                cJSON_Delete(json);
-                return 0;
+            if (cJSON_IsNumber(item)) {
+                *(int *)f->target = item->valueint;
             }
-            int val = item->valueint;
-            *(int *)f->target = val;
             break;
 
         case FIELD_BOOL:
-            if (!cJSON_IsBool(item)) {
-                *error_msg = malloc(128);
-                snprintf(*error_msg, 128, "Field '%s' must be a boolean", f->name);
-                cJSON_Delete(json);
-                return 0;
+            if (cJSON_IsBool(item)) {
+                *(int *)f->target = cJSON_IsTrue(item);
             }
-            *(int *)f->target = cJSON_IsTrue(item);
             break;
         }
     }
 
     cJSON_Delete(json);
+    return 1;
+}
+
+/*
+ * Validates an array of cHTTPX_FieldValidation structures.
+ * This function ensures that required fields are present, string lengths are within limits,
+ * and basic validation for integers and boolean fields is performed.
+ */
+int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **error_msg) {
+    char buffer[BUFFER_SIZE];
+
+    for (size_t i = 0; i < field_count; i++) {
+        chttpx_validation_t *f = &fields[i];
+
+        switch (f->type)
+        {
+        case FIELD_STRING:
+            char *v = *(char **)f->target;
+
+            if (!v) {
+                if (f->required) {
+                    snprintf(buffer, sizeof(buffer), "Field '%s' is required", f->name);
+                    *error_msg = buffer;
+                    return 0;
+                }
+                break;
+            }
+
+            size_t len = strlen(v);
+
+            if (f->min_length && len < f->min_length) {
+                snprintf(buffer, sizeof(buffer), "Field '%s' min length is %zu", f->name, f->min_length);
+                *error_msg = buffer;
+                return 0;
+            }
+
+            if (f->max_length && len > f->max_length) {
+                snprintf(buffer, sizeof(buffer), "Field '%s' max length is %zu", f->name, f->max_length);
+                *error_msg = buffer;
+                return 0;
+            }
+
+            break;
+
+        case FIELD_INT:
+        case FIELD_BOOL:
+            if (f->required && !*(int *)f->target) {
+                snprintf(buffer, sizeof(buffer), "Field '%s' is required", f->name);
+                *error_msg = buffer;
+                return 0;
+            }
+            break;
+        }
+    }
+
     return 1;
 }
 
@@ -356,4 +388,15 @@ const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
     }
 
     return NULL;
+}
+
+chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...) {
+    char buffer[BUFFER_SIZE];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    return (chttpx_response_t){status, cHTTPX_CTYPE_JSON, cHTTPX_strdup(buffer)};
 }
