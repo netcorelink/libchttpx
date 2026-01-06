@@ -1,39 +1,9 @@
-#ifndef LIBUHTTPX
-#define LIBUHTTPX
+#ifndef STATUS_H
+#define STATUS_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stdint.h>
-
-typedef struct {
-    const char *method;
-    const char *path;
-    const char *query;
-    const char *body;
-} http_request_t;
-
-typedef struct {
-    int status;
-    const char *content_type;
-    const char *body;
-} http_response_t;
-
-typedef http_response_t (*http_handler_t)(http_request_t *req);
-
-typedef enum {
-    HTTP_GET,
-    HTTP_POST,
-    HTTP_PUT,
-    HTTP_PATCH,
-    HTTP_DELETE,
-} http_method_t;
-
-void http_init(int port, int max_routes);
-void http_route(const char *method, const char *path, http_handler_t handler);
-void http_handle(int socket_fd);
-void http_serve(void);
 
 // HTTP statuses
 // 1xx

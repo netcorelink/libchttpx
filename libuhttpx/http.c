@@ -1,24 +1,18 @@
 #include "libuhttpx.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <strings.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define BUFFER_SIZE 1024
-
-typedef struct {
-    const char *method;
-    const char *path;
-    http_handler_t handler;
-} route_t;
-
 static route_t *routes = NULL;
 static int routes_count = 0;
 static int routes_capacity = 0;
-static int server_fd = -1;
 static int server_port = 80;
+static int server_fd = -1;
+
+static route_t* find_route(const char *method, const char *path);
 
 void http_init(int port, int max_routes) {
     server_port = port;
@@ -53,24 +47,7 @@ void http_route(const char *method, const char *path, http_handler_t handler) {
     routes_count++;
 }
 
-static route_t* find_route(const char *method, const char *path) {
-    for (int i = 0; i < routes_count; i++) {
-        if (strcmp(routes[i].method, method) == 0 && strcmp(routes[i].path, path) == 0) {
-            return &routes[i]
-        }
-    }
-
-    return NULL;
-}
-
-static void send_response(int client_fd, http_response_t res) {
-    char buffer[BUFFER_SIZE];
-
-    int len = snprintf(buffer, BUFFER_SIZE, "HTTP/1.1 %d\r\nContent-Type: %s\r\nContent-Length: %zu\r\n\r\n%s", res.status, res.content_type, strlen(res.body), res.body);
-    send(client_fd, buffer, len, 0)
-}
-
-static void handle_client(int client_fd) {
+void http_handle(int client_fd) {
     char buf[BUFFER_SIZE];
     int received = recv(client_fd, buf, BUFFER_SIZE-1, 0);
     if (received <= 0) {
@@ -82,7 +59,7 @@ static void handle_client(int client_fd) {
     char method[8], path[128];
     sscanf(buf, "%s %s", method, path);
 
-    rotue_t *r = find_route(method, path);
+    route_t *r = find_route(method, path);
     http_response_t res;
 
     if (r) {
@@ -101,6 +78,16 @@ static void handle_client(int client_fd) {
 void http_serve(void) {
     while(1) {
         int client_fd = accept(server_fd, NULL, NULL);
-        handle_client(client_fd);
+        http_handle(client_fd);
     }
+}
+
+static route_t* find_route(const char *method, const char *path) {
+    for (int i = 0; i < routes_count; i++) {
+        if (strcmp(routes[i].method, method) == 0 && strcmp(routes[i].path, path) == 0) {
+            return &routes[i];
+        }
+    }
+
+    return NULL;
 }
