@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "libuhttpx.h"
-#include "libuhttpx_utils.h"
+#include "libchttpx.h"
+#include "libchttpx_utils.h"
 #include "lib/cJSON.h"
 #include <time.h>
 #include <stdio.h>
@@ -78,15 +78,59 @@ static void log_error(const char *fmt, ...) {
     printf("\n");
 }
 
+static int match_route(const char *template, const char *path, route_param_t *params, int *param_count) {
+    int count = 0;
+    const char *t = template;
+    const char *p = path;
+
+    while (*t && *p) {
+        if (*t == '{') {
+            const char *t_end = strchr(t, '}');
+            if (!t_end) return 0;
+
+            if (count >= MAX_ROUTE_PARAMS) return 0;
+
+            size_t name_len = t_end - t - 1;
+            strncpy(params[count].name, t+1, name_len);
+            params[count].name[name_len] = 0;
+
+            const char *slash = strchr(p, '/');
+
+            size_t val_len = slash ? (size_t)(slash - p) : strlen(p);
+
+            if (val_len >= MAX_PARAM_VALUE) val_len = MAX_PARAM_VALUE-1;
+            strncpy(params[count].value, p, val_len);
+            params[count].value[val_len] = 0;
+
+            count++;
+            t = t_end + 1;
+            p += val_len;
+        }
+        else {
+            if (*t != *p) return 0;
+            t++; p++;
+        }
+    }
+
+    if (*t || *p) return 0;
+    *param_count = count;
+
+    return 1;
+}
+
 /**
  * Find a registered route by HTTP method and path.
  * @param method HTTP method string, e.g., "GET", "POST".
  * @param path URL path to match, e.g., "/users".
  * @return Pointer to the matching route_t if found, NULL otherwise.
  */
-static route_t* find_route(const char *method, const char *path) {
+static route_t* find_route(const char *method, const char *path, chttpx_request_t *req) {
     for (int i = 0; i < routes_count; i++) {
-        if (strcmp(routes[i].method, method) == 0 && strcmp(routes[i].path, path) == 0) {
+        if (strcmp(routes[i].method, method) != 0) continue;
+
+        int count = 0;
+        if (match_route(routes[i].path, path, req->params, &count)) {
+            req->param_count = count;
             return &routes[i];
         }
     }
@@ -101,7 +145,7 @@ static route_t* find_route(const char *method, const char *path) {
  * 
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
-static void send_response(int client_fd, httpx_response_t res) {
+static void send_response(int client_fd, chttpx_response_t res) {
     char buffer[BUFFER_SIZE];
 
     log_serv("HTTP %d %s %d", res.status, res.content_type, strlen(res.body));
@@ -116,7 +160,7 @@ static void send_response(int client_fd, httpx_response_t res) {
  * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
-void uHTTPX_Init(int port, int max_routes) {
+void cHTTPX_Init(int port, int max_routes) {
     server_port = port;
 
     routes_capacity = max_routes;
@@ -146,7 +190,7 @@ void uHTTPX_Init(int port, int max_routes) {
  * @param handler Function pointer to handle the request. The handler should return httpx_response_t.
  * This allows the server to call the appropriate function when a matching request is received.
  */
-void uHTTPX_Route(const char *method, const char *path, httpx_handler_t handler) {
+void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler) {
     if (routes_count >= routes_capacity) {
         log_error("Max routes reached");
         return;
@@ -164,7 +208,7 @@ void uHTTPX_Route(const char *method, const char *path, httpx_handler_t handler)
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void uHTTPX_Handle(int client_fd) {
+void cHTTPX_Handle(int client_fd) {
     char buf[BUFFER_SIZE];
     int received = recv(client_fd, buf, BUFFER_SIZE-1, 0);
     if (received <= 0) {
@@ -176,25 +220,24 @@ void uHTTPX_Handle(int client_fd) {
     char method[8], path[128];
     sscanf(buf, "%s %s", method, path);
 
-    route_t *r = find_route(method, path);
-    httpx_response_t res;
+    // REQUEST
+    chttpx_request_t req;
+    req.method = cHTTPX_strdup(method);
+    req.path = cHTTPX_strdup(path);
+    req.query = NULL;
+    req.param_count = 0;
+
+    // parser body request
+    char *body_start = strstr(buf, "\r\n\r\n");
+    if (body_start) {
+        body_start += 4;
+        req.body = body_start;
+    }
+
+    route_t *r = find_route(method, path, &req);
+    chttpx_response_t res;
 
     if (r) {
-        httpx_request_t req;
-        req.method = uHTTPX_strdup(method);
-        req.path = uHTTPX_strdup(path);
-        req.query = NULL;
-
-        // parser body request
-        char *body_start = strstr(buf, "\r\n\r\n");
-        if (body_start) {
-            body_start += 4;
-            req.body = body_start;
-        }
-        else {
-            req.body = NULL;
-        }
-
         // logs handle
         log_serv("%s %s", req.method, req.path);
 
@@ -216,16 +259,16 @@ void uHTTPX_Handle(int client_fd) {
 /**
  * Start the server loop to listen for incoming connections.
  * This function blocks indefinitely, accepting new client connections
- * and dispatching them to uHTTPX_Handle.
+ * and dispatching them to cHTTPX_Handle.
  */
-void uHTTPX_Listen(void) {
+void cHTTPX_Listen(void) {
     while(1) {
         int client_fd = accept(server_fd, NULL, NULL);
-        uHTTPX_Handle(client_fd);
+        cHTTPX_Handle(client_fd);
     }
 }
 
-int uHTTPX_Parse(httpx_request_t *req, uHTTPX_FieldValidation *fields, size_t field_count, char **error_msg) {
+int cHTTPX_Parse(chttpx_request_t *req, cHTTPX_FieldValidation *fields, size_t field_count, char **error_msg) {
     cJSON *json = cJSON_Parse(req->body);
     if (!json) {
         *error_msg = strdup("Invalid JSON");
@@ -233,7 +276,7 @@ int uHTTPX_Parse(httpx_request_t *req, uHTTPX_FieldValidation *fields, size_t fi
     }
 
     for (size_t i = 0; i < field_count; i++) {
-        uHTTPX_FieldValidation *f = &fields[i];
+        cHTTPX_FieldValidation *f = &fields[i];
         cJSON *item = cJSON_GetObjectItem(json, f->name);
 
         if (!item) {
@@ -296,4 +339,21 @@ int uHTTPX_Parse(httpx_request_t *req, uHTTPX_FieldValidation *fields, size_t fi
 
     cJSON_Delete(json);
     return 1;
+}
+
+/**
+ * Get a route parameter value by its name.
+ * @param req  Pointer to the current HTTP request structure.
+ * @param name Name of the route parameter (e.g., "uuid").
+ *
+ * @return Pointer to the parameter value string if found, or NULL if the parameter does not exist.
+ */
+const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
+    for (int i = 0; i < req->param_count; i++) {
+        if (strcmp(req->params[i].name, name) == 0) {
+            return req->params[i].value;
+        }
+    }
+
+    return NULL;
 }

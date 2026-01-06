@@ -1,5 +1,5 @@
-#include "libuhttpx.h"
-#include "libuhttpx_utils.h"
+#include "libchttpx.h"
+#include "libchttpx_utils.h"
 #include <string.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -11,34 +11,45 @@ typedef struct {
     int is_admin;
 } user_t;
 
-httpx_response_t home_index(httpx_request_t *req) {
-    return (httpx_response_t){uHTTPX_StatusOK, uHTTPX_CTYPE_HTML, "<h1>This is home page!</h1>"};
+chttpx_response_t home_index(chttpx_request_t *req) {
+    return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_HTML, "<h1>This is home page!</h1>"};
 }
 
-httpx_response_t create_user(httpx_request_t *req) {
+chttpx_response_t create_user(chttpx_request_t *req) {
     user_t user;
     char *error_msg = NULL;
 
-    uHTTPX_FieldValidation fields[] = {
-        uHTTPX_FIELD_STRING("uuid", 1, 0, 36, &user.uuid),
-        uHTTPX_FIELD_STRING("password", 1, 6, 16, &user.password),
-        uHTTPX_FIELD_BOOL("is_admin", 0, &user.is_admin)
+    cHTTPX_FieldValidation fields[] = {
+        cHTTPX_FIELD_STRING("uuid", 1, 0, 36, &user.uuid),
+        cHTTPX_FIELD_STRING("password", 1, 6, 16, &user.password),
+        cHTTPX_FIELD_BOOL("is_admin", 0, &user.is_admin)
     };
 
-    if (!uHTTPX_Parse(req, fields, 3, &error_msg)) {
-        httpx_response_t res = (httpx_response_t){uHTTPX_StatusBadRequest, uHTTPX_CTYPE_JSON, uHTTPX_strdup(error_msg)};
+    if (!cHTTPX_Parse(req, fields, 3, &error_msg)) {
+        chttpx_response_t res = (chttpx_response_t){cHTTPX_StatusBadRequest, cHTTPX_CTYPE_JSON, cHTTPX_strdup(error_msg)};
         free(error_msg);
         return res;
     }
 
-    return (httpx_response_t){uHTTPX_StatusCreated, uHTTPX_CTYPE_JSON, "{\"message\":\"user has been successeful created!\"}"};
+    return (chttpx_response_t){cHTTPX_StatusCreated, cHTTPX_CTYPE_JSON, "{\"message\":\"user has been successeful created!\"}"};
+}
+
+chttpx_response_t get_user(chttpx_request_t *req) {
+    const char *uuid = cHTTPX_Param(req, "uuid");
+    if (!uuid) {
+        return (chttpx_response_t){cHTTPX_StatusNotFound, cHTTPX_CTYPE_JSON, "{\"error\": \"uuid not found\"}"};
+    }
+
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), "{\"uuid\": \"%s\"}", uuid);
+    return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_JSON, cHTTPX_strdup(buffer)};
 }
 
 int main() {
-    uHTTPX_Init(8080, 16);
+    cHTTPX_Init(8080, 16);
 
-    uHTTPX_Route("GET", "/", home_index);
-    uHTTPX_Route("POST", "/user/create", create_user);
+    cHTTPX_Route("GET", "/", home_index);
+    cHTTPX_Route("GET", "/users/{uuid}", get_user);
 
-    uHTTPX_Listen();
+    cHTTPX_Listen();
 }

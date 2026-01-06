@@ -1,4 +1,4 @@
-TARGET=uhttpx-tinyserv
+TARGET=chttpx-server
 
 CC=gcc
 CFLAGS= -Wall -Wextra -O2 -I.

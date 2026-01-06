@@ -9,6 +9,8 @@
 
 *.build
 
+*.vscode/
+
 # Linker output
 *.ilk
 *.map
