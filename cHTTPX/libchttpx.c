@@ -34,6 +34,12 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+    #define strcasecmp _stricmp
+#endif
+
+static chttpx_server_t *serv = NULL;
+
 /**
  * Logger 'log_serv' and 'log_error'
  * example: 20:18:26 [SERV] Hello world
@@ -120,21 +126,26 @@ static int match_route(const char *template, const char *path, chttpx_param_t *p
  * @param path URL path to match, e.g., "/users".
  * @return Pointer to the matching route_t if found, NULL otherwise.
  */
-static route_t* find_route(chttpx_server_t *serve, chttpx_request_t *req) {
-    for (size_t i = 0; i < serve->routes_count; i++) {
-        if (strcmp(serve->routes[i].method, req->method) != 0) continue;
+static route_t* find_route(chttpx_request_t *req) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return NULL;
+    }
+
+    for (size_t i = 0; i < serv->routes_count; i++) {
+        if (strcmp(serv->routes[i].method, req->method) != 0) continue;
 
         int count = 0;
-        if (match_route(serve->routes[i].path, req->path, req->params, &count)) {
+        if (match_route(serv->routes[i].path, req->path, req->params, &count)) {
             req->param_count = count;
-            return &serve->routes[i];
+            return &serv->routes[i];
         }
     }
 
     return NULL;
 }
 
-static void parse_req_query(char *query, chttpx_request_t *req) {
+static void parse_req_query(chttpx_request_t *req, char *query) {
     char *token = strtok(query, "&");
 
     while (token) {
@@ -153,7 +164,7 @@ static void parse_req_query(char *query, chttpx_request_t *req) {
     }
 }
 
-static void parse_req_body(char *buffer, chttpx_request_t *req) {
+static void parse_req_body(chttpx_request_t *req, char *buffer) {
     const char *body_start = strstr(buffer, "\r\n\r\n");
     if (!body_start) {
         req->body = NULL;
@@ -162,6 +173,46 @@ static void parse_req_body(char *buffer, chttpx_request_t *req) {
     
     body_start += 4;
     req->body = cHTTPX_strdup(body_start);
+}
+
+static void add_header(chttpx_request_t *req, const char *name, const char *value) {
+    if (req->headers_count >= MAX_HEADERS) return;
+
+    chttpx_header_t *h = &req->headers[req->headers_count++];
+
+    strncpy(h->name, name, MAX_HEADER_NAME - 1);
+    h->name[MAX_HEADER_NAME - 1] = '\0';
+
+    strncpy(h->value, value, MAX_HEADER_VALUE - 1);
+    h->value[MAX_HEADER_VALUE - 1] = '\0';
+}
+
+static void parse_req_headers(chttpx_request_t *req, char *buffer) {
+    char *line = buffer;
+
+    /* Meta data - continue one line */
+    char *next = strstr(line, "\r\n");
+    if (!next) return;
+    line = next + 2;
+
+    while (*line) {
+        next = strstr(line, "\r\n");
+        if (!next) break;
+        *next = 0;
+
+        char *colon = strchr(line, ':');
+        if (colon) {
+            *colon = 0;
+
+            const char *name = line;
+            const char *value = colon + 1;
+            while (*value == ' ') value++;
+
+            add_header(req, name, value);
+        }
+
+        line = next + 2;
+    }
 }
 
 static chttpx_request_t* parse_req_buffer(char *buffer, int received) {
@@ -177,17 +228,39 @@ static chttpx_request_t* parse_req_buffer(char *buffer, int received) {
     req->method = cHTTPX_strdup(method);
     req->path   = cHTTPX_strdup(path);
 
+    /* Parse headers */
+    parse_req_headers(req, buffer);
+
     /* Parse query request */
     char *query = strchr(req->path, '?');
     if (query) {
         *query = '\0';
-        parse_req_query(query + 1, req);
+        parse_req_query(req, query + 1);
     }
 
     /* Parse body request */
-    parse_req_body(buffer, req);
+    parse_req_body(req, buffer);
 
     return req;
+}
+
+static char* allowed_origin_cors(const char *req_origin) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return NULL;
+    }
+
+    if (!serv->cors.enabled || !req_origin) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < serv->cors.origins_count; i++) {
+        if (strcmp(serv->cors.origins[i], req_origin) == 0) {
+            return serv->cors.origins[i];
+        }
+    }
+
+    return NULL;
 }
 
 /**
@@ -197,13 +270,30 @@ static chttpx_request_t* parse_req_buffer(char *buffer, int received) {
  * 
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
-static void send_response(int client_fd, chttpx_response_t res) {
+static void send_response(chttpx_request_t *req, chttpx_response_t res, int client_fd) {
     char buffer[BUFFER_SIZE];
+
+    /* Cors */
+    const char *allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
+
+    int n = snprintf(buffer, sizeof(buffer), "HTTP/1.1 %d OK\r\n" 
+                                             "Content-Type: %s\r\n" 
+                                             "Content-Length: %zu\r\n", 
+                                             res.status, res.content_type, strlen(res.body));
+
+    if (allowed_origin) {
+        n += snprintf(buffer + n, sizeof(buffer) - n, "Access-Control-Allow-Origin: %s\r\n" 
+                                                      "Access-Control-Allow-Methods: %s\r\n" 
+                                                      "Access-Control-Allow-Headers: %s\r\n", 
+                                                      allowed_origin, serv->cors.methods, serv->cors.headers);
+    }
+
+    strcat(buffer, "\r\n");
 
     log_serv("HTTP/1.1 %d %s %d", res.status, res.content_type, strlen(res.body));
 
-    int len = snprintf(buffer, BUFFER_SIZE, "HTTP/1.1 %d\r\nContent-Type: %s\r\nContent-Length: %zu\r\n\r\n%s", res.status, res.content_type, strlen(res.body), res.body);
-    send(client_fd, buffer, len, 0);
+    send(client_fd, buffer, strlen(buffer), 0);
+    send(client_fd, res.body, strlen(res.body), 0);
 }
 
 /**
@@ -212,41 +302,43 @@ static void send_response(int client_fd, chttpx_response_t res) {
  * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
-int cHTTPX_Init(chttpx_server_t *serve, int port) {
-    serve->port = port;
-    serve->server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (serve->server_fd < 0) {
+int cHTTPX_Init(chttpx_server_t *serv_p, int port) {
+    serv = serv_p;
+
+    serv->port = port;
+    serv->server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (serv->server_fd < 0) {
         perror("socket");
         exit(1);
     }
 
     int opt = 1;
-    setsockopt(serve->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(serv->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(serve->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (bind(serv->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
         exit(1);
     }
 
-    if (listen(serve->server_fd, 128) < 0) {
+    if (listen(serv->server_fd, 128) < 0) {
         perror("listen");
         exit(1);
     }
 
     /* Timeouts */
-    serve->read_timeout_sec = 300;
-    serve->write_timeout_sec = 300;
-    serve->idle_timeout_sec = 90;
+    serv->read_timeout_sec = 300;
+    serv->write_timeout_sec = 300;
+    serv->idle_timeout_sec = 90;
 
     /* Default values for routes */
-    serve->routes = NULL;
-    serve->routes_count = 0;
-    serve->routes_capacity = 0;
+    serv->routes = NULL;
+    serv->routes_count = 0;
+    serv->routes_capacity = 0;
 
     log_serv("HTTP server started on port %d...", port);
 
@@ -260,27 +352,37 @@ int cHTTPX_Init(chttpx_server_t *serve, int port) {
  * @param handler Function pointer to handle the request. The handler should return httpx_response_t.
  * This allows the server to call the appropriate function when a matching request is received.
  */
-void cHTTPX_Route(chttpx_server_t *serve, const char *method, const char *path, chttpx_handler_t handler) {
-    if (serve->routes_count == serve->routes_capacity) {
-        size_t new_capacity = (serve->routes_capacity == 0) ? 4 : serve->routes_capacity * 2;
-        route_t *new_routes = realloc(serve->routes, sizeof(route_t) * new_capacity);
+void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return;
+    }
+
+    if (serv->routes_count == serv->routes_capacity) {
+        size_t new_capacity = (serv->routes_capacity == 0) ? 4 : serv->routes_capacity * 2;
+        route_t *new_routes = realloc(serv->routes, sizeof(route_t) * new_capacity);
 
         if (!new_routes) {
             perror("realloc routes");
             exit(1);
         }
 
-        serve->routes = new_routes;
-        serve->routes_capacity = new_capacity;
+        serv->routes = new_routes;
+        serv->routes_capacity = new_capacity;
     }
 
-    serve->routes[serve->routes_count].method = method;
-    serve->routes[serve->routes_count].path = path;
-    serve->routes[serve->routes_count].handler = handler;
-    serve->routes_count++;
+    serv->routes[serv->routes_count].method = method;
+    serv->routes[serv->routes_count].path = path;
+    serv->routes[serv->routes_count].handler = handler;
+    serv->routes_count++;
 }
 
-static void set_client_timeout(chttpx_server_t *serv, int client_fd) {
+static void set_client_timeout(int client_fd) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return;
+    }
+
     /* Read timeout params */
     struct timeval tv;
     tv.tv_sec = serv->read_timeout_sec;
@@ -292,23 +394,38 @@ static void set_client_timeout(chttpx_server_t *serv, int client_fd) {
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
+static void is_method_options(chttpx_request_t *req, int client_fd) {
+    if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0) {
+        chttpx_response_t res = {.status = 204, .content_type = "text/plain", .body = ""};
+        send_response(req, res, client_fd);
+        close(client_fd);
+    }
+}
+
 /**
  * Handle a single client connection.
  * @param client_fd The file descriptor of the accepted client socket.
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void cHTTPX_Handle(chttpx_server_t *serv, int client_fd) {
+void cHTTPX_Handle(int client_fd) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return;
+    }
+
     /* Timeouts */
-    set_client_timeout(serv, client_fd);
+    set_client_timeout(client_fd);
 
     char buf[BUFFER_SIZE];
     int received = recv(client_fd, buf, BUFFER_SIZE-1, 0);
     if (received < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            chttpx_request_t dummy_req = {0};
             chttpx_response_t res = cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"Read Timeout\"}");
-            send_response(client_fd, res);
+            send_response(&dummy_req, res, client_fd);
         }
+
         close(client_fd);
         return;
     }
@@ -320,7 +437,10 @@ void cHTTPX_Handle(chttpx_server_t *serv, int client_fd) {
         return;
     }
 
-    route_t *r = find_route(serv, req);
+    /* ALLOWED OPTIONS METHOD */
+    is_method_options(req, client_fd);
+
+    route_t *r = find_route(req);
     chttpx_response_t res;
 
     if (r) {
@@ -330,7 +450,7 @@ void cHTTPX_Handle(chttpx_server_t *serv, int client_fd) {
         res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"NotFound\"}");
     }
 
-    send_response(client_fd, res);
+    send_response(req, res, client_fd);
 
     free(req->method);
     free(req->path);
@@ -351,12 +471,17 @@ void cHTTPX_Handle(chttpx_server_t *serv, int client_fd) {
  * This function blocks indefinitely, accepting new client connections
  * and dispatching them to cHTTPX_Handle.
  */
-void cHTTPX_Listen(chttpx_server_t *serve) {
+void cHTTPX_Listen() {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return;
+    }
+
     while(1) {
-        int client_fd = accept(serve->server_fd, NULL, NULL);
+        int client_fd = accept(serv->server_fd, NULL, NULL);
         if (client_fd < 0) continue;
 
-        cHTTPX_Handle(serve, client_fd);
+        cHTTPX_Handle(client_fd);
     }
 }
 
@@ -460,6 +585,24 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
 }
 
 /**
+ * Get a request header by name.
+ * @param req Pointer to the HTTP request.
+ * @param name Header name (case-insensitive).
+ * @return Pointer to header value if found, otherwise NULL.
+ */
+const char* cHTTPX_Header(chttpx_request_t *req, const char *name) {
+    if (!req || req->headers_count == 0 || !name) return NULL;
+
+    for (size_t i = 0; i < req->headers_count; i++) {
+        if (strcasecmp(req->headers[i].name, name) == 0) {
+            return req->headers[i].value;
+        }
+    }
+
+    return NULL;
+}
+
+/**
  * Get a route parameter value by its name.
  * @param req  Pointer to the current HTTP request structure.
  * @param name Name of the route parameter (e.g., "uuid").
@@ -498,6 +641,19 @@ const char* cHTTPX_Query(chttpx_request_t *req, const char *name) {
     }
 
     return NULL;
+}
+
+void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods, const char *headers) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return;
+    }
+
+    serv->cors.enabled = 1;
+    serv->cors.origins = origins;
+    serv->cors.origins_count = origins_count;
+    serv->cors.methods = methods ? methods : "GET, POST, PUT, DELETE, OPTIONS";
+    serv->cors.headers = headers ? headers : "Content-Type";
 }
 
 /**

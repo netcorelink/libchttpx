@@ -68,9 +68,16 @@ int main() {
     serv.write_timeout_sec = 300;
     serv.idle_timeout_sec = 90;
 
-    cHTTPX_Route(&serv, "GET", "/", home_index);
-    cHTTPX_Route(&serv, "GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
-    cHTTPX_Route(&serv, "POST", "/users", create_user);
+    /* Cors */
+    const char *allowed_origins[] = {
+        "https://neosync.neomatica.ru",
+    };
+    
+    cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
 
-    cHTTPX_Listen(&serv);
+    cHTTPX_Route("GET", "/", home_index);
+    cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
+    cHTTPX_Route("POST", "/users", create_user);
+
+    cHTTPX_Listen();
 }

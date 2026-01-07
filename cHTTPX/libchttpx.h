@@ -37,6 +37,15 @@ extern "C" {
 #define MAX_PARAM_NAME 128
 #define MAX_PARAM_VALUE 255
 
+#define MAX_HEADERS 64
+#define MAX_HEADER_NAME 64
+#define MAX_HEADER_VALUE 2048
+
+typedef struct {
+    char name[MAX_HEADER_NAME];
+    char value[MAX_HEADER_VALUE];
+} chttpx_header_t;
+
 typedef struct {
     char name[MAX_PARAM_NAME];
     char value[MAX_PARAM_VALUE];
@@ -55,6 +64,10 @@ typedef struct {
 
     /* Error request message */
     char error_msg[BUFFER_SIZE];
+
+    /* Headers in REQuest */
+    chttpx_header_t headers[MAX_HEADERS];
+    size_t headers_count;
     
     /* Query params in URL
      * exmaple: ?name=netcorelink
@@ -91,6 +104,14 @@ typedef enum {
 } validation_t;
 
 typedef struct {
+    int enabled;
+    const char **origins;
+    size_t origins_count;
+    const char *methods;
+    const char *headers;
+} chttpx_cors_t;
+
+typedef struct {
     int port;
     int server_fd;
 
@@ -105,6 +126,9 @@ typedef struct {
     route_t *routes;
     size_t routes_count;
     size_t routes_capacity;
+
+    /* Cors */
+    chttpx_cors_t cors;
 } chttpx_server_t;
 
 /**
@@ -113,7 +137,7 @@ typedef struct {
  * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
-int cHTTPX_Init(chttpx_server_t *serv, int port);
+int cHTTPX_Init(chttpx_server_t *serv_p, int port);
 
 /**
  * Register a route handler for a specific HTTP method and path.
@@ -122,7 +146,7 @@ int cHTTPX_Init(chttpx_server_t *serv, int port);
  * @param handler Function pointer to handle the request. The handler should return httpx_response_t.
  * This allows the server to call the appropriate function when a matching request is received.
  */
-void cHTTPX_Route(chttpx_server_t *serve, const char *method, const char *path, chttpx_handler_t handler);
+void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler);
 
 /**
  * Handle a single client connection.
@@ -130,14 +154,14 @@ void cHTTPX_Route(chttpx_server_t *serve, const char *method, const char *path, 
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void cHTTPX_Handle(chttpx_server_t *serve, int client_fd);
+void cHTTPX_Handle(int client_fd);
 
 /**
  * Start the server loop to listen for incoming connections.
  * This function blocks indefinitely, accepting new client connections
  * and dispatching them to cHTTPX_Handle.
  */
-void cHTTPX_Listen(chttpx_server_t *serv);
+void cHTTPX_Listen();
 
 typedef struct {
     const char *name;
@@ -175,6 +199,14 @@ int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t fiel
 int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count);
 
 /**
+ * Get a request header by name.
+ * @param req Pointer to the HTTP request.
+ * @param name Header name (case-insensitive).
+ * @return Pointer to header value if found, otherwise NULL.
+ */
+const char* cHTTPX_Header(chttpx_request_t *req, const char *name);
+
+/**
  * Get a route parameter value by its name.
  * @param req  Pointer to the current HTTP request structure.
  * @param name Name of the route parameter (e.g., "uuid").
@@ -195,6 +227,8 @@ const char* cHTTPX_Param(chttpx_request_t *req, const char *name);
  */
 const char* cHTTPX_Query(chttpx_request_t *req, const char *name);
 
+void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods, const char *headers);
+
 /**
  * Create a JSON HTTP response with formatted content.
  *
@@ -212,7 +246,15 @@ chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...);
 #define chttpx_validation_int(name, required, ptr) (chttpx_validation_t){name, FIELD_INT required, 0, 0, ptr}
 #define chttpx_validation_bool(name, required, ptr) (chttpx_validation_t){name, FIELD_BOOL, required, 0, 0, ptr}
 
-// HTTP statuses
+/* HTTP methods */
+#define cHTTPX_MethodGet     "GET"
+#define cHTTPX_MethodPost    "POST"
+#define cHTTPX_MethodPut     "PUT"
+#define cHTTPX_MethodPatch   "PATCH"
+#define cHTTPX_MethodDelete  "DELETE"
+#define cHTTPX_MethodOptions "OPTIONS"
+
+/* HTTP statuses */
 // 1xx
 #define cHTTPX_StatusContinue 100
 #define cHTTPX_StatusSwitchingProtocols 101
