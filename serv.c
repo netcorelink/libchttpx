@@ -1,5 +1,6 @@
 #include "cHTTPX/libchttpx.h"
 #include "cHTTPX/libchttpx_utils.h"
+
 #include <string.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -83,10 +84,10 @@ int main() {
     const char *allowed_origins[] = {
         "https://neosync.neomatica.ru",
     };
-    
+
     cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
 
-    cHTTPX_MiddlewareUse(auth_middleware);
+    // cHTTPX_MiddlewareUse(auth_middleware);
 
     cHTTPX_Route("GET", "/", home_index);
     cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink

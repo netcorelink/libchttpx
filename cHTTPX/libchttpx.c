@@ -31,7 +31,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-#ifdef __WIN32
+#ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <windows.h>
@@ -41,6 +41,16 @@
     #include <arpa/inet.h>
     #include <sys/socket.h>
     #include <sys/time.h>
+#endif
+
+#ifdef _WIN32
+    #define close(s) closesocket(s)
+
+    static struct tm *localtime_r(const time_t *timep, struct tm *result) {
+        /* WIN32: localtime_s */
+        localtime_s(result, timep);
+        return result;
+    }
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -178,7 +188,7 @@ static void parse_req_body(chttpx_request_t *req, char *buffer) {
         req->body = NULL;
         return;
     }
-    
+
     body_start += 4;
     req->body = cHTTPX_strdup(body_start);
 }
@@ -276,7 +286,7 @@ static char* allowed_origin_cors(const char *req_origin) {
  * @param req Pointer to the HTTP request.
  * @param res httpx_response_t structure containing status, content type, and body.
  * @param client_fd File descriptor of the connected client socket.
- * 
+ *
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
 static void send_response(chttpx_request_t *req, chttpx_response_t res, int client_fd) {
@@ -285,15 +295,15 @@ static void send_response(chttpx_request_t *req, chttpx_response_t res, int clie
     /* Cors */
     const char *allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
 
-    int n = snprintf(buffer, sizeof(buffer), "HTTP/1.1 %d OK\r\n" 
-                                             "Content-Type: %s\r\n" 
-                                             "Content-Length: %zu\r\n", 
+    int n = snprintf(buffer, sizeof(buffer), "HTTP/1.1 %d OK\r\n"
+                                             "Content-Type: %s\r\n"
+                                             "Content-Length: %zu\r\n",
                                              res.status, res.content_type, strlen(res.body));
 
     if (allowed_origin) {
-        n += snprintf(buffer + n, sizeof(buffer) - n, "Access-Control-Allow-Origin: %s\r\n" 
-                                                      "Access-Control-Allow-Methods: %s\r\n" 
-                                                      "Access-Control-Allow-Headers: %s\r\n", 
+        n += snprintf(buffer + n, sizeof(buffer) - n, "Access-Control-Allow-Origin: %s\r\n"
+                                                      "Access-Control-Allow-Methods: %s\r\n"
+                                                      "Access-Control-Allow-Headers: %s\r\n",
                                                       allowed_origin, serv->cors.methods, serv->cors.headers);
     }
 
@@ -337,13 +347,13 @@ int cHTTPX_Init(chttpx_server_t *serv_p, int port) {
 
     int opt = 1;
     setsockopt(
-        serv->server_fd, 
-        SOL_SOCKET, 
-        SO_REUSEADDR, 
+        serv->server_fd,
+        SOL_SOCKET,
+        SO_REUSEADDR,
 #ifdef _WIN32
         (const char*)&opt,
 #else
-        &opt, 
+        &opt,
 #endif
         sizeof(opt)
     );
@@ -588,10 +598,12 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
     for (size_t i = 0; i < field_count; i++) {
         chttpx_validation_t *f = &fields[i];
 
+        char *v;
+
         switch (f->type)
         {
         case FIELD_STRING:
-            char *v = *(char **)f->target;
+            v = *(char **)f->target;
 
             if (!v) {
                 if (f->required) {
@@ -670,7 +682,7 @@ const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
  *
  * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
  * and returns the value associated with the given parameter name.
- * 
+ *
  * @param req   Pointer to the current HTTP request.
  * @param name  Name of the query parameter.
  * @return Pointer to the parameter value string if found, or NULL if not present.
