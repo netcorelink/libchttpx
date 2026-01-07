@@ -90,7 +90,9 @@ cHTTPX_MiddlewareUse(auth_middleware);
 ### Routes
 
 `method` – HTTP method string, e.g., "GET", "POST".
+
 `path` – URL path to match, e.g., "/users".
+
 `handler` – Function pointer to handle the request. The handler should return httpx_response_t. This allows the server to call the appropriate function when a matching request is received.
 
 ```c
@@ -128,4 +130,27 @@ cHTTPX_Header - Get a request header by name.
 - name – Header name (case-insensitive).
 
 #### `Get Params`
+
+> The path must contain the /{uuid} construct.
+
+```c
+const char *uuid = cHTTPX_Param(req, "uuid");
+```
+
+cHTTPX_Param - Get a route parameter value by its name.
+
+`Parameters`:
+- req – Pointer to the HTTP request.
+- name – Name of the route parameter (e.g., "uuid").
+
 #### `Get Query params`
+
+```c
+const char *sizeParam = cHTTPX_Query(req, "size");
+```
+
+cHTTPX_Query - Get a query parameter value by name.
+
+`Parameters`:
+- req – Pointer to the HTTP request.
+- name – Name of the query parameter.
