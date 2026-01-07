@@ -23,16 +23,25 @@
 #include "libchttpx.h"
 #include "libchttpx_utils.h"
 #include "include/cJSON.h"
+
 #include <time.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <stdarg.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/time.h>
+
+#ifdef __WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <unistd.h>
+    #include <arpa/inet.h>
+    #include <sys/socket.h>
+    #include <sys/time.h>
+#endif
 
 #if defined(_WIN32) || defined(_WIN64)
     #define strcasecmp _stricmp
@@ -305,17 +314,41 @@ static void send_response(chttpx_request_t *req, chttpx_response_t res, int clie
 int cHTTPX_Init(chttpx_server_t *serv_p, int port) {
     serv = serv_p;
 
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
+        perror("WSAStartup");
+        return -1;
+    }
+#endif
+
     serv->port = port;
     serv->server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (serv->server_fd < 0) {
+
+#ifdef _WIN32
+    if (serv->server_fd == INVALID_SOCKET)
+#else
+    if (serv->server_fd < 0)
+#endif
+    {
         perror("socket");
         exit(1);
     }
 
     int opt = 1;
-    setsockopt(serv->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(
+        serv->server_fd, 
+        SOL_SOCKET, 
+        SO_REUSEADDR, 
+#ifdef _WIN32
+        (const char*)&opt,
+#else
+        &opt, 
+#endif
+        sizeof(opt)
+    );
 
-    struct sockaddr_in addr;
+    struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
