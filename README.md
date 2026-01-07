@@ -17,15 +17,22 @@ Copy the `cHTTPX/` library folder to your project to work with cHTTPX.
 ### Initial HTTP server
 
 ```c
-chttpx_server_t serv;
+int main()
+{
+  chttpx_server_t serv;
 
-if (cHTTPX_Init(&serv, 80) != 0) {
-  printf("Failed to start server\n");
-  return 1;
+  if (cHTTPX_Init(&serv, 80) != 0) {
+    printf("Failed to start server\n");
+    return 1;
+  }
+
+  // cores
+  // middlewares
+  // routes
+
+  /* At the very end, to start listening to incoming requests from users. */
+  cHTTPX_Listen();
 }
-
-/* At the very end, to start listening to incoming requests from users. */
-cHTTPX_Listen();
 ```
 
 ### Server timeouts settings
@@ -40,8 +47,11 @@ serv.idle_timeout_sec = 90;
 ### CORS Settings
 
 `origins` – Array of allowed origin strings (e.g. "https://example.com"). Each origin must match exactly the value of the "Origin" header.
+
 `origins_count` – Number of elements in the origins array.
+
 `methods` – Comma-separated list of allowed HTTP methods. If NULL, defaults to: "GET, POST, PUT, DELETE, OPTIONS".
+
 `headers` – Comma-separated list of allowed request headers. If NULL, defaults to: "Content-Type".
 
 ```c
