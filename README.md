@@ -114,9 +114,73 @@ chttpx_response_t home_index(chttpx_request_t *req) {
 ```
 
 #### `Http Response`
+
+Option 1
+
+> Suitable for responses with unknown Content-Type libraries.
+
+```c
+  return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_JSON, "Hello, world!"};
+```
+
+Option 2
+
+> Suitable for errors or JSON responses with and without parameters.
+
+```c
+  return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\"}}", uuid, page);
+```
+
 #### `Http Request`
 #### `Parsing JSON fields`
+
+```c
+typedef struct {
+  char *uuid;
+  char *password;
+  int is_admin;
+} user_t;
+
+chttpx_response_t create_user(chttpx_request_t *req) {
+  user_t user;
+
+  chttpx_validation_t fields[] = {
+    chttpx_validation_str("uuid", true, 0, 36, &user.uuid),
+    chttpx_validation_str("password", true, 6, 16, &user.password),
+    chttpx_validation_bool("is_admin", false, &user.is_admin)
+  };
+
+  if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields))) {
+    return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+  }
+
+  /* ... */
+}
+```
+
+> > When working with cHTTPX_Parse, you need to refer to `req->error_msg`.
+
 #### `Validations fields`
+
+Validates an array of `cHTTPX_FieldValidation` structures.
+
+This function ensures that `required` fields are present, `string lengths` are within `limits`,
+and basic validation for integers and boolean fields is performed.
+
+> When working with cHTTPX_Validate, you need to refer to `req->error_msg`.
+
+```c
+if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields))) {
+  return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+}
+```
+
+Example response by validation:
+
+- Field password is required.
+- Field password min length is 6.
+- Field password max length is 16.
+
 #### `Get Headers`
 
 ```c

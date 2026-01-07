@@ -465,7 +465,7 @@ void cHTTPX_Handle(int client_fd) {
     if (received < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             chttpx_request_t dummy_req = {0};
-            chttpx_response_t res = cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"Read Timeout\"}");
+            chttpx_response_t res = cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
             send_response(&dummy_req, res, client_fd);
         }
 
@@ -502,7 +502,7 @@ void cHTTPX_Handle(int client_fd) {
         /* Handler */
         res = r->handler(req);
     } else {
-        res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"NotFound\"}");
+        res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
     }
 
     send_response(req, res, client_fd);
@@ -607,7 +607,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
 
             if (!v) {
                 if (f->required) {
-                    snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' is required", f->name);
+                    snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required", f->name);
                     return 0;
                 }
                 break;
@@ -616,12 +616,12 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
             size_t len = strlen(v);
 
             if (f->min_length && len < f->min_length) {
-                snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' min length is %zu", f->name, f->min_length);
+                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' min length is %zu", f->name, f->min_length);
                 return 0;
             }
 
             if (f->max_length && len > f->max_length) {
-                snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' max length is %zu", f->name, f->max_length);
+                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' max length is %zu", f->name, f->max_length);
                 return 0;
             }
 
@@ -630,7 +630,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
         case FIELD_INT:
         case FIELD_BOOL:
             if (f->required && !*(int *)f->target) {
-                snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' is required", f->name);
+                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required", f->name);
                 return 0;
             }
             break;
