@@ -14,7 +14,7 @@ typedef struct {
 } user_t;
 
 int auth_middleware(chttpx_request_t *req, chttpx_response_t *res) {
-    const char *token = cHTTPX_Header(req, "Auth");
+    const char *token = cHTTPX_Header(req, "Auth-Token");
 
     if (!token) {
         *res = cHTTPX_JsonResponse(cHTTPX_StatusUnauthorized, "{\"error\": \"unauthorized\"}");
@@ -75,14 +75,15 @@ int main() {
         return 1;
     }
 
-    // timeouts
+    /* Timeouts */
     serv.read_timeout_sec = 300;
     serv.write_timeout_sec = 300;
     serv.idle_timeout_sec = 90;
 
     /* Cors */
     const char *allowed_origins[] = {
-        "https://neosync.neomatica.ru",
+        "https://exmaple.ru",
+        "http://localhost:8080",
     };
 
     cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
