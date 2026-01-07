@@ -78,7 +78,7 @@ static void log_error(const char *fmt, ...) {
     printf("\n");
 }
 
-static int match_route(const char *template, const char *path, route_param_t *params, int *param_count) {
+static int match_route(const char *template, const char *path, chttpx_param_t *params, int *param_count) {
     int count = 0;
     const char *t = template;
     const char *p = path;
@@ -124,18 +124,48 @@ static int match_route(const char *template, const char *path, route_param_t *pa
  * @param path URL path to match, e.g., "/users".
  * @return Pointer to the matching route_t if found, NULL otherwise.
  */
-static route_t* find_route(const char *method, const char *path, chttpx_request_t *req) {
+static route_t* find_route(chttpx_request_t *req) {
     for (int i = 0; i < routes_count; i++) {
-        if (strcmp(routes[i].method, method) != 0) continue;
+        if (strcmp(routes[i].method, req->method) != 0) continue;
 
         int count = 0;
-        if (match_route(routes[i].path, path, req->params, &count)) {
+        if (match_route(routes[i].path, req->path, req->params, &count)) {
             req->param_count = count;
             return &routes[i];
         }
     }
 
     return NULL;
+}
+
+static void parse_req_query(char *query, chttpx_request_t *req) {
+    char *token = strtok(query, "&");
+
+    while (token) {
+        char *eq = strchr(token, '=');
+        if (eq) {
+            *eq = '\0';
+
+            req->query = realloc(req->query, sizeof(chttpx_query_t) * (req->query_count + 1));
+
+            req->query[req->query_count].name = cHTTPX_strdup(token);
+            req->query[req->query_count].value = cHTTPX_strdup(eq+1);
+            req->query_count++;
+        }
+
+        token = strtok(NULL, "&");
+    }
+}
+
+static void parse_req_body(char *buffer, chttpx_request_t *req) {
+    const char *body_start = strstr(buffer, "\r\n\r\n");
+    if (!body_start) {
+        req->body = NULL;
+        return;
+    }
+    
+    body_start += 4;
+    req->body = cHTTPX_strdup(body_start);
 }
 
 /**
@@ -222,19 +252,22 @@ void cHTTPX_Handle(int client_fd) {
 
     // REQUEST
     chttpx_request_t req;
+    memset(&req, 0, sizeof(req));
+
     req.method = cHTTPX_strdup(method);
     req.path = cHTTPX_strdup(path);
-    req.query = NULL;
-    req.param_count = 0;
 
-    // parser body request
-    char *body_start = strstr(buf, "\r\n\r\n");
-    if (body_start) {
-        body_start += 4;
-        req.body = body_start;
+    // parse query request
+    char *query = strchr(req.path, '?');
+    if (query) {
+        *query = '\0';
+        parse_req_query(query + 1, &req);
     }
 
-    route_t *r = find_route(method, path, &req);
+    // parse body request
+    parse_req_body(buf, &req);
+
+    route_t *r = find_route(&req);
     chttpx_response_t res;
 
     if (r) {
@@ -243,9 +276,6 @@ void cHTTPX_Handle(int client_fd) {
 
         // fn handler
         res = r->handler(&req);
-
-        free(req.method);
-        free(req.path);
     } else {
         res.status = 404;
         res.content_type = "text/plain";
@@ -253,6 +283,18 @@ void cHTTPX_Handle(int client_fd) {
     }
 
     send_response(client_fd, res);
+
+    free(req.method);
+    free(req.path);
+    free(req.body);
+
+    for (size_t i = 0; i < req.query_count; i++) {
+        free(req.query[i].name);
+        free(req.query[i].value);
+    }
+
+    free(req.query);
+
     close(client_fd);
 }
 
@@ -381,6 +423,8 @@ int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **erro
  * @return Pointer to the parameter value string if found, or NULL if the parameter does not exist.
  */
 const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
+    if (!req || !name || !req->params || req->param_count == 0) return NULL;
+
     for (int i = 0; i < req->param_count; i++) {
         if (strcmp(req->params[i].name, name) == 0) {
             return req->params[i].value;
@@ -390,6 +434,39 @@ const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
     return NULL;
 }
 
+/**
+ * Get a query parameter value by name.
+ *
+ * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
+ * and returns the value associated with the given parameter name.
+ * 
+ * @param req   Pointer to the current HTTP request.
+ * @param name  Name of the query parameter.
+ * @return Pointer to the parameter value string if found, or NULL if not present.
+ */
+const char* cHTTPX_Query(chttpx_request_t *req, const char *name) {
+    if (!req || !req->query || req->query_count == 0) return NULL;
+
+    for (size_t i = 0; i < req->query_count; i++) {
+        if (strcmp(req->query[i].name, name) == 0) {
+            return req->query[i].value;
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * Create a JSON HTTP response with formatted content.
+ *
+ * Formats a JSON response body using printf-style arguments,
+ * allocates memory for the response body, and returns a
+ * fully initialized chttpx_response_t structure.
+ *
+ * @param status HTTP status code (e.g. 200, 400, 404).
+ * @param fmt    printf-style format string for the JSON body.
+ * @param ...    Format arguments.
+ */
 chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...) {
     char buffer[BUFFER_SIZE];
 

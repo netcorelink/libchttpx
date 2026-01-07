@@ -40,17 +40,30 @@ extern "C" {
 typedef struct {
     char name[MAX_PARAM_NAME];
     char value[MAX_PARAM_VALUE];
-} route_param_t;
+} chttpx_param_t;
+
+typedef struct {
+    char *name;
+    char *value;
+} chttpx_query_t;
 
 // REQuest
 typedef struct {
     char *method;
     char *path;
     char *body;
-    char *query;
+    
+    /* Query params in URL
+     * exmaple: ?name=netcorelink
+     */
+    chttpx_query_t *query;
+    size_t query_count; 
 
-    route_param_t params[MAX_ROUTE_PARAMS];
-    int param_count;
+    /* Params in URL 
+     * exmaple: /{uuid}
+     */
+    chttpx_param_t params[MAX_ROUTE_PARAMS];
+    size_t param_count;
 } chttpx_request_t;
 
 // RESponse
@@ -62,7 +75,6 @@ typedef struct {
 
 typedef chttpx_response_t (*chttpx_handler_t)(chttpx_request_t *req);
 
-// Route
 typedef struct {
     const char *method;
     const char *path;
@@ -74,15 +86,6 @@ typedef enum {
     FIELD_INT,
     FIELD_BOOL
 } validation_t;
-
-typedef struct {
-    const char *name;
-    validation_t type;
-    int required;
-    size_t min_length;
-    size_t max_length;
-    void *target;
-} chttpx_validation_t;
 
 /**
  * Initialize the HTTP server.
@@ -116,6 +119,23 @@ void cHTTPX_Handle(int client_fd);
  */
 void cHTTPX_Listen(void);
 
+typedef struct {
+    const char *name;
+
+    /* Type field str/int/bool */
+    validation_t type;
+
+    /* Required field */
+    int required;
+
+    /* Min/Max value string */
+    size_t min_length;
+    size_t max_length;
+
+    /* Target value in struct */
+    void *target;
+} chttpx_validation_t;
+
 /**
  * Parse a JSON body and validate fields according to the provided definitions.
  * @param body JSON string to parse.
@@ -143,6 +163,29 @@ int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **erro
  */
 const char* cHTTPX_Param(chttpx_request_t *req, const char *name);
 
+/**
+ * Get a query parameter value by name.
+ *
+ * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
+ * and returns the value associated with the given parameter name.
+ * 
+ * @param req   Pointer to the current HTTP request.
+ * @param name  Name of the query parameter.
+ * @return Pointer to the parameter value string if found, or NULL if not present.
+ */
+const char* cHTTPX_Query(chttpx_request_t *req, const char *name);
+
+/**
+ * Create a JSON HTTP response with formatted content.
+ *
+ * Formats a JSON response body using printf-style arguments,
+ * allocates memory for the response body, and returns a
+ * fully initialized chttpx_response_t structure.
+ *
+ * @param status HTTP status code (e.g. 200, 400, 404).
+ * @param fmt    printf-style format string for the JSON body.
+ * @param ...    Format arguments.
+ */
 chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...);
 
 #define chttpx_validation_str(name, required, min_length, max_length, ptr) (chttpx_validation_t){name, FIELD_STRING, required, min_length, max_length, ptr}

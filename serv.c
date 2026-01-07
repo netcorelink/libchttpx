@@ -43,14 +43,22 @@ chttpx_response_t get_user(chttpx_request_t *req) {
         return cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"uuid not found\"}");
     }
 
-    return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\"}}", uuid);
+    const char *page = cHTTPX_Param(req, "page");
+    if (!page) {
+        return cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"page not found\"}");
+    }
+
+    char *orgParam = cHTTPX_Query(req, "org");
+    if (!orgParam) orgParam = "";
+
+    return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\", \"org\": \"%s\"}}", uuid, page, orgParam);
 }
 
 int main() {
     cHTTPX_Init(8080, 16);
 
     cHTTPX_Route("GET", "/", home_index);
-    cHTTPX_Route("GET", "/users/{uuid}", get_user);
+    cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
     cHTTPX_Route("POST", "/users", create_user);
 
     cHTTPX_Listen();
