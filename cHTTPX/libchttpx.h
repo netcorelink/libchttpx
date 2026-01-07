@@ -52,6 +52,9 @@ typedef struct {
     char *method;
     char *path;
     char *body;
+
+    /* Error request message */
+    char error_msg[BUFFER_SIZE];
     
     /* Query params in URL
      * exmaple: ?name=netcorelink
@@ -87,13 +90,30 @@ typedef enum {
     FIELD_BOOL
 } validation_t;
 
+typedef struct {
+    int port;
+    int server_fd;
+
+    size_t max_clients;
+
+    /* Server timeout params */
+    int read_timeout_sec;
+    int write_timeout_sec;
+    int idle_timeout_sec;
+
+    /* Routes params */
+    route_t *routes;
+    size_t routes_count;
+    size_t routes_capacity;
+} chttpx_server_t;
+
 /**
  * Initialize the HTTP server.
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
  * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
-void cHTTPX_Init(int port, int max_routes);
+int cHTTPX_Init(chttpx_server_t *serv, int port);
 
 /**
  * Register a route handler for a specific HTTP method and path.
@@ -102,7 +122,7 @@ void cHTTPX_Init(int port, int max_routes);
  * @param handler Function pointer to handle the request. The handler should return httpx_response_t.
  * This allows the server to call the appropriate function when a matching request is received.
  */
-void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler);
+void cHTTPX_Route(chttpx_server_t *serve, const char *method, const char *path, chttpx_handler_t handler);
 
 /**
  * Handle a single client connection.
@@ -110,14 +130,14 @@ void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void cHTTPX_Handle(int client_fd);
+void cHTTPX_Handle(chttpx_server_t *serve, int client_fd);
 
 /**
  * Start the server loop to listen for incoming connections.
  * This function blocks indefinitely, accepting new client connections
  * and dispatching them to cHTTPX_Handle.
  */
-void cHTTPX_Listen(void);
+void cHTTPX_Listen(chttpx_server_t *serv);
 
 typedef struct {
     const char *name;
@@ -145,14 +165,14 @@ typedef struct {
  * @return 1 if parsing and validation succeed, 0 if there is an error.
  * This function automatically checks required fields, string length, boolean types, etc.
  */
-int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count, char **error_msg);
+int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count);
 
 /*
  * Validates an array of cHTTPX_FieldValidation structures.
  * This function ensures that required fields are present, string lengths are within limits,
  * and basic validation for integers and boolean fields is performed.
  */
-int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **error_msg);
+int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count);
 
 /**
  * Get a route parameter value by its name.

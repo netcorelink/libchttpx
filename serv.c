@@ -18,7 +18,6 @@ chttpx_response_t home_index(chttpx_request_t *req) {
 
 chttpx_response_t create_user(chttpx_request_t *req) {
     user_t user;
-    char *error_msg = NULL;
 
     chttpx_validation_t fields[] = {
         chttpx_validation_str("uuid", true, 0, 36, &user.uuid),
@@ -26,12 +25,12 @@ chttpx_response_t create_user(chttpx_request_t *req) {
         chttpx_validation_bool("is_admin", false, &user.is_admin)
     };
 
-    if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields), &error_msg)) {
-        return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", error_msg);
+    if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields))) {
+        return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
     }
 
-    if (!cHTTPX_Validate(fields, cHTTPX_ARRAY_LEN(fields), &error_msg)) {
-        return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", error_msg);
+    if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields))) {
+        return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
     }
 
     return cHTTPX_JsonResponse(cHTTPX_StatusCreated, "{\"message\":\"user has been successeful created!\"}");
@@ -48,18 +47,30 @@ chttpx_response_t get_user(chttpx_request_t *req) {
         return cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"page not found\"}");
     }
 
-    char *orgParam = cHTTPX_Query(req, "org");
-    if (!orgParam) orgParam = "";
+    const char *sizeParam = cHTTPX_Query(req, "size");
+    if (!sizeParam) sizeParam = "0";
 
-    return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\", \"org\": \"%s\"}}", uuid, page, orgParam);
+    int size = atoi(sizeParam);
+
+    return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\", \"size\": \"%d\"}}", uuid, page, size);
 }
 
 int main() {
-    cHTTPX_Init(8080, 16);
+    chttpx_server_t serv;
 
-    cHTTPX_Route("GET", "/", home_index);
-    cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
-    cHTTPX_Route("POST", "/users", create_user);
+    if (cHTTPX_Init(&serv, 8080) != 0) {
+        printf("Failed to start server\n");
+        return 1;
+    }
 
-    cHTTPX_Listen();
+    // timeouts
+    serv.read_timeout_sec = 300;
+    serv.write_timeout_sec = 300;
+    serv.idle_timeout_sec = 90;
+
+    cHTTPX_Route(&serv, "GET", "/", home_index);
+    cHTTPX_Route(&serv, "GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
+    cHTTPX_Route(&serv, "POST", "/users", create_user);
+
+    cHTTPX_Listen(&serv);
 }

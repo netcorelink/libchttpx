@@ -24,6 +24,7 @@
 #include "libchttpx_utils.h"
 #include "include/cJSON.h"
 #include <time.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,12 +32,7 @@
 #include <stdarg.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-
-static route_t *routes = NULL;
-static int routes_count = 0;
-static int routes_capacity = 0;
-static int server_port = 80;
-static int server_fd = -1;
+#include <sys/time.h>
 
 /**
  * Logger 'log_serv' and 'log_error'
@@ -124,14 +120,14 @@ static int match_route(const char *template, const char *path, chttpx_param_t *p
  * @param path URL path to match, e.g., "/users".
  * @return Pointer to the matching route_t if found, NULL otherwise.
  */
-static route_t* find_route(chttpx_request_t *req) {
-    for (int i = 0; i < routes_count; i++) {
-        if (strcmp(routes[i].method, req->method) != 0) continue;
+static route_t* find_route(chttpx_server_t *serve, chttpx_request_t *req) {
+    for (size_t i = 0; i < serve->routes_count; i++) {
+        if (strcmp(serve->routes[i].method, req->method) != 0) continue;
 
         int count = 0;
-        if (match_route(routes[i].path, req->path, req->params, &count)) {
+        if (match_route(serve->routes[i].path, req->path, req->params, &count)) {
             req->param_count = count;
-            return &routes[i];
+            return &serve->routes[i];
         }
     }
 
@@ -168,6 +164,32 @@ static void parse_req_body(char *buffer, chttpx_request_t *req) {
     req->body = cHTTPX_strdup(body_start);
 }
 
+static chttpx_request_t* parse_req_buffer(char *buffer, int received) {
+    chttpx_request_t *req = malloc(sizeof(chttpx_request_t));
+    if (!req) return NULL;
+
+    buffer[received] = '\0';
+
+    char method[8], path[128];
+    sscanf(buffer, "%s %s", method, path);
+
+    memset(req, 0, sizeof(*req));
+    req->method = cHTTPX_strdup(method);
+    req->path   = cHTTPX_strdup(path);
+
+    /* Parse query request */
+    char *query = strchr(req->path, '?');
+    if (query) {
+        *query = '\0';
+        parse_req_query(query + 1, req);
+    }
+
+    /* Parse body request */
+    parse_req_body(buffer, req);
+
+    return req;
+}
+
 /**
  * Send an HTTP response to a connected client socket.
  * @param client_fd File descriptor of the connected client socket.
@@ -190,27 +212,45 @@ static void send_response(int client_fd, chttpx_response_t res) {
  * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
-void cHTTPX_Init(int port, int max_routes) {
-    server_port = port;
-
-    routes_capacity = max_routes;
-    routes = (route_t*)malloc(sizeof(route_t) * routes_capacity);
-    if (!routes) {
-        log_error("Failed to allocate routes");
+int cHTTPX_Init(chttpx_server_t *serve, int port) {
+    serve->port = port;
+    serve->server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (serve->server_fd < 0) {
+        perror("socket");
         exit(1);
     }
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(serve->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct sockaddr_in addr = {0};
+    struct sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(server_port);
+    addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
-    bind(server_fd, (struct sockaddr*)&addr, sizeof(addr));
-    listen(server_fd, 4);
+    if (bind(serve->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind");
+        exit(1);
+    }
 
-    log_serv("HTTP server started on port %d...", server_port);
+    if (listen(serve->server_fd, 128) < 0) {
+        perror("listen");
+        exit(1);
+    }
+
+    /* Timeouts */
+    serve->read_timeout_sec = 300;
+    serve->write_timeout_sec = 300;
+    serve->idle_timeout_sec = 90;
+
+    /* Default values for routes */
+    serve->routes = NULL;
+    serve->routes_count = 0;
+    serve->routes_capacity = 0;
+
+    log_serv("HTTP server started on port %d...", port);
+
+    return 0;
 }
 
 /**
@@ -220,16 +260,36 @@ void cHTTPX_Init(int port, int max_routes) {
  * @param handler Function pointer to handle the request. The handler should return httpx_response_t.
  * This allows the server to call the appropriate function when a matching request is received.
  */
-void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler) {
-    if (routes_count >= routes_capacity) {
-        log_error("Max routes reached");
-        return;
+void cHTTPX_Route(chttpx_server_t *serve, const char *method, const char *path, chttpx_handler_t handler) {
+    if (serve->routes_count == serve->routes_capacity) {
+        size_t new_capacity = (serve->routes_capacity == 0) ? 4 : serve->routes_capacity * 2;
+        route_t *new_routes = realloc(serve->routes, sizeof(route_t) * new_capacity);
+
+        if (!new_routes) {
+            perror("realloc routes");
+            exit(1);
+        }
+
+        serve->routes = new_routes;
+        serve->routes_capacity = new_capacity;
     }
 
-    routes[routes_count].method = method;
-    routes[routes_count].path = path;
-    routes[routes_count].handler = handler;
-    routes_count++;
+    serve->routes[serve->routes_count].method = method;
+    serve->routes[serve->routes_count].path = path;
+    serve->routes[serve->routes_count].handler = handler;
+    serve->routes_count++;
+}
+
+static void set_client_timeout(chttpx_server_t *serv, int client_fd) {
+    /* Read timeout params */
+    struct timeval tv;
+    tv.tv_sec = serv->read_timeout_sec;
+    tv.tv_usec = 0;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    /* Write timeout params */
+    tv.tv_sec = serv->write_timeout_sec;
+    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
 /**
@@ -238,62 +298,50 @@ void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void cHTTPX_Handle(int client_fd) {
+void cHTTPX_Handle(chttpx_server_t *serv, int client_fd) {
+    /* Timeouts */
+    set_client_timeout(serv, client_fd);
+
     char buf[BUFFER_SIZE];
     int received = recv(client_fd, buf, BUFFER_SIZE-1, 0);
-    if (received <= 0) {
+    if (received < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            chttpx_response_t res = cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"Read Timeout\"}");
+            send_response(client_fd, res);
+        }
         close(client_fd);
         return;
     }
-    buf[received] = 0;
 
-    char method[8], path[128];
-    sscanf(buf, "%s %s", method, path);
-
-    // REQUEST
-    chttpx_request_t req;
-    memset(&req, 0, sizeof(req));
-
-    req.method = cHTTPX_strdup(method);
-    req.path = cHTTPX_strdup(path);
-
-    // parse query request
-    char *query = strchr(req.path, '?');
-    if (query) {
-        *query = '\0';
-        parse_req_query(query + 1, &req);
+    /* REQUEST */
+    chttpx_request_t *req = parse_req_buffer(buf, received);
+    if (!req) {
+        close(client_fd);
+        return;
     }
 
-    // parse body request
-    parse_req_body(buf, &req);
-
-    route_t *r = find_route(&req);
+    route_t *r = find_route(serv, req);
     chttpx_response_t res;
 
     if (r) {
-        // logs handle
-        log_serv("%s %s", req.method, req.path);
-
-        // fn handler
-        res = r->handler(&req);
+        log_serv("%s %s", req->method, req->path);
+        res = r->handler(req);
     } else {
-        res.status = 404;
-        res.content_type = "text/plain";
-        res.body = "Not Found";
+        res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"NotFound\"}");
     }
 
     send_response(client_fd, res);
 
-    free(req.method);
-    free(req.path);
-    free(req.body);
+    free(req->method);
+    free(req->path);
+    free(req->body);
 
-    for (size_t i = 0; i < req.query_count; i++) {
-        free(req.query[i].name);
-        free(req.query[i].value);
+    for (size_t i = 0; i < req->query_count; i++) {
+        free(req->query[i].name);
+        free(req->query[i].value);
     }
 
-    free(req.query);
+    free(req->query);
 
     close(client_fd);
 }
@@ -303,10 +351,12 @@ void cHTTPX_Handle(int client_fd) {
  * This function blocks indefinitely, accepting new client connections
  * and dispatching them to cHTTPX_Handle.
  */
-void cHTTPX_Listen(void) {
+void cHTTPX_Listen(chttpx_server_t *serve) {
     while(1) {
-        int client_fd = accept(server_fd, NULL, NULL);
-        cHTTPX_Handle(client_fd);
+        int client_fd = accept(serve->server_fd, NULL, NULL);
+        if (client_fd < 0) continue;
+
+        cHTTPX_Handle(serve, client_fd);
     }
 }
 
@@ -319,10 +369,10 @@ void cHTTPX_Listen(void) {
  * @return 1 if parsing and validation succeed, 0 if there is an error.
  * This function automatically checks required fields, string length, boolean types, etc.
  */
-int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count, char **error_msg) {
+int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count) {
     cJSON *json = cJSON_Parse(req->body);
     if (!json) {
-        *error_msg = cHTTPX_strdup("Invalid JSON");
+        snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON");
         return 0;
     }
 
@@ -365,9 +415,7 @@ int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t fiel
  * This function ensures that required fields are present, string lengths are within limits,
  * and basic validation for integers and boolean fields is performed.
  */
-int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **error_msg) {
-    char buffer[BUFFER_SIZE];
-
+int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count) {
     for (size_t i = 0; i < field_count; i++) {
         chttpx_validation_t *f = &fields[i];
 
@@ -378,8 +426,7 @@ int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **erro
 
             if (!v) {
                 if (f->required) {
-                    snprintf(buffer, sizeof(buffer), "Field '%s' is required", f->name);
-                    *error_msg = buffer;
+                    snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' is required", f->name);
                     return 0;
                 }
                 break;
@@ -388,14 +435,12 @@ int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **erro
             size_t len = strlen(v);
 
             if (f->min_length && len < f->min_length) {
-                snprintf(buffer, sizeof(buffer), "Field '%s' min length is %zu", f->name, f->min_length);
-                *error_msg = buffer;
+                snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' min length is %zu", f->name, f->min_length);
                 return 0;
             }
 
             if (f->max_length && len > f->max_length) {
-                snprintf(buffer, sizeof(buffer), "Field '%s' max length is %zu", f->name, f->max_length);
-                *error_msg = buffer;
+                snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' max length is %zu", f->name, f->max_length);
                 return 0;
             }
 
@@ -404,8 +449,7 @@ int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **erro
         case FIELD_INT:
         case FIELD_BOOL:
             if (f->required && !*(int *)f->target) {
-                snprintf(buffer, sizeof(buffer), "Field '%s' is required", f->name);
-                *error_msg = buffer;
+                snprintf(req->error_msg, sizeof(req->error_msg), "Field '%s' is required", f->name);
                 return 0;
             }
             break;
@@ -423,9 +467,9 @@ int cHTTPX_Validate(chttpx_validation_t *fields, size_t field_count, char **erro
  * @return Pointer to the parameter value string if found, or NULL if the parameter does not exist.
  */
 const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
-    if (!req || !name || !req->params || req->param_count == 0) return NULL;
+    if (!req || !name || req->param_count == 0) return NULL;
 
-    for (int i = 0; i < req->param_count; i++) {
+    for (size_t i = 0; i < req->param_count; i++) {
         if (strcmp(req->params[i].name, name) == 0) {
             return req->params[i].value;
         }
