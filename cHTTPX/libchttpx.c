@@ -131,11 +131,10 @@ static int match_route(const char *template, const char *path, chttpx_param_t *p
 
 /**
  * Find a registered route by HTTP method and path.
- * @param method HTTP method string, e.g., "GET", "POST".
- * @param path URL path to match, e.g., "/users".
- * @return Pointer to the matching route_t if found, NULL otherwise.
+ * @param req  Pointer to the current HTTP request structure.
+ * @return Pointer to the matching chttpx_route_t if found, NULL otherwise.
  */
-static route_t* find_route(chttpx_request_t *req) {
+static chttpx_route_t* find_route(chttpx_request_t *req) {
     if (!serv) {
         log_error("the server is not initialized");
         return NULL;
@@ -274,8 +273,9 @@ static char* allowed_origin_cors(const char *req_origin) {
 
 /**
  * Send an HTTP response to a connected client socket.
- * @param client_fd File descriptor of the connected client socket.
+ * @param req Pointer to the HTTP request.
  * @param res httpx_response_t structure containing status, content type, and body.
+ * @param client_fd File descriptor of the connected client socket.
  * 
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
@@ -307,8 +307,8 @@ static void send_response(chttpx_request_t *req, chttpx_response_t res, int clie
 
 /**
  * Initialize the HTTP server.
+ * @param serv_p The basic structure for working with a server.
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
- * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
 int cHTTPX_Init(chttpx_server_t *serv_p, int port) {
@@ -393,7 +393,7 @@ void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler
 
     if (serv->routes_count == serv->routes_capacity) {
         size_t new_capacity = (serv->routes_capacity == 0) ? 4 : serv->routes_capacity * 2;
-        route_t *new_routes = realloc(serv->routes, sizeof(route_t) * new_capacity);
+        chttpx_route_t *new_routes = realloc(serv->routes, sizeof(chttpx_route_t) * new_capacity);
 
         if (!new_routes) {
             perror("realloc routes");
@@ -473,11 +473,23 @@ void cHTTPX_Handle(int client_fd) {
     /* ALLOWED OPTIONS METHOD */
     is_method_options(req, client_fd);
 
-    route_t *r = find_route(req);
+    chttpx_route_t *r = find_route(req);
     chttpx_response_t res;
 
     if (r) {
+        /* Logger */
         log_serv("%s %s", req->method, req->path);
+
+        /* Use middlewares */
+        for (size_t i = 0; i < serv->middleware.middleware_count; i++) {
+            if (!serv->middleware.middlewares[i](req, &res)) {
+                send_response(req, res, client_fd);
+                close(client_fd);
+                return;
+            }
+        }
+
+        /* Handler */
         res = r->handler(req);
     } else {
         res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"NotFound\"}");
@@ -520,10 +532,9 @@ void cHTTPX_Listen() {
 
 /**
  * Parse a JSON body and validate fields according to the provided definitions.
- * @param body JSON string to parse.
+ * @param req Pointer to the HTTP request.
  * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
  * @param field_count Number of fields in the array.
- * @param error_msg Output pointer to a string describing the first validation error, if any.
  * @return 1 if parsing and validation succeed, 0 if there is an error.
  * This function automatically checks required fields, string length, boolean types, etc.
  */
@@ -676,6 +687,25 @@ const char* cHTTPX_Query(chttpx_request_t *req, const char *name) {
     return NULL;
 }
 
+/**
+ * Enable and configure CORS (Cross-Origin Resource Sharing).
+ *
+ * This function enables CORS support for the HTTP server and configures
+ * which origins, HTTP methods, and request headers are allowed.
+ *
+ * The CORS configuration is applied globally and is typically used together
+ * with the built-in CORS middleware.
+ *
+ * @param origins        Array of allowed origin strings (e.g. "https://example.com").
+ *                       Each origin must match exactly the value of the "Origin" header.
+ * @param origins_count Number of elements in the origins array.
+ * @param methods       Comma-separated list of allowed HTTP methods.
+ *                       If NULL, defaults to:
+ *                       "GET, POST, PUT, DELETE, OPTIONS"
+ * @param headers       Comma-separated list of allowed request headers.
+ *                       If NULL, defaults to:
+ *                       "Content-Type"
+ */
 void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods, const char *headers) {
     if (!serv) {
         log_error("the server is not initialized");
@@ -687,6 +717,34 @@ void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods
     serv->cors.origins_count = origins_count;
     serv->cors.methods = methods ? methods : "GET, POST, PUT, DELETE, OPTIONS";
     serv->cors.headers = headers ? headers : "Content-Type";
+}
+
+/**
+ * Register a global middleware function.
+ *
+ * Middleware functions are executed in the order they are registered,
+ * before the route handler is called.
+ *
+ * If a middleware returns 0, the middleware chain is aborted and the
+ * response provided by the middleware is sent to the client.
+ *
+ * If a middleware returns 1, processing continues to the next middleware
+ * or to the route handler.
+ *
+ * @param mw Middleware function pointer.
+ */
+void cHTTPX_MiddlewareUse(chttpx_middleware_t mw) {
+    if (!serv) {
+        log_error("the server is not initialized");
+        return;
+    }
+
+    if (serv->middleware.middleware_count >= MAX_MIDDLEWARES) {
+        log_error("the number of middleware (MAX_MIDDLEWARES) has been exceeded");
+        return;
+    }
+
+    serv->middleware.middlewares[serv->middleware.middleware_count++] = mw;
 }
 
 /**

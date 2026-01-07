@@ -12,6 +12,17 @@ typedef struct {
     int is_admin;
 } user_t;
 
+int auth_middleware(chttpx_request_t *req, chttpx_response_t *res) {
+    const char *token = cHTTPX_Header(req, "Auth");
+
+    if (!token) {
+        *res = cHTTPX_JsonResponse(cHTTPX_StatusUnauthorized, "{\"error\": \"unauthorized\"}");
+        return 0;
+    }
+
+    return 1;
+}
+
 chttpx_response_t home_index(chttpx_request_t *req) {
     return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_HTML, "<h1>This is home page!</h1>"};
 }
@@ -74,6 +85,8 @@ int main() {
     };
     
     cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
+
+    cHTTPX_MiddlewareUse(auth_middleware);
 
     cHTTPX_Route("GET", "/", home_index);
     cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink

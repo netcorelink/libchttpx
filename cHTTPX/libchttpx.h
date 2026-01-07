@@ -95,7 +95,7 @@ typedef struct {
     const char *method;
     const char *path;
     chttpx_handler_t handler;
-} route_t;
+} chttpx_route_t;
 
 typedef enum {
     FIELD_STRING,
@@ -111,6 +111,18 @@ typedef struct {
     const char *headers;
 } chttpx_cors_t;
 
+typedef int (*chttpx_middleware_t)(
+    chttpx_request_t *req,
+    chttpx_response_t *res
+);
+
+#define MAX_MIDDLEWARES 32
+
+typedef struct {
+    chttpx_middleware_t middlewares[MAX_MIDDLEWARES];
+    size_t middleware_count;
+} chttpx_middleware_stack_t;
+
 typedef struct {
     int port;
     int server_fd;
@@ -123,9 +135,12 @@ typedef struct {
     int idle_timeout_sec;
 
     /* Routes params */
-    route_t *routes;
+    chttpx_route_t *routes;
     size_t routes_count;
     size_t routes_capacity;
+
+    /* Middlewares */
+    chttpx_middleware_stack_t middleware;
 
     /* Cors */
     chttpx_cors_t cors;
@@ -133,8 +148,8 @@ typedef struct {
 
 /**
  * Initialize the HTTP server.
+ * @param serv_p The basic structure for working with a server.
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
- * @param max_routes Maximum number of routes that can be registered.
  * This function must be called before registering routes or starting the server.
  */
 int cHTTPX_Init(chttpx_server_t *serv_p, int port);
@@ -182,10 +197,9 @@ typedef struct {
 
 /**
  * Parse a JSON body and validate fields according to the provided definitions.
- * @param body JSON string to parse.
+ * @param req Pointer to the HTTP request.
  * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
  * @param field_count Number of fields in the array.
- * @param error_msg Output pointer to a string describing the first validation error, if any.
  * @return 1 if parsing and validation succeed, 0 if there is an error.
  * This function automatically checks required fields, string length, boolean types, etc.
  */
@@ -227,7 +241,42 @@ const char* cHTTPX_Param(chttpx_request_t *req, const char *name);
  */
 const char* cHTTPX_Query(chttpx_request_t *req, const char *name);
 
+/**
+ * Enable and configure CORS (Cross-Origin Resource Sharing).
+ *
+ * This function enables CORS support for the HTTP server and configures
+ * which origins, HTTP methods, and request headers are allowed.
+ *
+ * The CORS configuration is applied globally and is typically used together
+ * with the built-in CORS middleware.
+ *
+ * @param origins        Array of allowed origin strings (e.g. "https://example.com").
+ *                       Each origin must match exactly the value of the "Origin" header.
+ * @param origins_count Number of elements in the origins array.
+ * @param methods       Comma-separated list of allowed HTTP methods.
+ *                       If NULL, defaults to:
+ *                       "GET, POST, PUT, DELETE, OPTIONS"
+ * @param headers       Comma-separated list of allowed request headers.
+ *                       If NULL, defaults to:
+ *                       "Content-Type"
+ */
 void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods, const char *headers);
+
+/**
+ * Register a global middleware function.
+ *
+ * Middleware functions are executed in the order they are registered,
+ * before the route handler is called.
+ *
+ * If a middleware returns 0, the middleware chain is aborted and the
+ * response provided by the middleware is sent to the client.
+ *
+ * If a middleware returns 1, processing continues to the next middleware
+ * or to the route handler.
+ *
+ * @param mw Middleware function pointer.
+ */
+void cHTTPX_MiddlewareUse(chttpx_middleware_t mw);
 
 /**
  * Create a JSON HTTP response with formatted content.
@@ -242,8 +291,44 @@ void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods
  */
 chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...);
 
+/**
+ * Macro to define a string field for JSON request validation.
+ *
+ * Creates a chttpx_validation_t structure for a string field, including
+ * whether it is required and optional minimum/maximum length constraints.
+ *
+ * @param name       Name of the field in the JSON body.
+ * @param required   Non-zero if the field is required, 0 if optional.
+ * @param min_length Minimum allowed string length (0 for no minimum).
+ * @param max_length Maximum allowed string length (0 for no maximum).
+ * @param ptr        Pointer to the target string variable where the value will be stored.
+ *
+ * @return A chttpx_validation_t structure initialized for a string field.
+ */
 #define chttpx_validation_str(name, required, min_length, max_length, ptr) (chttpx_validation_t){name, FIELD_STRING, required, min_length, max_length, ptr}
+
+/**
+ * Macro to define an integer field for JSON request validation.
+ * Creates a chttpx_validation_t structure for an integer field.
+ *
+ * @param name     Name of the field in the JSON body.
+ * @param required Non-zero if the field is required, 0 if optional.
+ * @param ptr      Pointer to the target int variable where the value will be stored.
+ *
+ * @return A chttpx_validation_t structure initialized for an integer field.
+ */
 #define chttpx_validation_int(name, required, ptr) (chttpx_validation_t){name, FIELD_INT required, 0, 0, ptr}
+
+/**
+ * Macro to define a boolean field for JSON request validation.
+ * Creates a chttpx_validation_t structure for a boolean field.
+ *
+ * @param name     Name of the field in the JSON body.
+ * @param required Non-zero if the field is required, 0 if optional.
+ * @param ptr      Pointer to the target int variable where the boolean value (0/1) will be stored.
+ *
+ * @return A chttpx_validation_t structure initialized for a boolean field.
+ */
 #define chttpx_validation_bool(name, required, ptr) (chttpx_validation_t){name, FIELD_BOOL, required, 0, 0, ptr}
 
 /* HTTP methods */
