@@ -67,14 +67,14 @@ typedef struct {
     /* Headers in REQuest */
     chttpx_header_t headers[MAX_HEADERS];
     size_t headers_count;
-    
+
     /* Query params in URL
      * exmaple: ?name=netcorelink
      */
     chttpx_query_t *query;
-    size_t query_count; 
+    size_t query_count;
 
-    /* Params in URL 
+    /* Params in URL
      * exmaple: /{uuid}
      */
     chttpx_param_t params[MAX_ROUTE_PARAMS];
@@ -124,7 +124,7 @@ typedef struct {
 
 typedef struct {
     int port;
-    int server_fd;
+    size_t server_fd;
 
     size_t max_clients;
 
@@ -233,7 +233,7 @@ const char* cHTTPX_Param(chttpx_request_t *req, const char *name);
  *
  * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
  * and returns the value associated with the given parameter name.
- * 
+ *
  * @param req   Pointer to the current HTTP request.
  * @param name  Name of the query parameter.
  * @return Pointer to the parameter value string if found, or NULL if not present.

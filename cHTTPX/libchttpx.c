@@ -35,7 +35,6 @@
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <windows.h>
-    #pragma comment(lib, "ws2_32.lib")
 #else
     #include <unistd.h>
     #include <arpa/inet.h>
@@ -55,6 +54,24 @@
 
 #if defined(_WIN32) || defined(_WIN64)
     #define strcasecmp _stricmp
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+    void* memmem_win(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
+        if (!needlelen) return (void *)haystack;
+        if (needlelen > haystacklen) return NULL;
+
+        const unsigned char *h = haystack;
+        const unsigned char *n = needle;
+
+        for (size_t i = 0; i <= haystacklen - needlelen; i++) {
+            if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0) return (void *)(h + i);
+        }
+
+        return NULL;
+    }
+
+    #define memmem(haystack, haystacklen, needle, needlelen) memmem_win(haystack, haystacklen, needle, needlelen)
 #endif
 
 static chttpx_server_t *serv = NULL;
@@ -273,7 +290,7 @@ static void parse_req_headers(chttpx_request_t *req, char *buffer, ssize_t buffe
 
             add_header(req, name_buf, value_buf);
         }
-        
+
         line_start = newline + 1;
     }
 }
@@ -475,11 +492,19 @@ static void set_client_timeout(int client_fd) {
     struct timeval tv;
     tv.tv_sec = serv->read_timeout_sec;
     tv.tv_usec = 0;
+#ifdef _WIN32
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
+#else
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 
     /* Write timeout params */
     tv.tv_sec = serv->write_timeout_sec;
+#ifdef _WIN32
+    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv));
+#else
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
 }
 
 static void is_method_options(chttpx_request_t *req, int client_fd) {
