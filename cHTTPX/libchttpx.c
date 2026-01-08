@@ -284,8 +284,8 @@ static chttpx_request_t* parse_req_buffer(char *buffer, ssize_t received) {
 
     buffer[received] = '\0';
 
-    char method[8], path[128];
-    sscanf(buffer, "%7s %127s", method, path);
+    char method[16], path[MAX_PATH];
+    sscanf(buffer, "%15s %4096s", method, path);
 
     memset(req, 0, sizeof(*req));
     req->method = cHTTPX_strdup(method);

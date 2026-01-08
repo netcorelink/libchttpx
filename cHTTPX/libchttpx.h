@@ -15,7 +15,14 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 
-#define BUFFER_SIZE 4098
+#define BUFFER_SIZE 16384
+#define MAX_PATH 4096
+#define MAX_ROUTE_PARAMS 64
+#define MAX_PARAM_NAME 128
+#define MAX_PARAM_VALUE 1024
+#define MAX_HEADERS 128
+#define MAX_HEADER_NAME 128
+#define MAX_HEADER_VALUE 4096
 
 // HTTP Content Types
 // HTML document. Use this for web pages, responses that browsers render as HTML.
@@ -32,14 +39,6 @@ extern "C" {
 #define cHTTPX_CTYPE_CSS   "text/css"
 // JavaScript script. Use when returning JS files for web pages or dynamic scripts.
 #define cHTTPX_CTYPE_JS    "application/javascript"
-
-#define MAX_ROUTE_PARAMS 8
-#define MAX_PARAM_NAME 128
-#define MAX_PARAM_VALUE 255
-
-#define MAX_HEADERS 64
-#define MAX_HEADER_NAME 64
-#define MAX_HEADER_VALUE 2048
 
 typedef struct {
     char name[MAX_HEADER_NAME];
