@@ -182,15 +182,38 @@ static void parse_req_query(chttpx_request_t *req, char *query) {
     }
 }
 
-static void parse_req_body(chttpx_request_t *req, char *buffer) {
-    const char *body_start = strstr(buffer, "\r\n\r\n");
+static void parse_req_body(chttpx_request_t *req, char *buffer, ssize_t buffer_len) {
+    const char *body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start) {
+        printf("ssssss\n");
+
         req->body = NULL;
         return;
     }
 
     body_start += 4;
-    req->body = cHTTPX_strdup(body_start);
+
+    int content_length = 0;
+    const char *cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
+    if (!cl_header || sscanf(cl_header, "Content-Length: %d", &content_length) != 1) {
+        req->body = NULL;
+        return;
+    }
+
+    if (content_length <= 0) {
+        req->body = NULL;
+        return;
+    }
+
+    size_t body_in_buffer = buffer_len - (body_start - buffer);
+    if (body_in_buffer < (size_t)content_length) {
+        req->body =  NULL;
+        return;
+    }
+
+    req->body = malloc(content_length + 1);
+    memcpy(req->body, body_start, content_length);
+    req->body[content_length] = '\0';
 }
 
 static void add_header(chttpx_request_t *req, const char *name, const char *value) {
@@ -205,49 +228,67 @@ static void add_header(chttpx_request_t *req, const char *name, const char *valu
     h->value[MAX_HEADER_VALUE - 1] = '\0';
 }
 
-static void parse_req_headers(chttpx_request_t *req, char *buffer) {
-    char *line = buffer;
+static void parse_req_headers(chttpx_request_t *req, char *buffer, ssize_t buffer_len) {
+    char *line_start = buffer;
+    char *buffer_end = buffer + buffer_len;
 
     /* Meta data - continue one line */
-    char *next = strstr(line, "\r\n");
-    if (!next) return;
-    line = next + 2;
+    char *newline = memchr(line_start, '\n', buffer_end - line_start);
+    if (!newline) return;
+    line_start = newline + 1;
 
-    while (*line) {
-        next = strstr(line, "\r\n");
-        if (!next) break;
-        *next = 0;
+    while (line_start < buffer_end) {
+        newline = memchr(line_start, '\n', buffer_end - line_start);
+        if (!newline) break;
 
-        char *colon = strchr(line, ':');
+        size_t line_len = newline - line_start;
+        if (line_len > 0 && line_start[line_len-1] == '\r') line_len--;
+
+        char *colon = memchr(line_start, ':', line_len);
         if (colon) {
-            *colon = 0;
+            size_t name_len = colon - line_start;
+            size_t value_len = line_len - name_len - 1;
 
-            const char *name = line;
-            const char *value = colon + 1;
-            while (*value == ' ') value++;
+            char *value_start = colon + 1;
+            while (value_len > 0 && *value_start == ' ') {
+                value_start++;
+                value_len--;
+            }
 
-            add_header(req, name, value);
+            char name_buf[MAX_HEADER_NAME];
+            char value_buf[MAX_HEADER_VALUE];
+
+            size_t copy_name = name_len < MAX_HEADER_NAME-1 ? name_len : MAX_HEADER_NAME-1;
+            size_t copy_value = value_len < MAX_HEADER_VALUE-1 ? value_len : MAX_HEADER_VALUE-1;
+
+            memcpy(name_buf, line_start, copy_name);
+            name_buf[copy_name] = '\0';
+
+            memcpy(value_buf, value_start, copy_value);
+            value_buf[copy_value] = '\0';
+
+            add_header(req, name_buf, value_buf);
         }
-
-        line = next + 2;
+        
+        line_start = newline + 1;
     }
 }
 
-static chttpx_request_t* parse_req_buffer(char *buffer, int received) {
+static chttpx_request_t* parse_req_buffer(char *buffer, ssize_t received) {
     chttpx_request_t *req = malloc(sizeof(chttpx_request_t));
     if (!req) return NULL;
 
     buffer[received] = '\0';
 
     char method[8], path[128];
-    sscanf(buffer, "%s %s", method, path);
+    sscanf(buffer, "%7s %127s", method, path);
 
     memset(req, 0, sizeof(*req));
     req->method = cHTTPX_strdup(method);
     req->path   = cHTTPX_strdup(path);
 
     /* Parse headers */
-    parse_req_headers(req, buffer);
+    parse_req_headers(req, buffer, received);
 
     /* Parse query request */
     char *query = strchr(req->path, '?');
@@ -257,7 +298,7 @@ static chttpx_request_t* parse_req_buffer(char *buffer, int received) {
     }
 
     /* Parse body request */
-    parse_req_body(req, buffer);
+    parse_req_body(req, buffer, received);
 
     return req;
 }
@@ -445,6 +486,47 @@ static void is_method_options(chttpx_request_t *req, int client_fd) {
     }
 }
 
+static ssize_t read_req(int fd, char *buffer, size_t buffer_size) {
+    size_t total = 0;
+
+    while (1) {
+        ssize_t n = recv(fd, buffer+total, buffer_size-1-total, 0);
+        if (n <= 0) return -1;
+
+        total += n;
+
+        if (total >= buffer_size - 1) return -1;
+        buffer[total] = '\0';
+
+        if (strstr(buffer, "\r\n\r\n")) break;
+        if (total >= buffer_size-1) return -1;
+    }
+
+    int content_length = 0;
+    char *cl = strstr(buffer, "Content-Length:");
+    if (cl) {
+        sscanf(cl, "Content-Length: %d", &content_length);
+    }
+
+    /* Body */
+    char *body_start = strstr(buffer, "\r\n\r\n");
+    size_t headers_len = body_start ? (body_start - buffer + 4) : total;
+    size_t body_in_buf = total - headers_len;
+
+    while (body_in_buf < (size_t)content_length) {
+        ssize_t n = recv(fd, buffer + total, buffer_size-1-total, 0);
+        if (n <= 0) return -1;
+
+        total += n;
+        body_in_buf += n;
+        buffer[total] = '\0';
+
+        if (total >= buffer_size - 1) return -1;
+    }
+
+    return total;
+}
+
 /**
  * Handle a single client connection.
  * @param client_fd The file descriptor of the accepted client socket.
@@ -461,8 +543,8 @@ void cHTTPX_Handle(int client_fd) {
     set_client_timeout(client_fd);
 
     char buf[BUFFER_SIZE];
-    int received = recv(client_fd, buf, BUFFER_SIZE-1, 0);
-    if (received < 0) {
+    ssize_t received = read_req(client_fd, buf, BUFFER_SIZE);
+    if (received <= 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             chttpx_request_t dummy_req = {0};
             chttpx_response_t res = cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
@@ -507,6 +589,7 @@ void cHTTPX_Handle(int client_fd) {
 
     send_response(req, res, client_fd);
 
+cleanup:
     free(req->method);
     free(req->path);
     free(req->body);
@@ -517,6 +600,7 @@ void cHTTPX_Handle(int client_fd) {
     }
 
     free(req->query);
+    free(req);
 
     close(client_fd);
 }

@@ -15,7 +15,7 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 
-#define BUFFER_SIZE 2048
+#define BUFFER_SIZE 4098
 
 // HTTP Content Types
 // HTML document. Use this for web pages, responses that browsers render as HTML.

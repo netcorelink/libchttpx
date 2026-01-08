@@ -12,9 +12,6 @@ else
     IS_WIN = 0
 endif
 
-# SRCS=$(shell find . -name '*.c')
-# OBJS = $(patsubst %.c,.out/%.o,$(SRCS))
-
 ifeq ($(IS_WIN),1)
     CFLAGS += -D_WIN32
     LDFLAGS=-lws2_32
