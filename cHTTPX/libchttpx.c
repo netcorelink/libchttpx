@@ -498,18 +498,18 @@ static ssize_t read_req(int fd, char *buffer, size_t buffer_size) {
         if (total >= buffer_size - 1) return -1;
         buffer[total] = '\0';
 
-        if (strstr(buffer, "\r\n\r\n")) break;
+        if (memmem(buffer, buffer_size, "\r\n\r\n", 4)) break;
         if (total >= buffer_size-1) return -1;
     }
 
     int content_length = 0;
-    char *cl = strstr(buffer, "Content-Length:");
+    char *cl = memmem(buffer, buffer_size, "Content-Length:", 15);
     if (cl) {
         sscanf(cl, "Content-Length: %d", &content_length);
     }
 
     /* Body */
-    char *body_start = strstr(buffer, "\r\n\r\n");
+    char *body_start = memmem(buffer, buffer_size, "\r\n\r\n", 4);
     size_t headers_len = body_start ? (body_start - buffer + 4) : total;
     size_t body_in_buf = total - headers_len;
 
