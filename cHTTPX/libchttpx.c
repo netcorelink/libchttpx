@@ -221,11 +221,15 @@ static void add_header(chttpx_request_t *req, const char *name, const char *valu
 
     chttpx_header_t *h = &req->headers[req->headers_count++];
 
-    strncpy(h->name, name, MAX_HEADER_NAME - 1);
-    h->name[MAX_HEADER_NAME - 1] = '\0';
+    size_t len_name = strlen(name);
+    if (len_name >= MAX_HEADER_NAME) len_name = MAX_HEADER_NAME - 1;
+    memcpy(h->name, name, len_name);
+    h->name[len_name] = '\0';
 
-    strncpy(h->value, value, MAX_HEADER_VALUE - 1);
-    h->value[MAX_HEADER_VALUE - 1] = '\0';
+    size_t len_value = strlen(value);
+    if (len_value >= MAX_HEADER_VALUE) len_value = MAX_HEADER_VALUE - 1;
+    memcpy(h->value, value, len_value);
+    h->value[len_value] = '\0';
 }
 
 static void parse_req_headers(chttpx_request_t *req, char *buffer, ssize_t buffer_len) {
@@ -303,7 +307,7 @@ static chttpx_request_t* parse_req_buffer(char *buffer, ssize_t received) {
     return req;
 }
 
-static char* allowed_origin_cors(const char *req_origin) {
+static const char* allowed_origin_cors(const char *req_origin) {
     if (!serv) {
         log_error("the server is not initialized");
         return NULL;
@@ -510,7 +514,7 @@ static ssize_t read_req(int fd, char *buffer, size_t buffer_size) {
 
     /* Body */
     char *body_start = memmem(buffer, buffer_size, "\r\n\r\n", 4);
-    size_t headers_len = body_start ? (body_start - buffer + 4) : total;
+    size_t headers_len = body_start ? (size_t)(body_start - buffer + 4) : total;
     size_t body_in_buf = total - headers_len;
 
     while (body_in_buf < (size_t)content_length) {
@@ -589,7 +593,6 @@ void cHTTPX_Handle(int client_fd) {
 
     send_response(req, res, client_fd);
 
-cleanup:
     free(req->method);
     free(req->path);
     free(req->body);
