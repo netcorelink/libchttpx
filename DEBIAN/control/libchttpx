@@ -1,0 +1,8 @@
+Package: libchttpx
+Version: 1.0.0
+Section: libs
+Priority: optional
+Architecture: amd64
+Maintainer: You <aworkprogramm@gmail.com>
+Depends: libcjson1 (>= 1.7)
+Description: A powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers.

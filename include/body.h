@@ -5,19 +5,19 @@
  * under the terms of the MIT license. See `libchttpx.c` for details.
  */
 
-#ifndef LIBCHTTPX_UTILS_H
-#define LIBCHTTPX_UTILS_H
+#ifndef BODY_H
+#define BODY_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define cHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
+#include "include/request.h"
 
-char *cHTTPX_strdup(const char *s);
+void _parse_req_body(chttpx_request_t *req, char *buffer, ssize_t buffer_len);
 
 #ifdef __cplusplus
-}
+extern }
 #endif
 
 #endif

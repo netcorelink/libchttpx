@@ -1,0 +1,9 @@
+Package: libchttpx-dev
+Version: 1.0.0
+Section: libdevel
+Priority: optional
+Architecture: amd64
+Depends:
+ libmylib1 (= 1.0.0),
+ libcjson-dev
+Description: Development files for powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers.

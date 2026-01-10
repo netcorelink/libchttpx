@@ -1,5 +1,4 @@
-#include "cHTTPX/libchttpx.h"
-#include "cHTTPX/libchttpx_utils.h"
+#include "include/libchttpx.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -28,6 +27,8 @@ chttpx_response_t home_index(chttpx_request_t *req) {
     return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_HTML, "<h1>This is home page!</h1>"};
 }
 
+#define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 chttpx_response_t create_user(chttpx_request_t *req) {
     user_t user;
 
@@ -37,11 +38,11 @@ chttpx_response_t create_user(chttpx_request_t *req) {
         chttpx_validation_bool("is_admin", false, &user.is_admin)
     };
 
-    if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields))) {
+    if (!cHTTPX_Parse(req, fields, ARRAY_LEN(fields))) {
         return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
     }
 
-    if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields))) {
+    if (!cHTTPX_Validate(req, fields, ARRAY_LEN(fields))) {
         return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
     }
 
@@ -68,7 +69,7 @@ chttpx_response_t get_user(chttpx_request_t *req) {
 }
 
 int main() {
-    chttpx_server_t serv;
+    chttpx_serv_t serv;
 
     if (cHTTPX_Init(&serv, 8080) != 0) {
         printf("Failed to start server\n");
@@ -86,9 +87,9 @@ int main() {
         "http://localhost:8080",
     };
 
-    cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
+    cHTTPX_Cors(allowed_origins, ARRAY_LEN(allowed_origins), NULL, NULL);
 
-    // cHTTPX_MiddlewareUse(auth_middleware);
+    cHTTPX_MiddlewareUse(auth_middleware);
 
     cHTTPX_Route("GET", "/", home_index);
     cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
