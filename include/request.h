@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 #include <stdlib.h>
+#include <stdint.h>
 
 #define BUFFER_SIZE 16384
 
@@ -53,7 +54,7 @@ typedef struct {
     validation_t type;
 
     /* Required field */
-    int required;
+    uint8_t required;
 
     /* Min/Max value string */
     size_t min_length;

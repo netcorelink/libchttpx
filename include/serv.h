@@ -17,6 +17,7 @@ extern "C" {
 #include "include/middlewares.h"
 
 #include <stdio.h>
+#include <stdint.h>
 
 #define MAX_PATH 4096
 
@@ -27,16 +28,16 @@ typedef struct {
 } chttpx_route_t;
 
 typedef struct {
-    unsigned short port;
+    uint16_t port;
 
     size_t server_fd;
 
     size_t max_clients;
 
     /* Server timeout params */
-    unsigned short read_timeout_sec; // 2b
-    unsigned short write_timeout_sec; // 2b
-    unsigned short idle_timeout_sec; // 2b
+    uint16_t read_timeout_sec; // 2b
+    uint16_t write_timeout_sec; // 2b
+    uint16_t idle_timeout_sec; // 2b
 
     /* Routes params */
     chttpx_route_t *routes;
@@ -58,7 +59,7 @@ extern chttpx_serv_t *serv;
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
  * This function must be called before registering routes or starting the server.
  */
-int cHTTPX_Init(chttpx_serv_t *serv_p, unsigned short port);
+int cHTTPX_Init(chttpx_serv_t *serv_p, uint16_t port);
 
 /**
  * Register a route handler for a specific HTTP method and path.

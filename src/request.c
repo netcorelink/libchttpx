@@ -71,7 +71,7 @@ int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t fiel
 
         case FIELD_BOOL:
             if (cJSON_IsBool(item)) {
-                *(int *)f->target = cJSON_IsTrue(item);
+                *(uint8_t *)f->target = cJSON_IsTrue(item);
             }
             break;
         }
@@ -121,7 +121,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
 
         case FIELD_INT:
         case FIELD_BOOL:
-            if (f->required && !*(int *)f->target) {
+            if (f->required && !*(uint8_t *)f->target) {
                 snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required", f->name);
                 return 0;
             }

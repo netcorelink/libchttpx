@@ -99,11 +99,11 @@ static chttpx_route_t* find_route(chttpx_request_t *req) {
     return NULL;
 }
 
-static ssize_t read_req(int fd, char *buffer, size_t buffer_size) {
+static size_t read_req(int fd, char *buffer, size_t buffer_size) {
     size_t total = 0;
 
     while (1) {
-        ssize_t n = recv(fd, buffer+total, buffer_size-1-total, 0);
+        size_t n = recv(fd, buffer+total, buffer_size-1-total, 0);
         if (n <= 0) return -1;
 
         total += n;
@@ -127,7 +127,7 @@ static ssize_t read_req(int fd, char *buffer, size_t buffer_size) {
     size_t body_in_buf = total - headers_len;
 
     while (body_in_buf < (size_t)content_length) {
-        ssize_t n = recv(fd, buffer + total, buffer_size-1-total, 0);
+        size_t n = recv(fd, buffer + total, buffer_size-1-total, 0);
         if (n <= 0) return -1;
 
         total += n;
@@ -226,8 +226,8 @@ static void is_method_options(chttpx_request_t *req, int client_fd) {
     }
 }
 
-static chttpx_request_t* parse_req_buffer(char *buffer, ssize_t received) {
-    chttpx_request_t *req = malloc(sizeof(chttpx_request_t));
+static chttpx_request_t* parse_req_buffer(char *buffer, size_t received) {
+    chttpx_request_t *req = calloc(1, sizeof(chttpx_request_t));
     if (!req) return NULL;
 
     buffer[received] = '\0';
@@ -271,7 +271,7 @@ void cHTTPX_Handle(int client_fd) {
     set_client_timeout(client_fd);
 
     char buf[BUFFER_SIZE];
-    ssize_t received = read_req(client_fd, buf, BUFFER_SIZE);
+    size_t received = read_req(client_fd, buf, BUFFER_SIZE);
     if (received <= 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             chttpx_request_t dummy_req = {0};

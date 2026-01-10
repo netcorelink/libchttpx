@@ -26,7 +26,7 @@
 
 #include <stdio.h>
 
-void _parse_req_body(chttpx_request_t *req, char *buffer, ssize_t buffer_len) {
+void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len) {
     const char *body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start) {
         req->body = NULL;

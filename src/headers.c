@@ -58,7 +58,7 @@ static void add_header(chttpx_request_t *req, const char *name, const char *valu
     h->value[len_value] = '\0';
 }
 
-void _parse_req_headers(chttpx_request_t *req, char *buffer, ssize_t buffer_len) {
+void _parse_req_headers(chttpx_request_t *req, char *buffer, size_t buffer_len) {
     char *line_start = buffer;
     char *buffer_end = buffer + buffer_len;
 

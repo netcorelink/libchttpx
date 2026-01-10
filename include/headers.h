@@ -22,7 +22,7 @@ extern "C" {
  */
 const char* cHTTPX_Header(chttpx_request_t *req, const char *name);
 
-void _parse_req_headers(chttpx_request_t *req, char *buffer, ssize_t buffer_len);
+void _parse_req_headers(chttpx_request_t *req, char *buffer, size_t buffer_len);
 
 #ifdef __cplusplus
 extern }

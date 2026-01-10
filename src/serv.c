@@ -33,7 +33,7 @@ chttpx_serv_t *serv = NULL;
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
  * This function must be called before registering routes or starting the server.
  */
-int cHTTPX_Init(chttpx_serv_t *serv_p, unsigned short port) {
+int cHTTPX_Init(chttpx_serv_t *serv_p, uint16_t port) {
     serv = serv_p;
 
 #ifdef _WIN32

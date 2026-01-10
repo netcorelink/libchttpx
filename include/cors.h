@@ -13,9 +13,10 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <stdint.h>
 
 typedef struct {
-    int enabled;
+    uint8_t enabled;
     /* Allowed urls */
     const char **origins;
     /* Origins count*/

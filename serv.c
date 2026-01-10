@@ -89,7 +89,7 @@ int main() {
 
     cHTTPX_Cors(allowed_origins, ARRAY_LEN(allowed_origins), NULL, NULL);
 
-    cHTTPX_MiddlewareUse(auth_middleware);
+    // cHTTPX_MiddlewareUse(auth_middleware);
 
     cHTTPX_Route("GET", "/", home_index);
     cHTTPX_Route("GET", "/users/{uuid}/{page}", get_user); // ?org=netcorelink
