@@ -36,16 +36,16 @@ extern "C" {
     #include <windows.h>
 #else
     #include <unistd.h>
+    #include <sys/time.h>
     #include <arpa/inet.h>
     #include <sys/socket.h>
-    #include <sys/time.h>
 #endif
 
-#if defined(_WIN32) || defined(_WIN64)
+#if CHTTPX_PLATFORM_WINDOWS
     #define strcasecmp _stricmp
 #endif
 
-#if defined(_WIN32) || defined(_WIN64)
+#if CHTTPX_PLATFORM_WINDOWS
     static void* memmem_win(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
         if (!needlelen) return (void *)haystack;
         if (needlelen > haystacklen) return NULL;

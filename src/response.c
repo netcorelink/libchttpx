@@ -211,7 +211,7 @@ static void send_response(chttpx_request_t *req, chttpx_response_t res, int clie
 
     strcat(buffer, "\r\n");
 
-    printf("HTTP/1.1 %d %s %lld\n", res.status, res.content_type, strlen(res.body));
+    printf("HTTP/1.1 %d %s %ld\n", res.status, res.content_type, strlen(res.body));
 
     send(client_fd, buffer, strlen(buffer), 0);
     send(client_fd, res.body, strlen(res.body), 0);

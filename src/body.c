@@ -37,7 +37,7 @@ void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len) {
 
     size_t content_length = 0;
     const char *cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
-    if (!cl_header || sscanf(cl_header, "Content-Length: %lld", &content_length) != 1) {
+    if (!cl_header || sscanf(cl_header, "Content-Length: %ld", &content_length) != 1) {
         req->body = NULL;
         return;
     }
