@@ -35,9 +35,9 @@ void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len) {
 
     body_start += 4;
 
-    int content_length = 0;
+    size_t content_length = 0;
     const char *cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
-    if (!cl_header || sscanf(cl_header, "Content-Length: %d", &content_length) != 1) {
+    if (!cl_header || sscanf(cl_header, "Content-Length: %lld", &content_length) != 1) {
         req->body = NULL;
         return;
     }
@@ -53,7 +53,11 @@ void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len) {
         return;
     }
 
-    req->body = malloc(content_length + 1);
+    req->body = calloc(content_length + 1, sizeof(char));
+    if (!req->body) {
+        perror("calloc failed");
+        req->body = NULL;
+        return;
+    }
     memcpy(req->body, body_start, content_length);
-    req->body[content_length] = '\0';
 }

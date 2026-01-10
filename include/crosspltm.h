@@ -22,6 +22,7 @@ extern "C" {
 #ifdef CHTTPX_PLATFORM_WINDOWS
     #define close(s) closesocket(s)
 
+    #include <time.h>
     static struct tm *localtime_r(const time_t *timep, struct tm *result) {
         /* WIN32: localtime_s */
         localtime_s(result, timep);
@@ -45,7 +46,7 @@ extern "C" {
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
-    void* memmem_win(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
+    static void* memmem_win(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
         if (!needlelen) return (void *)haystack;
         if (needlelen > haystacklen) return NULL;
 
