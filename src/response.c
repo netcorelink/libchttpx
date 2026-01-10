@@ -263,37 +263,41 @@ static chttpx_request_t* parse_req_buffer(char *buffer, size_t received) {
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void cHTTPX_Handle(int client_fd) {
+void *chttpx_handle(void *arg) {
+    int client_sock = *(int*)arg;
+    free(arg);
+
+
     if (!serv) {
         fprintf(stderr, "Error: server is not initialized\n");
-        return;
+        return NULL;
     }
 
     /* Timeouts */
-    set_client_timeout(client_fd);
+    set_client_timeout(client_sock);
 
     char buf[BUFFER_SIZE];
-    size_t received = read_req(client_fd, buf, BUFFER_SIZE);
+    size_t received = read_req(client_sock, buf, BUFFER_SIZE);
     if (received <= 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             chttpx_request_t dummy_req = {0};
             chttpx_response_t res = cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
-            send_response(&dummy_req, res, client_fd);
+            send_response(&dummy_req, res, client_sock);
         }
 
-        close(client_fd);
-        return;
+        close(client_sock);
+        return NULL;
     }
 
     /* REQUEST */
     chttpx_request_t *req = parse_req_buffer(buf, received);
     if (!req) {
-        close(client_fd);
-        return;
+        close(client_sock);
+        return NULL;
     }
 
     /* ALLOWED OPTIONS METHOD */
-    is_method_options(req, client_fd);
+    is_method_options(req, client_sock);
 
     chttpx_route_t *r = find_route(req);
     chttpx_response_t res;
@@ -305,9 +309,9 @@ void cHTTPX_Handle(int client_fd) {
         /* Use middlewares */
         for (size_t i = 0; i < serv->middleware.middleware_count; i++) {
             if (!serv->middleware.middlewares[i](req, &res)) {
-                send_response(req, res, client_fd);
-                close(client_fd);
-                return;
+                send_response(req, res, client_sock);
+                close(client_sock);
+                return NULL;
             }
         }
 
@@ -317,7 +321,7 @@ void cHTTPX_Handle(int client_fd) {
         res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
     }
 
-    send_response(req, res, client_fd);
+    send_response(req, res, client_sock);
 
     free(req->method);
     free(req->path);
@@ -331,7 +335,8 @@ void cHTTPX_Handle(int client_fd) {
     free(req->query);
     free(req);
 
-    close(client_fd);
+    close(client_sock);
+    return NULL;
 }
 
 /**

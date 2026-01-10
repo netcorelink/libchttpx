@@ -22,6 +22,7 @@
 
 #include "include/serv.h"
 
+#include "include/utils.h"
 #include "include/crosspltm.h"
 
 /* Extern server struct data */
@@ -147,6 +148,22 @@ void cHTTPX_Listen() {
         int client_fd = accept(serv->server_fd, NULL, NULL);
         if (client_fd < 0) continue;
 
-        cHTTPX_Handle(client_fd);
+        /* Get client socket */
+        int *client_sock = malloc(sizeof(int));
+        if (!client_sock) {
+            perror("malloc failed");
+            close(client_fd);
+            continue;
+        }
+        *client_sock = client_fd;
+
+        pthread_t thread_id;
+        _thread_create(&thread_id, chttpx_handle, client_sock);
+        
+        #if defined(_WIN32) || defined(_WIN64)
+        CloseHandle(thread_id);
+        #else
+        pthread_detach(thread_id);
+        #endif
     }
 }
