@@ -1,5 +1,10 @@
 TARGET=chttpx-server
 
+NAME = libchttpx
+VERSION = 1.0.0
+RELEASE_DIR = $(NAME)-$(VERSION)
+TAR = $(RELEASE_DIR).tar.gz
+
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -I.
 TARGET_DLL = libchttpx.dll
@@ -60,7 +65,7 @@ lib-install: libchttpx.so
 	cp libchttpx.so $(DESTDIR)$(PREFIX)/lib
 	cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig
 
-# WINdows lib install
+# WINdows lib compile
 # -
 
 win-lib: $(WIN_OBJS)
@@ -78,6 +83,25 @@ win-lib: $(WIN_OBJS)
 
 	@echo "Files copied to $(WIN_LIB_DIR) successfully!"
 
+# LINux lib compile
+# -
+
+lin-lib: clean libchttpx.so
+	@echo "Preparing release directory..."
+	rm -rf $(RELEASE_DIR)
+	mkdir -p $(RELEASE_DIR)
+
+	cp -r include $(RELEASE_DIR)/
+	cp libchttpx.so $(RELEASE_DIR)/
+	cp libchttpx.pc $(RELEASE_DIR)/
+	cp Makefile $(RELEASE_DIR)/
+	cp README.md $(RELEASE_DIR)/
+
+	@echo "Creating tar.gz..."
+	tar -czf $(TAR) $(RELEASE_DIR)
+
+	@echo "Release package created: $(TAR)"
+
 # LINux run
 # -
 
@@ -94,4 +118,4 @@ run: run-lin
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR) *.a *.dll
-	rm libchttpx.so
+	rm -rf libchttpx.so
