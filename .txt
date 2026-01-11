@@ -1,0 +1,2 @@
+added install/uni on windows
+added install cJSON if not install win/lin
