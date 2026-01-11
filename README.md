@@ -10,7 +10,11 @@
 
 ## Install `libchttpx`
 
-Copy the `cHTTPX/` library folder to your project to work with cHTTPX.
+### Linux
+
+```bash
+curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+```
 
 ## A quick example
 

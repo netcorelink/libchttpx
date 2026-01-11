@@ -41,16 +41,14 @@ win:
 # LINux shared library
 # -
 
-lin-library: $(LIN_OBJS)
+libchttpx.so: $(LIN_OBJS)
 	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS)
 
 # LINux install
 # -
 
 # before execution, you must run `make lin-library`
-lin-install:
-	@mkdir -p $(PKGDIR)
-
+lib-install: libchttpx.so
 	@mkdir -p $(DESTDIR)$(PREFIX)/include/libchttpx
 	@mkdir -p $(DESTDIR)$(PREFIX)/lib/pkgconfig
 
