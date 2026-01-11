@@ -32,8 +32,8 @@ extern "C" {
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     #include <winsock2.h>
-    #include <ws2tcpip.h>
     #include <windows.h>
+    #include <ws2tcpip.h>
 #else
     #include <unistd.h>
     #include <sys/time.h>
@@ -41,11 +41,11 @@ extern "C" {
     #include <sys/socket.h>
 #endif
 
-#if CHTTPX_PLATFORM_WINDOWS
+#ifdef CHTTPX_PLATFORM_WINDOWS
     #define strcasecmp _stricmp
 #endif
 
-#if CHTTPX_PLATFORM_WINDOWS
+#ifdef CHTTPX_PLATFORM_WINDOWS
     static void* memmem_win(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
         if (!needlelen) return (void *)haystack;
         if (needlelen > haystacklen) return NULL;

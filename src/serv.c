@@ -157,9 +157,9 @@ void cHTTPX_Listen() {
         }
         *client_sock = client_fd;
 
-        pthread_t thread_id;
+        thread_t thread_id;
         _thread_create(&thread_id, chttpx_handle, client_sock);
-        
+
         #if defined(_WIN32) || defined(_WIN64)
         CloseHandle(thread_id);
         #else

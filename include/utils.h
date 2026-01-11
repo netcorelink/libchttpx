@@ -42,4 +42,3 @@ inline int _thread_join(thread_t thread) {
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #endif
-
