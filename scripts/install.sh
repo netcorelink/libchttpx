@@ -11,25 +11,6 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "Warning: it's recommended to run with sudo to install info $PREFIX"
 fi
 
-# Check for required commands
-for cmd in git gcc make; do
-    if ! command type $cmd >/dev/null 2>$1; then
-        echo "$cmd is not installed. Attempting to install..."
-        # Debian/Ubuntu
-        if command -v apt-get  >/dev/null 2>&1; then
-            apt-get update
-            apt-get install -y $cmd
-        elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y $cmd
-        elif command -v yum >/dev/null 2>&1; then
-            yum install -y $cmd
-        else
-            echo "Cannot install $cmd automatically. Please install it manually."
-            exit 1
-        fi
-    fi
-done
-
 TMPDIR=$(mktemp -d)
 
 echo "Bulding in $TMPDIR"
