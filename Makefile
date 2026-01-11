@@ -1,7 +1,8 @@
 TARGET=chttpx-server
 
-CC=gcc
-CFLAGS= -Wall -Wextra -O2 -I.
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -I.
+TARGET_DLL = libchttpx.dll
 
 OBJDIR = .out
 BINDIR = .build
@@ -10,6 +11,8 @@ PREFIX ?= /usr/local
 DESTDIR ?= pkg
 PKGDIR ?= /pkg/usr/local
 
+WIN_LIB_DIR = choco/tools
+
 LIN_LDFLAGS =
 WIN_LDFLAGS = -lws2_32
 
@@ -17,6 +20,7 @@ LIN_SRCS = $(shell find . -name '*.c')
 WIN_SRCS = $(wildcard *.c) $(wildcard */*.c) $(wildcard */*/*.c)
 
 LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
+WIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(WIN_SRCS))
 
 # LINux build
 # -
@@ -36,7 +40,7 @@ $(OBJDIR)/%.o: %.c
 
 win:
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -D_WIN32 $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
+	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
 
 # LINux shared library
 # -
@@ -44,7 +48,7 @@ win:
 libchttpx.so: $(LIN_OBJS)
 	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS)
 
-# LINux install
+# LINux lib install
 # -
 
 # before execution, you must run `make lin-library`
@@ -55,6 +59,24 @@ lib-install: libchttpx.so
 	cp include/*.h $(DESTDIR)$(PREFIX)/include/libchttpx
 	cp libchttpx.so $(DESTDIR)$(PREFIX)/lib
 	cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig
+
+# WINdows lib install
+# -
+
+win-lib: $(WIN_OBJS)
+	@echo "Building Windows DLL..."
+	$(CC) -shared -o $(TARGET_DLL) $(WIN_OBJS) -Wl,--out-implib,libchttpx.a -lws2_32
+
+	@echo "Copying files to $(WIN_LIB_DIR)..."
+	@mkdir -p $(WIN_LIB_DIR)
+	@cp $(TARGET_DLL) $(WIN_LIB_DIR)/
+	@cp libchttpx.a $(WIN_LIB_DIR)/
+	@mkdir -p $(WIN_LIB_DIR)/include
+	@cp -r include/* $(WIN_LIB_DIR)/include/
+
+	@rm $(TARGET_DLL) libchttpx.a
+
+	@echo "Files copied to $(WIN_LIB_DIR) successfully!"
 
 # LINux run
 # -
@@ -71,5 +93,5 @@ win-run: win
 run: run-lin
 
 clean:
-	rm -rf $(OBJDIR) $(BINDIR)
+	rm -rf $(OBJDIR) $(BINDIR) *.a *.dll
 	rm libchttpx.so

@@ -12,6 +12,6 @@
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
   </metadata>
   <files>
-    <file src="build\**\*" target="tools" />
+    <file src="tools\**" target="tools"/>
   </files>
 </package>
