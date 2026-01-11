@@ -8,8 +8,6 @@
 
 `netcorelink/libchttpx` a powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers.
 
-# Install `libchttpx`
-
 ## Linux
 
 ```bash
@@ -22,9 +20,9 @@ curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/ins
 iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
 ```
 
-# A quick example
+# libchttpx documentation
 
-## Initial HTTP server
+## - 1 | Initial HTTP server
 
 ```c
 #include <libchttpx/libchttpx.h>
@@ -47,7 +45,7 @@ int main()
 }
 ```
 
-## Server timeouts settings
+## - 2 | Server timeouts settings
 
 ```c
 /* Timeouts */
@@ -56,7 +54,7 @@ serv.write_timeout_sec = 300;
 serv.idle_timeout_sec = 90;
 ```
 
-## CORS Settings
+## - 3 | CORS Settings
 
 `origins` – Array of allowed origin strings (e.g. "https://example.com"). Each origin must match exactly the value of the "Origin" header.
 
@@ -144,6 +142,7 @@ return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"
 ```
 
 ## Http Request
+
 ## Parsing JSON fields
 
 ```c
@@ -202,6 +201,7 @@ const char *origin = cHTTPX_Header(req, "Origin");
 cHTTPX_Header - Get a request header by name.
 
 `Parameters`:
+
 - req – Pointer to the HTTP request.
 - name – Header name (case-insensitive).
 
@@ -216,6 +216,7 @@ const char *uuid = cHTTPX_Param(req, "uuid");
 cHTTPX_Param - Get a route parameter value by its name.
 
 `Parameters`:
+
 - req – Pointer to the HTTP request.
 - name – Name of the route parameter (e.g., "uuid").
 
@@ -228,5 +229,6 @@ const char *sizeParam = cHTTPX_Query(req, "size");
 cHTTPX_Query - Get a query parameter value by name.
 
 `Parameters`:
+
 - req – Pointer to the HTTP request.
 - name – Name of the query parameter.
