@@ -20,9 +20,11 @@ curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/ins
 iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
 ```
 
-# libchttpx documentation
+---
 
-## - 1 | Initial HTTP server
+# `libchttpx` documentation
+
+## 1 | Initial HTTP server
 
 ```c
 #include <libchttpx/libchttpx.h>
@@ -45,7 +47,7 @@ int main()
 }
 ```
 
-## - 2 | Server timeouts settings
+## 2 | Server timeouts settings
 
 ```c
 /* Timeouts */
@@ -54,7 +56,7 @@ serv.write_timeout_sec = 300;
 serv.idle_timeout_sec = 90;
 ```
 
-## - 3 | CORS Settings
+## 3 | CORS Settings
 
 `origins` – Array of allowed origin strings (e.g. "https://example.com"). Each origin must match exactly the value of the "Origin" header.
 
@@ -74,7 +76,7 @@ const char *allowed_origins[] = {
 cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
 ```
 
-## Middlewares
+## 4 | Middlewares
 
 Example: Middleware for checking the authenticated user.
 
@@ -97,7 +99,7 @@ Middlewares are connected `before cHTTPX_Route`.
 cHTTPX_MiddlewareUse(auth_middleware);
 ```
 
-## Routes
+## 5 | Routes
 
 `method` – HTTP method string, e.g., "GET", "POST".
 
@@ -111,7 +113,7 @@ cHTTPX_Route("GET", "/users/{uuid}/{org}", get_user); // ?org=netcorelink
 cHTTPX_Route("POST", "/users", create_user);
 ```
 
-## Handlers
+## 6 | Handlers
 
 HTML page return.
 
@@ -123,7 +125,7 @@ chttpx_response_t home_index(chttpx_request_t *req) {
 }
 ```
 
-## Http Response
+## 7 | Http Response
 
 Option 1
 
@@ -141,9 +143,9 @@ Option 2
 return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\"}}", uuid, page);
 ```
 
-## Http Request
+## 8 | Http Request
 
-## Parsing JSON fields
+## 9 | Parsing JSON fields
 
 ```c
 typedef struct {
@@ -171,7 +173,7 @@ chttpx_response_t create_user(chttpx_request_t *req) {
 
 > When working with cHTTPX_Parse, you need to refer to `req->error_msg`.
 
-## Validations fields
+## 10 | Validations fields
 
 Validates an array of `cHTTPX_FieldValidation` structures.
 
@@ -192,7 +194,7 @@ Example response by validation:
 - Field password min length is 6.
 - Field password max length is 16.
 
-## Get Headers
+## 11 | Get Headers
 
 ```c
 const char *origin = cHTTPX_Header(req, "Origin");
@@ -205,7 +207,7 @@ cHTTPX_Header - Get a request header by name.
 - req – Pointer to the HTTP request.
 - name – Header name (case-insensitive).
 
-## Get Params
+## 12 | Get Params
 
 > The path must contain the /{uuid} construct.
 
@@ -220,7 +222,7 @@ cHTTPX_Param - Get a route parameter value by its name.
 - req – Pointer to the HTTP request.
 - name – Name of the route parameter (e.g., "uuid").
 
-## Get Query params
+## 13 | Get Query params
 
 ```c
 const char *sizeParam = cHTTPX_Query(req, "size");
