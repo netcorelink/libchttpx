@@ -1,5 +1,0 @@
-{
-    "description": "Minimum versions needed of various things.",
-    "make": "4.4",
-    "cJSON": "1.7.13 "
-}

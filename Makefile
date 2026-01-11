@@ -3,45 +3,75 @@ TARGET=chttpx-server
 CC=gcc
 CFLAGS= -Wall -Wextra -O2 -I.
 
-OBJDIR=.out
-BINDIR=.build
+OBJDIR = .out
+BINDIR = .build
 
-ifeq ($(OS),Windows_NT)
-    IS_WIN = 1
-else
-    IS_WIN = 0
-endif
+PREFIX ?= /usr/local
+DESTDIR ?= pkg
+PKGDIR ?= /pkg/usr/local
 
-ifeq ($(IS_WIN),1)
-    CFLAGS += -D_WIN32
-    LDFLAGS=-lws2_32
-    SRCS = $(wildcard *.c) $(wildcard */*.c) $(wildcard */*/*.c)
-else
-    LDFLAGS =
-    SRCS = $(shell find . -name '*.c')
-    OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS))
-endif
+LIN_LDFLAGS =
+WIN_LDFLAGS = -lws2_32
 
-all: $(BINDIR)/$(TARGET)
+LIN_SRCS = $(shell find . -name '*.c')
+WIN_SRCS = $(wildcard *.c) $(wildcard */*.c) $(wildcard */*/*.c)
 
-ifeq ($(IS_WIN),0)
-$(BINDIR)/$(TARGET): $(OBJS)
+LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
+
+# LINux build
+# -
+
+lin: $(BINDIR)/$(TARGET)
+
+$(BINDIR)/$(TARGET): $(LIN_OBJS)
 	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(LIN_OBJS) $(LIN_LDFLAGS)
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-endif
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
-ifeq ($(IS_WIN),1)
-$(BINDIR)/$(TARGET):
+# WINdows build
+# -
+
+win:
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) $(SRCS) -o $@ $(LDFLAGS)
-endif
+	$(CC) $(CFLAGS) -D_WIN32 $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
 
-run: all
+# LINux shared library
+# -
+
+lin-library: $(LIN_OBJS)
+	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS)
+
+# LINux install
+# -
+
+# before execution, you must run `make lin-library`
+lin-install:
+	@mkdir -p $(PKGDIR)
+
+	@mkdir -p $(DESTDIR)$(PREFIX)/include/libchttpx
+	@mkdir -p $(DESTDIR)$(PREFIX)/lib/pkgconfig
+
+	cp include/*.h $(DESTDIR)$(PREFIX)/include/libchttpx
+	cp libchttpx.so $(DESTDIR)$(PREFIX)/lib
+	cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig
+
+# LINux run
+# -
+
+lin-run: lin
 	$(BINDIR)/$(TARGET)
+
+# WINdows run
+# -
+
+win-run: win
+	$(BINDIR)\$(TARGET).exe
+
+run: run-lin
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)
+	rm libchttpx.so
