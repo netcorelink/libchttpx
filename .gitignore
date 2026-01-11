@@ -8,6 +8,7 @@
 *.elf
 *.zip
 *.tar
+*.tar.gz
 
 *.build
 

@@ -4,7 +4,7 @@
 set -e
 
 PREFIX="/usr/local"
-REPO="https://github.com/netcorelink/libchttpx.git"
+RELEASE_URL="https://github.com/netcorelink/libchttpx/releases/latest/download/libchttpx-dev.tar.gz"
 
 # root
 if [ "$(id -u)" -ne 0 ]; then
@@ -39,15 +39,14 @@ TMPDIR=$(mktemp -d)
 echo "Bulding in $TMPDIR"
 cd "$TMPDIR"
 
-echo "Cloning libchttpx repository...."
-git clone --depth=1 "$REPO"
-cd libchttpx
+echo "Downloading libchttpx release..."
+curl -L "$RELEASE_URL" -o libchttpx.tar.gz
 
-mkdir -p .build
-mkdir -p .out
+echo "Extracting..."
+tar -xzf libchttpx.tar.gz
+cd libchttpx-*
 
-echo "Building libchttpx...."
-make libchttpx.so
+mkdir -p .build .out
 
 # Install headers
 echo "Installing headers...."
@@ -71,7 +70,7 @@ fi
 
 echo "libchttpx installed successfully!"
 echo "Use it via:"
-echo "  gcc main.c \`pkg-config --cflags --libs libchttpx\`"
+echo "  gcc main.c \$(pkg-config --cflags --libs libchttpx)"
 
 cd /
 rm -rf "$TMPDIR"

@@ -1,8 +1,6 @@
 TARGET=chttpx-server
 
-NAME = libchttpx
-VERSION = 1.0.0
-RELEASE_DIR = $(NAME)-$(VERSION)
+RELEASE_DIR = libchttpx-dev
 TAR = $(RELEASE_DIR).tar.gz
 
 CC = gcc
@@ -18,10 +16,10 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS = -lcjson
+LIN_LDFLAGS =
 WIN_LDFLAGS = -lws2_32
 
-LIN_SRCS = $(shell find . -name '*.c')
+LIN_SRCS = $(filter-out ./lib/cjson/cJSON.c, $(shell find . -name '*.c'))
 WIN_SRCS = $(wildcard *.c) $(wildcard */*.c) $(wildcard */*/*.c)
 
 LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
@@ -100,6 +98,8 @@ lin-lib: clean libchttpx.so
 	@echo "Creating tar.gz..."
 	tar -czf $(TAR) $(RELEASE_DIR)
 
+	rm -rf $(RELEASE_DIR)
+
 	@echo "Release package created: $(TAR)"
 
 # LINux run
@@ -118,4 +118,5 @@ run: run-lin
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR) *.a *.dll
+	rm -rf $(RELEASE_DIR)
 	rm -rf libchttpx.so
