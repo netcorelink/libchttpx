@@ -11,7 +11,7 @@ PREFIX ?= /usr/local
 DESTDIR ?= pkg
 PKGDIR ?= /pkg/usr/local
 
-WIN_LIB_DIR = choco/tools
+WIN_LIB_DIR = tools
 
 LIN_LDFLAGS = -lcjson
 WIN_LDFLAGS = -lws2_32
@@ -51,7 +51,7 @@ libchttpx.so: $(LIN_OBJS)
 # LINux lib install
 # -
 
-# before execution, you must run `make lin-library`
+# before execution, you must run `make libchttpx.so`
 lib-install: libchttpx.so
 	@mkdir -p $(DESTDIR)$(PREFIX)/include/libchttpx
 	@mkdir -p $(DESTDIR)$(PREFIX)/lib/pkgconfig
