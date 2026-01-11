@@ -13,7 +13,7 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = choco/tools
 
-LIN_LDFLAGS =
+LIN_LDFLAGS = -lcjson
 WIN_LDFLAGS = -lws2_32
 
 LIN_SRCS = $(shell find . -name '*.c')

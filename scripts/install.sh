@@ -11,6 +11,29 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "Warning: it's recommended to run with sudo to install info $PREFIX"
 fi
 
+# cjson
+if pkg-config --exists cjson; then
+    echo "cjson already installed."
+else
+    echo "cjson not found. Installing...."
+
+    if command -v apt >/dev/null 2>&1; then
+        sudo apt update
+        sudo apt install -y libcjson-dev
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm cjson
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y cjson-devel
+    elif command -v zypper >/dev/null 2>&1; then
+        sudo zypper install -y cjson-devel
+    else
+        echo "Unsupported package manager. Install cjson manually."
+        exit 1
+    fi
+fi
+
+echo "cjson installed successfully!"
+
 TMPDIR=$(mktemp -d)
 
 echo "Bulding in $TMPDIR"
