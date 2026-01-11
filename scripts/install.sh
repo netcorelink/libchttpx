@@ -13,7 +13,7 @@ fi
 
 # Check for required commands
 for cmd in git gcc make; do
-    if ! command -v $cmd >/dev/null 2>$1; then
+    if ! command type $cmd >/dev/null 2>$1; then
         echo "$cmd is not installed. Attempting to install..."
         # Debian/Ubuntu
         if command -v apt-get  >/dev/null 2>&1; then
