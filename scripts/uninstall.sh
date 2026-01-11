@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: curl -s https://github.com/netcorelink/libchttpx/scripts/uninstall.sh | sudo sh
+# Usage: curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/uninstall.sh | sudo sh
 
 set -e
 

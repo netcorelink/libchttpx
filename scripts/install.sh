@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: curl -s https://github.com/netcorelink/libchttpx/scripts/install.sh | sudo sh
+# Usage: curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
 
 set -e
 

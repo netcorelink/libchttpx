@@ -1,4 +1,4 @@
-#include "include/libchttpx.h"
+#include <libchttpx/libchttpx.h>
 
 #include <string.h>
 #include <stdio.h>

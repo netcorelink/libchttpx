@@ -21,6 +21,8 @@ curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/ins
 ### Initial HTTP server
 
 ```c
+#include <libchttpx/libchttpx.h>
+
 int main()
 {
   chttpx_server_t serv;
