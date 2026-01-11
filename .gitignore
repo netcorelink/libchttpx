@@ -6,6 +6,8 @@
 *.ko
 *.obj
 *.elf
+*.zip
+*.tar
 
 *.build
 
