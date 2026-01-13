@@ -26,9 +26,11 @@
 
 #include <stdio.h>
 
-void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len) {
-    const char *body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
-    if (!body_start) {
+void _parse_req_body(chttpx_request_t* req, char* buffer, size_t buffer_len)
+{
+    const char* body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
+    if (!body_start)
+    {
         req->body = NULL;
         return;
     }
@@ -36,25 +38,29 @@ void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len) {
     body_start += 4;
 
     size_t content_length = 0;
-    const char *cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
-    if (!cl_header || sscanf(cl_header, "Content-Length: %zu", &content_length) != 1) {
+    const char* cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
+    if (!cl_header || sscanf(cl_header, "Content-Length: %zu", &content_length) != 1)
+    {
         req->body = NULL;
         return;
     }
 
-    if (content_length <= 0) {
+    if (content_length <= 0)
+    {
         req->body = NULL;
         return;
     }
 
     size_t body_in_buffer = buffer_len - (body_start - buffer);
-    if (body_in_buffer < (size_t)content_length) {
-        req->body =  NULL;
+    if (body_in_buffer < (size_t)content_length)
+    {
+        req->body = NULL;
         return;
     }
 
     req->body = calloc(content_length + 1, sizeof(char));
-    if (!req->body) {
+    if (!req->body)
+    {
         perror("calloc failed");
         req->body = NULL;
         return;

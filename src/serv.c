@@ -22,11 +22,11 @@
 
 #include "include/serv.h"
 
-#include "include/utils.h"
 #include "include/crosspltm.h"
+#include "include/utils.h"
 
 /* Extern server struct data */
-chttpx_serv_t *serv = NULL;
+chttpx_serv_t* serv = NULL;
 
 /**
  * Initialize the HTTP server.
@@ -34,12 +34,14 @@ chttpx_serv_t *serv = NULL;
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
  * This function must be called before registering routes or starting the server.
  */
-int cHTTPX_Init(chttpx_serv_t *serv_p, uint16_t port) {
+int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port)
+{
     serv = serv_p;
 
 #ifdef _WIN32
     WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+    {
         perror("WSAStartup");
         return -1;
     }
@@ -59,29 +61,27 @@ int cHTTPX_Init(chttpx_serv_t *serv_p, uint16_t port) {
     }
 
     int opt = 1;
-    setsockopt(
-        serv->server_fd,
-        SOL_SOCKET,
-        SO_REUSEADDR,
+    setsockopt(serv->server_fd, SOL_SOCKET, SO_REUSEADDR,
 #ifdef _WIN32
-        (const char*)&opt,
+               (const char*)&opt,
 #else
-        &opt,
+               &opt,
 #endif
-        sizeof(opt)
-    );
+               sizeof(opt));
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(serv->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (bind(serv->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+    {
         perror("bind");
         exit(1);
     }
 
-    if (listen(serv->server_fd, 128) < 0) {
+    if (listen(serv->server_fd, 128) < 0)
+    {
         perror("listen");
         exit(1);
     }
@@ -105,20 +105,25 @@ int cHTTPX_Init(chttpx_serv_t *serv_p, uint16_t port) {
  * Register a route handler for a specific HTTP method and path.
  * @param method HTTP method string, e.g., "GET", "POST".
  * @param path URL path to match, e.g., "/users".
- * @param handler Function pointer to handle the request. The handler should return httpx_response_t.
- * This allows the server to call the appropriate function when a matching request is received.
+ * @param handler Function pointer to handle the request. The handler should return
+ * httpx_response_t. This allows the server to call the appropriate function when a matching request
+ * is received.
  */
-void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler) {
-    if (!serv) {
+void cHTTPX_Route(const char* method, const char* path, chttpx_handler_t handler)
+{
+    if (!serv)
+    {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
     }
 
-    if (serv->routes_count == serv->routes_capacity) {
+    if (serv->routes_count == serv->routes_capacity)
+    {
         size_t new_capacity = (serv->routes_capacity == 0) ? 4 : serv->routes_capacity * 2;
-        chttpx_route_t *new_routes = realloc(serv->routes, sizeof(chttpx_route_t) * new_capacity);
+        chttpx_route_t* new_routes = realloc(serv->routes, sizeof(chttpx_route_t) * new_capacity);
 
-        if (!new_routes) {
+        if (!new_routes)
+        {
             perror("realloc routes");
             exit(1);
         }
@@ -138,19 +143,24 @@ void cHTTPX_Route(const char *method, const char *path, chttpx_handler_t handler
  * This function blocks indefinitely, accepting new client connections
  * and dispatching them to cHTTPX_Handle.
  */
-void cHTTPX_Listen() {
-    if (!serv) {
+void cHTTPX_Listen()
+{
+    if (!serv)
+    {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
     }
 
-    while(1) {
+    while (1)
+    {
         int client_fd = accept(serv->server_fd, NULL, NULL);
-        if (client_fd < 0) continue;
+        if (client_fd < 0)
+            continue;
 
         /* Get client socket */
-        int *client_sock = malloc(sizeof(int));
-        if (!client_sock) {
+        int* client_sock = malloc(sizeof(int));
+        if (!client_sock)
+        {
             perror("malloc failed");
             close(client_fd);
             continue;
@@ -160,10 +170,10 @@ void cHTTPX_Listen() {
         thread_t thread_id;
         _thread_create(&thread_id, chttpx_handle, client_sock);
 
-        #if defined(_WIN32) || defined(_WIN64)
+#if defined(_WIN32) || defined(_WIN64)
         CloseHandle(thread_id);
-        #else
+#else
         pthread_detach(thread_id);
-        #endif
+#endif
     }
 }

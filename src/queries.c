@@ -34,11 +34,15 @@
  * @param name  Name of the query parameter.
  * @return Pointer to the parameter value string if found, or NULL if not present.
  */
-const char* cHTTPX_Query(chttpx_request_t *req, const char *name) {
-    if (!req || !req->query || req->query_count == 0) return NULL;
+const char* cHTTPX_Query(chttpx_request_t* req, const char* name)
+{
+    if (!req || !req->query || req->query_count == 0)
+        return NULL;
 
-    for (size_t i = 0; i < req->query_count; i++) {
-        if (strcmp(req->query[i].name, name) == 0) {
+    for (size_t i = 0; i < req->query_count; i++)
+    {
+        if (strcmp(req->query[i].name, name) == 0)
+        {
             return req->query[i].value;
         }
     }
@@ -46,18 +50,21 @@ const char* cHTTPX_Query(chttpx_request_t *req, const char *name) {
     return NULL;
 }
 
-void _parse_req_query(chttpx_request_t *req, char *query) {
-    char *token = strtok(query, "&");
+void _parse_req_query(chttpx_request_t* req, char* query)
+{
+    char* token = strtok(query, "&");
 
-    while (token) {
-        char *eq = strchr(token, '=');
-        if (eq) {
+    while (token)
+    {
+        char* eq = strchr(token, '=');
+        if (eq)
+        {
             *eq = '\0';
 
             req->query = realloc(req->query, sizeof(chttpx_query_t) * (req->query_count + 1));
 
             req->query[req->query_count].name = strdup(token);
-            req->query[req->query_count].value = strdup(eq+1);
+            req->query[req->query_count].value = strdup(eq + 1);
             req->query_count++;
         }
 

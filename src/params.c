@@ -31,11 +31,15 @@
  *
  * @return Pointer to the parameter value string if found, or NULL if the parameter does not exist.
  */
-const char* cHTTPX_Param(chttpx_request_t *req, const char *name) {
-    if (!req || !name || req->param_count == 0) return NULL;
+const char* cHTTPX_Param(chttpx_request_t* req, const char* name)
+{
+    if (!req || !name || req->param_count == 0)
+        return NULL;
 
-    for (size_t i = 0; i < req->param_count; i++) {
-        if (strcmp(req->params[i].name, name) == 0) {
+    for (size_t i = 0; i < req->param_count; i++)
+    {
+        if (strcmp(req->params[i].name, name) == 0)
+        {
             return req->params[i].value;
         }
     }

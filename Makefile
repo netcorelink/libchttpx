@@ -6,6 +6,7 @@ TAR = $(RELEASE_DIR).tar.gz
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -I.
 TARGET_DLL = libchttpx.dll
+CLANG_FORMAT = clang-format
 
 OBJDIR = .out
 BINDIR = .build
@@ -113,6 +114,20 @@ lin-run: lin
 
 win-run: win
 	$(BINDIR)\$(TARGET).exe
+
+# LINux format
+# -
+
+lin-format:
+	@echo ">> Formatting clang source files"
+	$(CLANG_FORMAT) -i $(LIN_SRCS)
+
+# WINdows format
+# -
+
+win-format:
+	@echo ">> Formatting clang source files"
+	$(CLANG_FORMAT) -i $(WIN_SRCS)
 
 run: run-lin
 

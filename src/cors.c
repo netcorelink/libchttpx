@@ -22,8 +22,8 @@
 
 #include "include/cors.h"
 
-#include "include/serv.h"
 #include "include/crosspltm.h"
+#include "include/serv.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,8 +47,11 @@
  *                       If NULL, defaults to:
  *                       "Content-Type"
  */
-void cHTTPX_Cors(const char **origins, size_t origins_count, const char *methods, const char *headers) {
-    if (!serv) {
+void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods,
+                 const char* headers)
+{
+    if (!serv)
+    {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
     }

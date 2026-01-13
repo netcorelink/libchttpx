@@ -24,10 +24,10 @@
 
 #include "include/crosspltm.h"
 
-#if defined(_WIN32) || defined (_WIN64)
-    #include "lib/cjson/cJSON.h"
+#if defined(_WIN32) || defined(_WIN64)
+#include "lib/cjson/cJSON.h"
 #else
-    #include <cjson/cJSON.h>
+#include <cjson/cJSON.h>
 #endif
 
 #include <stdio.h>
@@ -40,38 +40,45 @@
  * @return 1 if parsing and validation succeed, 0 if there is an error.
  * This function automatically checks required fields, string length, boolean types, etc.
  */
-int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count) {
-    cJSON *json = cJSON_Parse(req->body);
-    if (!json) {
+int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
+{
+    cJSON* json = cJSON_Parse(req->body);
+    if (!json)
+    {
         snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON");
         return 0;
     }
 
-    for (size_t i = 0; i < field_count; i++) {
-        chttpx_validation_t *f = &fields[i];
-        cJSON *item = cJSON_GetObjectItem(json, f->name);
+    for (size_t i = 0; i < field_count; i++)
+    {
+        chttpx_validation_t* f = &fields[i];
+        cJSON* item = cJSON_GetObjectItem(json, f->name);
 
-        if (!item) {
+        if (!item)
+        {
             continue;
         }
 
         switch (f->type)
         {
         case FIELD_STRING:
-            if (cJSON_IsString(item)) {
-                *(char **)f->target = strdup(item->valuestring);
+            if (cJSON_IsString(item))
+            {
+                *(char**)f->target = strdup(item->valuestring);
             }
             break;
 
         case FIELD_INT:
-            if (cJSON_IsNumber(item)) {
-                *(int *)f->target = item->valueint;
+            if (cJSON_IsNumber(item))
+            {
+                *(int*)f->target = item->valueint;
             }
             break;
 
         case FIELD_BOOL:
-            if (cJSON_IsBool(item)) {
-                *(uint8_t *)f->target = cJSON_IsTrue(item);
+            if (cJSON_IsBool(item))
+            {
+                *(uint8_t*)f->target = cJSON_IsTrue(item);
             }
             break;
         }
@@ -86,20 +93,25 @@ int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t fiel
  * This function ensures that required fields are present, string lengths are within limits,
  * and basic validation for integers and boolean fields is performed.
  */
-int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count) {
-    for (size_t i = 0; i < field_count; i++) {
-        chttpx_validation_t *f = &fields[i];
+int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
+{
+    for (size_t i = 0; i < field_count; i++)
+    {
+        chttpx_validation_t* f = &fields[i];
 
-        char *v;
+        char* v;
 
         switch (f->type)
         {
         case FIELD_STRING:
-            v = *(char **)f->target;
+            v = *(char**)f->target;
 
-            if (!v) {
-                if (f->required) {
-                    snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required", f->name);
+            if (!v)
+            {
+                if (f->required)
+                {
+                    snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required",
+                             f->name);
                     return 0;
                 }
                 break;
@@ -107,13 +119,17 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
 
             size_t len = strlen(v);
 
-            if (f->min_length && len < f->min_length) {
-                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' min length is %zu", f->name, f->min_length);
+            if (f->min_length && len < f->min_length)
+            {
+                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' min length is %zu",
+                         f->name, f->min_length);
                 return 0;
             }
 
-            if (f->max_length && len > f->max_length) {
-                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' max length is %zu", f->name, f->max_length);
+            if (f->max_length && len > f->max_length)
+            {
+                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' max length is %zu",
+                         f->name, f->max_length);
                 return 0;
             }
 
@@ -121,7 +137,8 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
 
         case FIELD_INT:
         case FIELD_BOOL:
-            if (f->required && !*(uint8_t *)f->target) {
+            if (f->required && !*(uint8_t*)f->target)
+            {
                 snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required", f->name);
                 return 0;
             }

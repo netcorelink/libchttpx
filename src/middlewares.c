@@ -22,12 +22,12 @@
 
 #include "include/middlewares.h"
 
-#include "include/serv.h"
-#include "include/http.h"
+#include "include/crosspltm.h"
 #include "include/headers.h"
+#include "include/http.h"
 #include "include/request.h"
 #include "include/response.h"
-#include "include/crosspltm.h"
+#include "include/serv.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -66,13 +66,16 @@ static uint16_t rl_window_sec = 1;
  *
  * @param mw Middleware function pointer.
  */
-void cHTTPX_MiddlewareUse(chttpx_middleware_t mw) {
-    if (!serv) {
+void cHTTPX_MiddlewareUse(chttpx_middleware_t mw)
+{
+    if (!serv)
+    {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
     }
 
-    if (serv->middleware.middleware_count >= MAX_MIDDLEWARES) {
+    if (serv->middleware.middleware_count >= MAX_MIDDLEWARES)
+    {
         fprintf(stderr, "Error: the number of middleware (MAX_MIDDLEWARES) has been exceeded\n");
         return;
     }
@@ -80,24 +83,30 @@ void cHTTPX_MiddlewareUse(chttpx_middleware_t mw) {
     serv->middleware.middlewares[serv->middleware.middleware_count++] = mw;
 }
 
-static uint32_t rate_limiter_hash(const char *ip) {
+static uint32_t rate_limiter_hash(const char* ip)
+{
     uint32_t hash = 5381;
     int char_v;
 
-    while ((char_v = *ip++)) hash = ((hash << 5) + hash) + char_v;
+    while ((char_v = *ip++))
+        hash = ((hash << 5) + hash) + char_v;
     return hash % MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE;
 }
 
-static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t *req, chttpx_response_t *res) {
-    const char *client_ip = cHTTPX_ClientIP(req);
-    if (!client_ip) return next;
+static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t* req,
+                                                          chttpx_response_t* res)
+{
+    const char* client_ip = cHTTPX_ClientIP(req);
+    if (!client_ip)
+        return next;
 
     LOCK_MUTEX();
 
     uint32_t indx = rate_limiter_hash(client_ip);
-    rate_limiter_entry_t *entry = &rate_limits[indx];
+    rate_limiter_entry_t* entry = &rate_limits[indx];
 
-    if (strcmp(rate_limit_ips[indx], client_ip) != 0) {
+    if (strcmp(rate_limit_ips[indx], client_ip) != 0)
+    {
         strncpy(rate_limit_ips[indx], client_ip, sizeof(rate_limit_ips[indx]) - 1);
         rate_limit_ips[indx][sizeof(rate_limit_ips[indx]) - 1] = 0;
 
@@ -107,15 +116,18 @@ static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t *req,
 
     time_t now = time(NULL);
 
-    if (now - entry->window_start >= rl_window_sec) {
+    if (now - entry->window_start >= rl_window_sec)
+    {
         entry->window_start = now;
         entry->requests = 0;
     }
 
     entry->requests++;
 
-    if (entry->requests > rl_max_requests) {
-        *res = cHTTPX_JsonResponse(cHTTPX_StatusTooManyRequests, "{\"error\": \"too many requests\"}");
+    if (entry->requests > rl_max_requests)
+    {
+        *res =
+            cHTTPX_JsonResponse(cHTTPX_StatusTooManyRequests, "{\"error\": \"too many requests\"}");
 
         UNLOCK_MUTEX();
         return out;
@@ -127,14 +139,15 @@ static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t *req,
 
 /**
  * @brief Configure the rate limiter and register the middleware.
- * 
+ *
  * Example:
  * cHTTPX_MiddlewareRateLimiter(10, 1); // 10 requests per second
- * 
+ *
  * @param max_requests maximum number of requests
  * @param window_sec time window in seconds
  */
-void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec) {
+void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec)
+{
     rl_max_requests = max_requests;
     rl_window_sec = window_sec;
 
