@@ -42,6 +42,19 @@ const char* cHTTPX_Header(chttpx_request_t *req, const char *name) {
     return NULL;
 }
 
+/**
+ * @brief Get the client's IP from the request.
+ * 
+ * @param req a pointer to the query structure
+ * @return const char* Client's IP
+ */
+const char *cHTTPX_ClientIP(chttpx_request_t *req) {
+    const char *ip = cHTTPX_Header(req, "X-Forwarded-For");
+    if (!ip) ip = cHTTPX_Header(req, "Remote-Addr");
+
+    return ip;
+}
+
 static void add_header(chttpx_request_t *req, const char *name, const char *value) {
     if (req->headers_count >= MAX_HEADERS) return;
 

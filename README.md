@@ -81,15 +81,15 @@ cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
 Example: Middleware for checking the authenticated user.
 
 ```c
-int auth_middleware(chttpx_request_t *req, chttpx_response_t *res) {
+chttpx_middleware_result_t auth_middleware(chttpx_request_t *req, chttpx_response_t *res) {
   const char *token = cHTTPX_Header(req, "Auth-Token");
 
   if (!token) {
     *res = cHTTPX_JsonResponse(cHTTPX_StatusUnauthorized, "{\"error\": \"unauthorized\"}");
-    return 0;
+    return out;
   }
 
-  return 1;
+  return next;
 }
 ```
 
