@@ -52,7 +52,7 @@ static pthread_mutex_t rate_limit_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t rl_max_requests = 5;
 static uint16_t rl_window_sec = 1;
 
-static const char *path_logfile;
+static const char* path_logfile;
 
 /**
  * Register a global middleware function.
@@ -98,18 +98,14 @@ static uint32_t rate_limiter_hash(const char* ip)
 static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t* req,
                                                           chttpx_response_t* res)
 {
-    const char* client_ip = cHTTPX_ClientIP(req);
-    if (!client_ip)
-        return next;
-
     LOCK_MUTEX();
 
-    uint32_t indx = rate_limiter_hash(client_ip);
+    uint32_t indx = rate_limiter_hash(req->client_ip);
     rate_limiter_entry_t* entry = &rate_limits[indx];
 
-    if (strcmp(rate_limit_ips[indx], client_ip) != 0)
+    if (strcmp(rate_limit_ips[indx], req->client_ip) != 0)
     {
-        strncpy(rate_limit_ips[indx], client_ip, sizeof(rate_limit_ips[indx]) - 1);
+        strncpy(rate_limit_ips[indx], req->client_ip, sizeof(rate_limit_ips[indx]) - 1);
         rate_limit_ips[indx][sizeof(rate_limit_ips[indx]) - 1] = 0;
 
         entry->window_start = time(NULL);
@@ -128,8 +124,7 @@ static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t* req,
 
     if (entry->requests > rl_max_requests)
     {
-        *res =
-            cHTTPX_JsonResponse(cHTTPX_StatusTooManyRequests, "{\"error\": \"too many requests\"}");
+        *res = cHTTPX_ResJson(cHTTPX_StatusTooManyRequests, "{\"error\": \"too many requests\"}");
 
         UNLOCK_MUTEX();
         return out;
@@ -158,14 +153,16 @@ void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec)
     cHTTPX_MiddlewareUse(rate_limiter_middleware);
 }
 
-static chttpx_middleware_result_t logging_middleware(chttpx_request_t *req, chttpx_response_t *res)
+static chttpx_middleware_result_t logging_middleware(chttpx_request_t* req, chttpx_response_t* res)
 {
     return next;
 }
 
-void cHTTPX_MiddlewareLogging(const char *path)
+void cHTTPX_MiddlewareLogging(const char* path)
 {
-    if (!path) return;
+    if (!path)
+        return;
+
     path_logfile = path;
 
     cHTTPX_MiddlewareUse(logging_middleware);

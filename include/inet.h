@@ -5,19 +5,19 @@
  * under the terms of the MIT license. See `libchttpx.c` for details.
  */
 
-#ifndef BODY_H
-#define BODY_H
+#ifndef INET_H
+#define INET_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "include/request.h"
+#include <netinet/in.h>
 
-void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len);
+const char* cHTTPX_ClientInetIP(int client_fd);
 
 #ifdef __cplusplus
-extern }
+}
 #endif
 
 #endif

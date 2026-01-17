@@ -22,17 +22,19 @@
 
 #include "include/response.h"
 
+#include "include/inet.h"
 #include "include/body.h"
-#include "include/crosspltm.h"
-#include "include/headers.h"
 #include "include/http.h"
-#include "include/queries.h"
 #include "include/serv.h"
+#include "include/media.h"
+#include "include/headers.h"
+#include "include/queries.h"
+#include "include/crosspltm.h"
 
 #include <errno.h>
 #include <stdarg.h>
 
-chttpx_response_t cHTTPX_JsonResponse(int status, const char* fmt, ...);
+chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...);
 
 static int match_route(const char* template, const char* path, chttpx_param_t* params,
                        int* param_count)
@@ -229,13 +231,13 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
     char buffer[BUFFER_SIZE];
 
     /* Cors */
-    const char *allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
+    const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
 
     int n = snprintf(buffer, sizeof(buffer),
                      "HTTP/1.1 %d OK\r\n"
                      "Content-Type: %s\r\n"
                      "Content-Length: %zu\r\n",
-                     res.status, res.content_type, strlen(res.body));
+                     res.status, res.content_type, res.body_size);
 
     if (allowed_origin)
     {
@@ -251,43 +253,40 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
     /* LOG */
     /* --- */
     time_t rawtime;
-    struct tm *timeinfo;
+    struct tm* timeinfo;
     char time_str[64];
 
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%b/%Y:%H:%M:%S %z", timeinfo);
 
-    const char *client_ip = cHTTPX_ClientIP(req);
-
-    printf("[%s] - - [%s] \"%s %s %s\" %d %zu \"%s\"\n",
-            client_ip,
-            time_str,
-            req->protocol[0] ? req->protocol : "HTTP/1.1",
-            req->method ? req->method : "-",
-            req->path ? req->path : "-",
-            res.status,
-            strlen(res.body),
-            req->user_agent[0] ? (const char *)req->user_agent : "-"
-    );
+    printf("[%s] - - [%s] \"%s %s %s\" %d %zu \"%s\"\n", req->client_ip, time_str,
+           req->protocol[0] ? req->protocol : "HTTP/1.1", req->method ? req->method : "-",
+           req->path ? req->path : "-", res.status, res.body_size,
+           req->user_agent[0] ? (const char*)req->user_agent : "-");
     /* --- */
     /* LOG */
 
     send(client_fd, buffer, strlen(buffer), 0);
-    send(client_fd, res.body, strlen(res.body), 0);
+
+    if (res.body && res.body_size > 0)
+        send(client_fd, res.body, res.body_size, 0);
 }
 
 static void is_method_options(chttpx_request_t* req, int client_fd)
 {
     if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
     {
-        chttpx_response_t res = {.status = 204, .content_type = "text/plain", .body = ""};
+        chttpx_response_t res = {.status = cHTTPX_StatusNoContent,
+                                 .content_type = cHTTPX_CTYPE_TEXT,
+                                 .body = NULL,
+                                 .body_size = 0};
         send_response(req, res, client_fd);
         close(client_fd);
     }
 }
 
-static chttpx_request_t* parse_req_buffer(char* buffer, size_t received)
+static chttpx_request_t* parse_req_buffer(int client_fd, char* buffer, size_t received)
 {
     chttpx_request_t* req = calloc(1, sizeof(chttpx_request_t));
     if (!req)
@@ -299,25 +298,31 @@ static chttpx_request_t* parse_req_buffer(char* buffer, size_t received)
     buffer[received] = '\0';
 
     char method[16], path[MAX_PATH];
-    sscanf(buffer, "%15s %4096s", method, path);
+    sscanf(buffer, "%15s %4095s", method, path);
 
     memset(req, 0, sizeof(*req));
     req->method = strdup(method);
     req->path = strdup(path);
 
+    /* Client IP */
+    const char* client_ip = cHTTPX_ClientInetIP(client_fd);
+    if (client_ip)
+    {
+        snprintf(req->client_ip, sizeof(req->client_ip), "%s", client_ip);
+    }
+
     /* Parse headers */
     _parse_req_headers(req, buffer, received);
 
     /* User-Agent */
-    const char *user_agent = cHTTPX_Header(req, "User-Agent");
+    const char* user_agent = cHTTPX_Header(req, "User-Agent");
     if (user_agent)
     {
-        strncpy(req->user_agent, user_agent, 512-1);
-        req->user_agent[512-1] = '\0';
+        snprintf(req->user_agent, sizeof(req->user_agent), "%s", user_agent);
     }
 
     /* Protocol */
-    const char *host = cHTTPX_Header(req, "Host");
+    const char* host = cHTTPX_Header(req, "Host");
     if (host)
     {
         strncpy(req->protocol, "HTTP/1.1", sizeof(req->protocol) - 1);
@@ -333,6 +338,9 @@ static chttpx_request_t* parse_req_buffer(char* buffer, size_t received)
 
     /* Parse body request */
     _parse_req_body(req, buffer, received);
+
+    /* Parse media request */
+    _parse_media(req);
 
     return req;
 }
@@ -365,7 +373,7 @@ void* chttpx_handle(void* arg)
         {
             chttpx_request_t dummy_req = {0};
             chttpx_response_t res =
-                cHTTPX_JsonResponse(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
+                cHTTPX_ResJson(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
             send_response(&dummy_req, res, client_sock);
         }
 
@@ -374,7 +382,7 @@ void* chttpx_handle(void* arg)
     }
 
     /* REQUEST */
-    chttpx_request_t* req = parse_req_buffer(buf, received);
+    chttpx_request_t* req = parse_req_buffer(client_sock, buf, received);
     if (!req)
     {
         close(client_sock);
@@ -389,9 +397,6 @@ void* chttpx_handle(void* arg)
 
     if (r)
     {
-        /* Logger */
-        printf("%s %s\n", req->method, req->path);
-
         /* Use middlewares */
         for (size_t i = 0; i < serv->middleware.middleware_count; i++)
         {
@@ -408,7 +413,7 @@ void* chttpx_handle(void* arg)
     }
     else
     {
-        res = cHTTPX_JsonResponse(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
+        res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
     }
 
     send_response(req, res, client_sock);
@@ -441,7 +446,7 @@ void* chttpx_handle(void* arg)
  * @param fmt    printf-style format string for the JSON body.
  * @param ...    Format arguments.
  */
-chttpx_response_t cHTTPX_JsonResponse(int status, const char* fmt, ...)
+chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
 {
     char buffer[BUFFER_SIZE];
 
@@ -450,5 +455,71 @@ chttpx_response_t cHTTPX_JsonResponse(int status, const char* fmt, ...)
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
 
-    return (chttpx_response_t){status, cHTTPX_CTYPE_JSON, strdup(buffer)};
+    size_t len = strlen(buffer);
+    unsigned char* body = malloc(len);
+    if (!body)
+    {
+        perror("malloc failed");
+        return (chttpx_response_t){cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_JSON,
+                                   (unsigned char*)"{\"error\": \"internal server error\"}", 34};
+    }
+
+    memcpy(body, buffer, len);
+
+    return (chttpx_response_t){status, cHTTPX_CTYPE_JSON, body, len};
+}
+
+/**
+ * Create a binary HTTP response (file, media, etc.).
+ *
+ * Allocates memory for the response body and returns a fully initialized
+ * chttpx_response_t structure.
+ *
+ * @param status HTTP status code (e.g. 200, 400, 404)
+ * @param content_type MIME type of the response (e.g. "image/png")
+ * @param body Pointer to the data buffer
+ * @param body_size Size of the data buffer in bytes
+ * @return Initialized chttpx_response_t
+ */
+chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type,
+                                   const unsigned char* body, size_t body_size)
+{
+    unsigned char* buffer = malloc(body_size);
+    if (!buffer)
+    {
+        perror("malloc failed");
+        return cHTTPX_ResJson(cHTTPX_StatusInternalServerError,
+                              "{\"error\": \"internal server error\"}");
+    }
+
+    memcpy(buffer, body, body_size);
+
+    return (chttpx_response_t){status, content_type, buffer, body_size};
+}
+
+/**
+ * Create a binary HTTP response from FILE.
+ *
+ * @param status HTTP status code (e.g. 200, 400, 404)
+ * @param content_type MIME type of the response (e.g. "image/png")
+ * @param path Path from return file
+ * @return Initialized chttpx_response_t
+ */
+chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, const char* path)
+{
+    FILE* f = fopen(path, "rb");
+    if (!f)
+    {
+        return cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"file not found\"}");
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    unsigned char* data = malloc(size);
+    fread(data, 1, size, f);
+    fclose(f);
+
+    return (chttpx_response_t){status, content_type, data, size};
 }

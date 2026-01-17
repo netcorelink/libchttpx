@@ -5,30 +5,16 @@
  * under the terms of the MIT license. See `libchttpx.c` for details.
  */
 
-#ifndef LIBCHTTPX_H
-#define LIBCHTTPX_H
+#ifndef MEDIA_H
+#define MEDIA_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "include/http.h"
-
 #include "include/request.h"
 
-#include "include/response.h"
-
-#include "include/cors.h"
-
-#include "include/middlewares.h"
-
-#include "include/serv.h"
-
-#include "include/params.h"
-
-#include "include/queries.h"
-
-#include "include/headers.h"
+void _parse_media(chttpx_request_t *req);
 
 #ifdef __cplusplus
 }

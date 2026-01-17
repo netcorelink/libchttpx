@@ -20,56 +20,33 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/body.h"
+#include "include/inet.h"
 
 #include "include/crosspltm.h"
 
-#include <stdio.h>
-
-void _parse_req_body(chttpx_request_t* req, char* buffer, size_t buffer_len)
+const char* cHTTPX_ClientInetIP(int client_fd)
 {
-    const char* body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
-    if (!body_start)
+    static char ip[INET6_ADDRSTRLEN];
+    struct sockaddr_storage addr;
+    socklen_t len = sizeof(addr);
+
+    if (getpeername(client_fd, (struct sockaddr*)&addr, &len) == -1)
+        return "-";
+
+    if (addr.ss_family == AF_INET)
     {
-        req->body = NULL;
-        req->body_size = 0;
-        return;
+        struct sockaddr_in* s = (struct sockaddr_in*)&addr;
+        inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
+    }
+    else if (addr.ss_family == AF_INET6)
+    {
+        struct sockaddr_in6* s = (struct sockaddr_in6*)&addr;
+        inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
+    }
+    else
+    {
+        strncpy(ip, "-", sizeof(ip));
     }
 
-    body_start += 4;
-
-    size_t content_length = 0;
-    const char* cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
-    if (!cl_header || sscanf(cl_header, "Content-Length: %zu", &content_length) != 1)
-    {
-        req->body = NULL;
-        req->body_size = 0;
-        return;
-    }
-
-    if (content_length <= 0)
-    {
-        req->body = NULL;
-        req->body_size = 0;
-        return;
-    }
-
-    size_t body_in_buffer = buffer_len - (body_start - buffer);
-    if (body_in_buffer < (size_t)content_length)
-    {
-        req->body = NULL;
-        req->body_size = 0;
-        return;
-    }
-
-    req->body = malloc(content_length);
-    if (!req->body)
-    {
-        perror("malloc failed");
-        req->body_size = 0;
-        return;
-    }
-
-    memcpy(req->body, body_start, content_length);
-    req->body_size = content_length;
+    return ip;
 }

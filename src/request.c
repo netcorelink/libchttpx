@@ -42,7 +42,9 @@
  */
 int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
-    cJSON* json = cJSON_Parse(req->body);
+    req->body[req->body_size] = '\0';
+
+    cJSON* json = cJSON_Parse((const char*)req->body);
     if (!json)
     {
         snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON");

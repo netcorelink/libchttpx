@@ -33,22 +33,23 @@
 #include <cjson/cJSON.h>
 #endif
 
-static i18n_manager_t i18n_manager;
+static i18n_manager_t* i18n_manager = NULL;
 
-static i18n_locale_t load_locale_file(const char *path, const char *locale)
+static i18n_locale_t load_locale_file(const char* path, const char* locale)
 {
     i18n_locale_t loc;
     memset(&loc, 0, sizeof(loc));
-    strncpy(loc.locale, locale, sizeof(loc.locale)-1);
+    snprintf(loc.locale, sizeof(loc.locale), "%s", locale);
 
-    FILE *f = fopen(path, "rb");
-    if (!f) return loc;
+    FILE* f = fopen(path, "rb");
+    if (!f)
+        return loc;
 
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    char *data = malloc(size + 1);
+    char* data = malloc(size + 1);
     fread(data, 1, size, f);
     data[size] = '\0';
 
@@ -56,7 +57,8 @@ static i18n_locale_t load_locale_file(const char *path, const char *locale)
 
     cJSON* root = cJSON_Parse(data);
     free(data);
-    if (!root || !cJSON_IsObject(root)) return loc;
+    if (!root || !cJSON_IsObject(root))
+        return loc;
 
     loc.count = cJSON_GetArraySize(root);
     loc.entries = calloc(loc.count, sizeof(i18n_entry_t));
@@ -82,15 +84,15 @@ static i18n_locale_t load_locale_file(const char *path, const char *locale)
 
 static void i18n_shutdown(void)
 {
-    for (size_t i = 0; i < i18n_manager.count; i++)
+    for (size_t i = 0; i < i18n_manager->count; i++)
     {
-        for (size_t j = 0; j < i18n_manager.locales[i].count; j++)
+        for (size_t j = 0; j < i18n_manager->locales[i].count; j++)
         {
-            free(i18n_manager.locales[i].entries[j].key);
-            free(i18n_manager.locales[i].entries[j].value);
+            free(i18n_manager->locales[i].entries[j].key);
+            free(i18n_manager->locales[i].entries[j].value);
         }
 
-        free(i18n_manager.locales[i].entries);
+        free(i18n_manager->locales[i].entries);
     }
 }
 
@@ -104,7 +106,7 @@ static void i18n_shutdown(void)
  * fr.json -> "fr"
  *
  * All translations are stored globally in memory and are used by the cHTTPX_i18n_t() function.
- * 
+ *
  * The memory is automatically freed when the program ends.
  *
  * @param directory The path to the directory with locale JSON files.
@@ -112,19 +114,22 @@ static void i18n_shutdown(void)
  * Example:
  *   cHTTPX_i18n("public");
  */
-void cHTTPX_i18n(const char *directory)
+void cHTTPX_i18n(const char* directory)
 {
     memset(&i18n_manager, 0, sizeof(i18n_manager));
 
-    DIR *dir = opendir(directory);
-    if (!dir) return;
+    DIR* dir = opendir(directory);
+    if (!dir)
+        return;
 
-    struct dirent *ent;
+    struct dirent* ent;
     while ((ent = readdir(dir)) != NULL)
     {
-        if (!strstr(ent->d_name, ".json")) continue;
+        if (!strstr(ent->d_name, ".json"))
+            continue;
 
-        if (i18n_manager.count >= MAX_LOCALES) break;
+        if (i18n_manager->count >= MAX_LOCALES)
+            break;
 
         char locale[8] = {0};
         strncpy(locale, ent->d_name, strchr(ent->d_name, '.') - ent->d_name);
@@ -132,13 +137,14 @@ void cHTTPX_i18n(const char *directory)
         char path[512];
         snprintf(path, sizeof(path), "%s/%s", directory, ent->d_name);
 
-        i18n_manager.locales[i18n_manager.count++] = load_locale_file(path, locale);
+        i18n_manager->locales[i18n_manager->count++] = load_locale_file(path, locale);
     }
 
     closedir(dir);
 
-    if (i18n_manager.count > 0) {
-        i18n_manager.default_locale = &i18n_manager.locales[0];
+    if (i18n_manager->count > 0)
+    {
+        i18n_manager->default_locale = &i18n_manager->locales[0];
     }
 
     atexit(i18n_shutdown);
@@ -162,17 +168,22 @@ void cHTTPX_i18n(const char *directory)
  * Example:
  *   const char* text = cHTTPX_i18n_t("welcome", "ru");
  */
-const char* cHTTPX_i18n_t(const char *key, const char *lang)
+const char* cHTTPX_i18n_t(const char* key, const char* lang)
 {
-    i18n_locale_t *loc = i18n_manager.default_locale;
+    if (!i18n_manager)
+    {
+        return key;
+    }
+
+    i18n_locale_t* loc = i18n_manager->default_locale;
 
     if (lang)
     {
-        for (size_t i = 0; i < i18n_manager.count; i++) 
+        for (size_t i = 0; i < i18n_manager->count; i++)
         {
-            if (strcmp(i18n_manager.locales[i].locale, lang) == 0)
+            if (strcmp(i18n_manager->locales[i].locale, lang) == 0)
             {
-                loc = &i18n_manager.locales[i];
+                loc = &i18n_manager->locales[i];
                 break;
             }
         }

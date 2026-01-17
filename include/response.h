@@ -16,9 +16,16 @@ extern "C" {
 
 // RESponse
 typedef struct {
+    /* Response status code */
     int status;
+
+    /* Response content type */
     const char *content_type;
-    const char *body;
+
+    /* Response body */
+    const unsigned char *body;
+    /* Response body size */
+    size_t body_size;
 } chttpx_response_t;
 
 typedef chttpx_response_t (*chttpx_handler_t)(chttpx_request_t *req);
@@ -29,7 +36,7 @@ typedef chttpx_response_t (*chttpx_handler_t)(chttpx_request_t *req);
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */
-void *chttpx_handle(void *arg);
+void* chttpx_handle(void* arg);
 
 /**
  * Create a JSON HTTP response with formatted content.
@@ -42,7 +49,31 @@ void *chttpx_handle(void *arg);
  * @param fmt    printf-style format string for the JSON body.
  * @param ...    Format arguments.
  */
-chttpx_response_t cHTTPX_JsonResponse(int status, const char *fmt, ...);
+chttpx_response_t cHTTPX_ResJson(uint16_t status, const char *fmt, ...);
+
+/**
+ * Create a binary HTTP response (file, media, etc.).
+ *
+ * Allocates memory for the response body and returns a fully initialized
+ * chttpx_response_t structure.
+ *
+ * @param status HTTP status code (e.g. 200, 400, 404)
+ * @param content_type MIME type of the response (e.g. "image/png")
+ * @param body Pointer to the data buffer
+ * @param body_size Size of the data buffer in bytes
+ * @return Initialized chttpx_response_t
+ */
+chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char *content_type, const unsigned char *body, size_t body_size);
+
+/**
+ * Create a binary HTTP response from FILE.
+ *
+ * @param status HTTP status code (e.g. 200, 400, 404)
+ * @param content_type MIME type of the response (e.g. "image/png")
+ * @param path Path from return file
+ * @return Initialized chttpx_response_t
+ */
+chttpx_response_t cHTTPX_ResFile(uint16_t status, const char *content_type, const char *path);
 
 #ifdef __cplusplus
 extern }

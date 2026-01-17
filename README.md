@@ -31,7 +31,7 @@ iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install
 
 int main()
 {
-  chttpx_server_t serv;
+  chttpx_serv_t serv;
 
   if (cHTTPX_Init(&serv, 80) != 0) {
     printf("Failed to start server\n");
@@ -85,7 +85,7 @@ chttpx_middleware_result_t auth_middleware(chttpx_request_t *req, chttpx_respons
   const char *token = cHTTPX_Header(req, "Auth-Token");
 
   if (!token) {
-    *res = cHTTPX_JsonResponse(cHTTPX_StatusUnauthorized, "{\"error\": \"unauthorized\"}");
+    *res = cHTTPX_ResJson(cHTTPX_StatusUnauthorized, "{\"error\": \"unauthorized\"}");
     return out;
   }
 
@@ -140,7 +140,7 @@ Option 2
 > Suitable for errors or JSON responses with and without parameters.
 
 ```c
-return cHTTPX_JsonResponse(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\"}}", uuid, page);
+return cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\"}}", uuid, page);
 ```
 
 ## 8 | Http Request
@@ -164,7 +164,7 @@ chttpx_response_t create_user(chttpx_request_t *req) {
   };
 
   if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields))) {
-    return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+    return cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
   }
 
   /* ... */
@@ -184,7 +184,7 @@ and basic validation for integers and boolean fields is performed.
 
 ```c
 if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields))) {
-  return cHTTPX_JsonResponse(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+  return cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
 }
 ```
 

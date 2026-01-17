@@ -26,11 +26,13 @@ inline int _thread_join(thread_t thread) {
 
 typedef pthread_t thread_t;
 
-inline int _thread_create(thread_t *thread, void *(*func)(void*), void *arg) {
+inline int _thread_create(thread_t *thread, void *(*func)(void*), void *arg) 
+{
     return pthread_create(thread, NULL, func, arg);
 }
 
-inline int _thread_join(thread_t thread) {
+inline int _thread_join(thread_t thread) 
+{
     return pthread_join(thread, NULL);
 }
 #endif

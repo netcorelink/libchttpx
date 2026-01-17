@@ -16,6 +16,8 @@ extern "C" {
 
 #include "include/request.h"
 
+#include "include/inet.h"
+
 #include "include/response.h"
 
 #include "include/cors.h"

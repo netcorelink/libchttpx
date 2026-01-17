@@ -14,6 +14,7 @@ extern "C" {
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <netinet/in.h>
 
 #define BUFFER_SIZE 16384
 
@@ -68,13 +69,19 @@ typedef struct {
 typedef struct {
     char *method;
     char *path;
-    char *body;
+
+    /* Body */
+    unsigned char *body;
+    size_t body_size;
 
     /* User-Agent */
     char user_agent[512];
 
     /* HTTP/1.1 HTTP/2 ... */
     char protocol[16];
+
+    /* Client IP request */
+    char client_ip[INET6_ADDRSTRLEN];
 
     /* Error request message */
     char error_msg[BUFFER_SIZE];
@@ -94,6 +101,11 @@ typedef struct {
      */
     chttpx_param_t params[MAX_PARAMS];
     size_t param_count;
+
+    /* Media
+     * @filename - File name
+     */
+    char filename[256];
 } chttpx_request_t;
 
 /**
