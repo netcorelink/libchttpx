@@ -30,6 +30,8 @@ extern "C" {
 
 #include "include/headers.h"
 
+#include "include/i18n.h"
+
 #ifdef __cplusplus
 }
 #endif

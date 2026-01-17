@@ -229,7 +229,7 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
     char buffer[BUFFER_SIZE];
 
     /* Cors */
-    const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
+    const char *allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
 
     int n = snprintf(buffer, sizeof(buffer),
                      "HTTP/1.1 %d OK\r\n"
@@ -248,7 +248,30 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
 
     strcat(buffer, "\r\n");
 
-    printf("HTTP/1.1 %d %s %zu\n", res.status, res.content_type, strlen(res.body));
+    /* LOG */
+    /* --- */
+    time_t rawtime;
+    struct tm *timeinfo;
+    char time_str[64];
+
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(time_str, sizeof(time_str), "%d/%b/%Y:%H:%M:%S %z", timeinfo);
+
+    const char *client_ip = cHTTPX_ClientIP(req);
+
+    printf("[%s] - - [%s] \"%s %s %s\" %d %zu \"%s\"\n",
+            client_ip,
+            time_str,
+            req->protocol[0] ? req->protocol : "HTTP/1.1",
+            req->method ? req->method : "-",
+            req->path ? req->path : "-",
+            res.status,
+            strlen(res.body),
+            req->user_agent[0] ? (const char *)req->user_agent : "-"
+    );
+    /* --- */
+    /* LOG */
 
     send(client_fd, buffer, strlen(buffer), 0);
     send(client_fd, res.body, strlen(res.body), 0);
@@ -284,6 +307,21 @@ static chttpx_request_t* parse_req_buffer(char* buffer, size_t received)
 
     /* Parse headers */
     _parse_req_headers(req, buffer, received);
+
+    /* User-Agent */
+    const char *user_agent = cHTTPX_Header(req, "User-Agent");
+    if (user_agent)
+    {
+        strncpy(req->user_agent, user_agent, 512-1);
+        req->user_agent[512-1] = '\0';
+    }
+
+    /* Protocol */
+    const char *host = cHTTPX_Header(req, "Host");
+    if (host)
+    {
+        strncpy(req->protocol, "HTTP/1.1", sizeof(req->protocol) - 1);
+    }
 
     /* Parse query request */
     char* query = strchr(req->path, '?');

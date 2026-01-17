@@ -70,6 +70,12 @@ typedef struct {
     char *path;
     char *body;
 
+    /* User-Agent */
+    char user_agent[512];
+
+    /* HTTP/1.1 HTTP/2 ... */
+    char protocol[16];
+
     /* Error request message */
     char error_msg[BUFFER_SIZE];
 

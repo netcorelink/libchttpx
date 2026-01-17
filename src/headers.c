@@ -54,6 +54,11 @@ const char* cHTTPX_Header(chttpx_request_t* req, const char* name)
  */
 const char* cHTTPX_ClientIP(chttpx_request_t* req)
 {
+    if (!req)
+    {
+        return "";
+    }
+
     const char* ip = cHTTPX_Header(req, "X-Forwarded-For");
     if (!ip)
         ip = cHTTPX_Header(req, "Remote-Addr");

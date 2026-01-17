@@ -52,6 +52,8 @@ static pthread_mutex_t rate_limit_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t rl_max_requests = 5;
 static uint16_t rl_window_sec = 1;
 
+static const char *path_logfile;
+
 /**
  * Register a global middleware function.
  *
@@ -154,4 +156,17 @@ void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec)
     /* middleware */
     INIT_MUTEX();
     cHTTPX_MiddlewareUse(rate_limiter_middleware);
+}
+
+static chttpx_middleware_result_t logging_middleware(chttpx_request_t *req, chttpx_response_t *res)
+{
+    return next;
+}
+
+void cHTTPX_MiddlewareLogging(const char *path)
+{
+    if (!path) return;
+    path_logfile = path;
+
+    cHTTPX_MiddlewareUse(logging_middleware);
 }

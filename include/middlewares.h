@@ -74,6 +74,8 @@ typedef struct {
  */
 void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec);
 
+void cHTTPX_MiddlewareLogging(const char *path);
+
 #ifdef __cplusplus
 extern }
 #endif
