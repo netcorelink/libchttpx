@@ -218,6 +218,8 @@ static const char* allowed_origin_cors(const char* req_origin)
     return NULL;
 }
 
+static const char* generate_etag(const unsigned char* body, size_t body_size);
+
 /**
  * Send an HTTP response to a connected client socket.
  * @param req Pointer to the HTTP request.
@@ -238,6 +240,14 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
                      "Content-Type: %s\r\n"
                      "Content-Length: %zu\r\n",
                      res.status, res.content_type, res.body_size);
+
+    /* Etag */
+    const char* etag = generate_etag(res.body, res.body_size);
+    if (etag)
+    {
+        n += snprintf(buffer + n, sizeof(buffer) - n, "Etag: %s\r\n", etag);
+        free((void *)etag);
+    }
 
     if (allowed_origin)
     {
@@ -433,6 +443,21 @@ void* chttpx_handle(void* arg)
 
     close(client_sock);
     return NULL;
+}
+
+static const char* generate_etag(const unsigned char* body, size_t body_size)
+{
+    uint64_t hash = 5381;
+    for (size_t i = 0; i < body_size; i++)
+    {
+        hash = ((hash << 5) + hash) + body[i];
+    }
+
+    char* buffer = malloc(64);
+    if (!buffer) return NULL;
+
+    snprintf(buffer, 64, "\"%lx\"", hash);
+    return buffer;
 }
 
 /**

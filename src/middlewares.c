@@ -87,7 +87,7 @@ void cHTTPX_MiddlewareUse(chttpx_middleware_t mw)
 
 static uint32_t rate_limiter_hash(const char* ip)
 {
-    uint32_t hash = 5381;
+    uint64_t hash = 5381;
     int char_v;
 
     while ((char_v = *ip++))
