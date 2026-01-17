@@ -52,6 +52,20 @@ void* chttpx_handle(void* arg);
 chttpx_response_t cHTTPX_ResJson(uint16_t status, const char *fmt, ...);
 
 /**
+ * Creates an HTTP response with HTML content.
+ *
+ * This function generates a chttpx_response_t structure with the specified
+ * HTTP status code and HTML body. The body is created using a printf-style
+ * format string (fmt) and additional arguments. Memory for the body is
+ * dynamically allocated and must be freed after sending the response.
+ *
+ * @param status HTTP status code (e.g., 200, 404, 500).
+ * @param fmt Format string containing the HTML content (like printf).
+ * @param ... Arguments corresponding to the format string.
+ */
+chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...);
+
+/**
  * Create a binary HTTP response (file, media, etc.).
  *
  * Allocates memory for the response body and returns a fully initialized

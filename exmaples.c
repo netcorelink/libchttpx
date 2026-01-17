@@ -6,8 +6,7 @@
 
 chttpx_response_t home_index(chttpx_request_t* req)
 {
-    return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_HTML,
-                               (const unsigned char*)"<h1>This is home page!</h1>"};
+    return cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
 }
 
 typedef struct

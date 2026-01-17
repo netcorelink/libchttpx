@@ -495,6 +495,41 @@ chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
 }
 
 /**
+ * Creates an HTTP response with HTML content.
+ *
+ * This function generates a chttpx_response_t structure with the specified
+ * HTTP status code and HTML body. The body is created using a printf-style
+ * format string (fmt) and additional arguments. Memory for the body is
+ * dynamically allocated and must be freed after sending the response.
+ *
+ * @param status HTTP status code (e.g., 200, 404, 500).
+ * @param fmt Format string containing the HTML content (like printf).
+ * @param ... Arguments corresponding to the format string.
+ */
+chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...)
+{
+    char buffer[BUFFER_SIZE];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    size_t len = strlen(buffer);
+    unsigned char* body = malloc(len + 1);
+    if (!body)
+    {
+        perror("malloc failed");
+        return (chttpx_response_t){cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_HTML, (unsigned char*)"<h1>Internal Server Error</h1>", strlen("<h1>Internal Server Error</h1>")};
+    }
+
+    memcpy(body, buffer, len);
+    body[len] = '\0';
+
+    return (chttpx_response_t){status, cHTTPX_CTYPE_HTML, body, len};
+}
+
+/**
  * Create a binary HTTP response (file, media, etc.).
  *
  * Allocates memory for the response body and returns a fully initialized
