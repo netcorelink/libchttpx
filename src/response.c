@@ -20,16 +20,16 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/response.h"
+#include "response.h"
 
-#include "include/inet.h"
-#include "include/body.h"
-#include "include/http.h"
-#include "include/serv.h"
-#include "include/media.h"
-#include "include/headers.h"
-#include "include/queries.h"
-#include "include/crosspltm.h"
+#include "inet.h"
+#include "body.h"
+#include "http.h"
+#include "serv.h"
+#include "media.h"
+#include "headers.h"
+#include "queries.h"
+#include "crosspltm.h"
 
 #include <errno.h>
 #include <stdarg.h>

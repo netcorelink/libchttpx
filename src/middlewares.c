@@ -20,14 +20,14 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/middlewares.h"
+#include "middlewares.h"
 
-#include "include/crosspltm.h"
-#include "include/headers.h"
-#include "include/http.h"
-#include "include/request.h"
-#include "include/response.h"
-#include "include/serv.h"
+#include "crosspltm.h"
+#include "headers.h"
+#include "http.h"
+#include "request.h"
+#include "response.h"
+#include "serv.h"
 
 #include <stdio.h>
 #include <string.h>

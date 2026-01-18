@@ -20,10 +20,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/serv.h"
+#include "serv.h"
 
-#include "include/crosspltm.h"
-#include "include/utils.h"
+#include "crosspltm.h"
+#include "utils.h"
 
 /* Extern server struct data */
 chttpx_serv_t* serv = NULL;

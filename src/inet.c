@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/inet.h"
+#include "inet.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 const char* cHTTPX_ClientInetIP(int client_fd)
 {

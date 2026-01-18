@@ -12,27 +12,27 @@
 extern "C" {
 #endif
 
-#include "include/http.h"
+#include "http.h"
 
-#include "include/request.h"
+#include "request.h"
 
-#include "include/inet.h"
+#include "inet.h"
 
-#include "include/response.h"
+#include "response.h"
 
-#include "include/cors.h"
+#include "cors.h"
 
-#include "include/middlewares.h"
+#include "middlewares.h"
 
-#include "include/serv.h"
+#include "serv.h"
 
-#include "include/params.h"
+#include "params.h"
 
-#include "include/queries.h"
+#include "queries.h"
 
-#include "include/headers.h"
+#include "headers.h"
 
-#include "include/i18n.h"
+#include "i18n.h"
 
 #ifdef __cplusplus
 }

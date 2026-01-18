@@ -12,9 +12,9 @@
 extern "C" {
 #endif
 
-#include "include/cors.h"
-#include "include/response.h"
-#include "include/middlewares.h"
+#include "cors.h"
+#include "response.h"
+#include "middlewares.h"
 
 #include <stdio.h>
 #include <stdint.h>

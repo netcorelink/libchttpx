@@ -20,10 +20,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/cors.h"
+#include "cors.h"
 
-#include "include/crosspltm.h"
-#include "include/serv.h"
+#include "crosspltm.h"
+#include "serv.h"
 
 #include <stdio.h>
 #include <stdlib.h>

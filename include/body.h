@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#include "include/request.h"
+#include "request.h"
 
 void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len);
 

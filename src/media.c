@@ -20,12 +20,12 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/media.h"
+#include "media.h"
 
-#include "include/http.h"
-#include "include/headers.h"
-#include "include/request.h"
-#include "include/crosspltm.h"
+#include "http.h"
+#include "headers.h"
+#include "request.h"
+#include "crosspltm.h"
 
 #include <string.h>
 

@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/i18n.h"
+#include "i18n.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 #include <stdio.h>
 #include <stdlib.h>

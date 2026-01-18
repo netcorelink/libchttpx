@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/request.h"
+#include "request.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "lib/cjson/cJSON.h"

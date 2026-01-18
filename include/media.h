@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#include "include/request.h"
+#include "request.h"
 
 void _parse_media(chttpx_request_t *req);
 

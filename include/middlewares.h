@@ -12,8 +12,8 @@
 extern "C" {
 #endif
 
-#include "include/request.h"
-#include "include/response.h"
+#include "request.h"
+#include "response.h"
 
 #include <stdio.h>
 #include <pthread.h>

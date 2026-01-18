@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/params.h"
+#include "params.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 /**
  * Get a route parameter value by its name.

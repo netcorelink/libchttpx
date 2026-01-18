@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#include "include/request.h"
+#include "request.h"
 
 /**
  * Get a request header by name.

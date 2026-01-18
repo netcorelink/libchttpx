@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/queries.h"
+#include "queries.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 /**
  * Get a query parameter value by name.

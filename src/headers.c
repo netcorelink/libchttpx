@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/headers.h"
+#include "headers.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 /**
  * Get a request header by name.

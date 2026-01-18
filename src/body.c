@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "include/body.h"
+#include "body.h"
 
-#include "include/crosspltm.h"
+#include "crosspltm.h"
 
 #include <stdio.h>
 
