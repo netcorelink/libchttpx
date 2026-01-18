@@ -74,7 +74,37 @@ typedef struct {
  */
 void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec);
 
-void cHTTPX_MiddlewareLogging(const char *path);
+/**
+ * Initialize global recovery signal handlers.
+ *
+ * This function installs signal handlers for critical runtime errors
+ * such as segmentation faults, abort signals, and floating-point exceptions.
+ *
+ * When a registered signal is raised during request processing,
+ * the handler will transfer control back to the recovery middleware
+ * using setjmp/longjmp instead of terminating the process.
+ */
+void _recovery_init(void);
+
+/**
+ * Recovery middleware.
+ *
+ * This middleware protects the request processing pipeline from fatal
+ * runtime errors such as segmentation faults.
+ *
+ * Internally, it uses setjmp/longjmp together with POSIX signal handlers
+ * to recover control flow if a critical signal occurs while handling
+ * the request.
+ *
+ * If a signal is caught:
+ *  - The error is logged to stderr
+ *  - A 500 Internal Server Error JSON response is returned
+ *  - Further middleware and handlers are skipped
+ *
+ * @param req Pointer to the HTTP request structure.
+ * @param res Pointer to the HTTP response structure.
+ */
+void cHTTPX_MiddlewareRecovery();
 
 #ifdef __cplusplus
 extern }

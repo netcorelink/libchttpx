@@ -31,9 +31,15 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
+#include <setjmp.h>
 
 static rate_limiter_entry_t rate_limits[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE];
 static char rate_limit_ips[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE][64];
+
+/* Recovery */
+static __thread jmp_buf recovery_env;
+static __thread int recovery_active = 0;
 
 #if defined(_WIN32) || defined(_WIN64)
 static CRITICAL_SECTION rate_limit_mu;
@@ -153,17 +159,75 @@ void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec)
     cHTTPX_MiddlewareUse(rate_limiter_middleware);
 }
 
-static chttpx_middleware_result_t logging_middleware(chttpx_request_t* req, chttpx_response_t* res)
+static void recovery_signal_handler(int sig)
 {
+    if (recovery_active)
+    {
+        longjmp(recovery_env, sig);
+    }
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+/**
+ * Initialize global recovery signal handlers.
+ *
+ * This function installs signal handlers for critical runtime errors
+ * such as segmentation faults, abort signals, and floating-point exceptions.
+ *
+ * When a registered signal is raised during request processing,
+ * the handler will transfer control back to the recovery middleware
+ * using setjmp/longjmp instead of terminating the process.
+ */
+void _recovery_init(void)
+{
+    struct sigaction sa = {0};
+    sa.sa_handler = recovery_signal_handler;
+    sigemptyset(&sa.sa_mask);
+
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGFPE,  &sa, NULL);
+}
+
+static chttpx_middleware_result_t recovery_middleware(chttpx_request_t *req, chttpx_response_t *res)
+{
+    recovery_active = 1;
+
+    int sig = setjmp(recovery_env);
+    if (sig != 0)
+    {
+        fprintf(stderr, "[RECOVERY] signal %d caught\n", sig);
+
+        *res = cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"oops, something went wrong\"}");
+
+        recovery_active = 0;
+        return out;
+    }
+
     return next;
 }
 
-void cHTTPX_MiddlewareLogging(const char* path)
+/**
+ * Recovery middleware.
+ *
+ * This middleware protects the request processing pipeline from fatal
+ * runtime errors such as segmentation faults.
+ *
+ * Internally, it uses setjmp/longjmp together with POSIX signal handlers
+ * to recover control flow if a critical signal occurs while handling
+ * the request.
+ *
+ * If a signal is caught:
+ *  - The error is logged to stderr
+ *  - A 500 Internal Server Error JSON response is returned
+ *  - Further middleware and handlers are skipped
+ *
+ * @param req Pointer to the HTTP request structure.
+ * @param res Pointer to the HTTP response structure.
+ */
+void cHTTPX_MiddlewareRecovery()
 {
-    if (!path)
-        return;
-
-    path_logfile = path;
-
-    cHTTPX_MiddlewareUse(logging_middleware);
+    cHTTPX_MiddlewareUse(recovery_middleware);
 }

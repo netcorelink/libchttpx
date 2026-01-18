@@ -6,6 +6,9 @@
 
 chttpx_response_t home_index(chttpx_request_t* req)
 {
+    int *p = NULL;
+    *p = 42;
+
     return cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
 }
 
@@ -34,8 +37,8 @@ chttpx_response_t create_user(chttpx_request_t* req)
         return cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
     }
 
-    // return cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", cHTTPX_i18n_t("user-created",
-    // "ru"));
+    return cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", cHTTPX_i18n_t("welcome",
+    "ru"));
 }
 
 chttpx_response_t picture_handler(chttpx_request_t* req)
@@ -53,10 +56,11 @@ int main()
         return 1;
     }
 
-    // cHTTPX_i18n("public-emp");
+    cHTTPX_i18n("/home/noneandundefined/Documents/Projects/netcorelink/libchttpx/public-emp");
 
     // middlewares
     cHTTPX_MiddlewareRateLimiter(3, 1);
+    cHTTPX_MiddlewareRecovery();
 
     cHTTPX_Route("GET", "/", home_index);
     cHTTPX_Route("GET", "/picture", picture_handler);

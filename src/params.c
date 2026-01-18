@@ -33,10 +33,10 @@
  */
 const char* cHTTPX_Param(chttpx_request_t* req, const char* name)
 {
-    if (!req || !name || req->param_count == 0)
+    if (!req || !name || req->params_count == 0)
         return NULL;
 
-    for (size_t i = 0; i < req->param_count; i++)
+    for (size_t i = 0; i < req->params_count; i++)
     {
         if (strcmp(req->params[i].name, name) == 0)
         {

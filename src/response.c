@@ -28,6 +28,7 @@
 #include "serv.h"
 #include "media.h"
 #include "headers.h"
+#include "cookies.h"
 #include "queries.h"
 #include "crosspltm.h"
 
@@ -108,7 +109,7 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
         int count = 0;
         if (match_route(serv->routes[i].path, req->path, req->params, &count))
         {
-            req->param_count = count;
+            req->params_count = count;
             return &serv->routes[i];
         }
     }
@@ -323,6 +324,9 @@ static chttpx_request_t* parse_req_buffer(int client_fd, char* buffer, size_t re
 
     /* Parse headers */
     _parse_req_headers(req, buffer, received);
+
+    /* Parse cookies */
+    _parse_req_cookies(req);
 
     /* User-Agent */
     const char* user_agent = cHTTPX_Header(req, "User-Agent");

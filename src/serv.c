@@ -22,8 +22,9 @@
 
 #include "serv.h"
 
-#include "crosspltm.h"
 #include "utils.h"
+#include "crosspltm.h"
+#include "middlewares.h"
 
 /* Extern server struct data */
 chttpx_serv_t* serv = NULL;
@@ -37,6 +38,9 @@ chttpx_serv_t* serv = NULL;
 int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port)
 {
     serv = serv_p;
+
+    /* Recovery initial */
+    _recovery_init();
 
 #ifdef _WIN32
     WSADATA wsa;

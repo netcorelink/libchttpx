@@ -42,6 +42,15 @@ typedef struct {
     char value[MAX_PARAM_VALUE];
 } chttpx_param_t;
 
+#define MAX_COOKIES 64
+#define MAX_COOKIE_NAME 128
+#define MAX_COOKIE_VALUE 1024
+
+typedef struct {
+    char name[MAX_COOKIE_NAME];
+    char value[MAX_COOKIE_VALUE];
+} chttpx_cookie_t;
+
 /* Validation structs */
 typedef enum {
     FIELD_STRING,
@@ -101,12 +110,19 @@ typedef struct {
      * exmaple: /{uuid}
      */
     chttpx_param_t params[MAX_PARAMS];
-    size_t param_count;
+    size_t params_count;
+
+    /* Cookies */
+    chttpx_cookie_t cookies[MAX_COOKIES];
+    size_t cookies_count;
 
     /* Media
      * @filename - File name
      */
     char filename[256];
+
+    /* Context REQuest */
+    void *context;
 } chttpx_request_t;
 
 /**

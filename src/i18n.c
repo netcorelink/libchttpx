@@ -50,8 +50,21 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
     fseek(f, 0, SEEK_SET);
 
     char* data = malloc(size + 1);
-    fread(data, 1, size, f);
+    if (!data)
+    {
+        fclose(f);
+        return loc;
+    }
+
+    size_t read_bytes = fread(data, 1, size, f);
     data[size] = '\0';
+    
+    if (read_bytes != size)
+    {
+        free(data);
+        fclose(f);
+        return loc;
+    }
 
     fclose(f);
 
@@ -116,7 +129,8 @@ static void i18n_shutdown(void)
  */
 void cHTTPX_i18n(const char* directory)
 {
-    memset(&i18n_manager, 0, sizeof(i18n_manager));
+    i18n_manager = calloc(1, sizeof(i18n_manager_t));
+    if (!i18n_manager) return;
 
     DIR* dir = opendir(directory);
     if (!dir)
