@@ -247,7 +247,7 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
     if (etag)
     {
         n += snprintf(buffer + n, sizeof(buffer) - n, "Etag: %s\r\n", etag);
-        free((void *)etag);
+        free((void*)etag);
     }
 
     if (allowed_origin)
@@ -458,7 +458,8 @@ static const char* generate_etag(const unsigned char* body, size_t body_size)
     }
 
     char* buffer = malloc(64);
-    if (!buffer) return NULL;
+    if (!buffer)
+        return NULL;
 
     snprintf(buffer, 64, "\"%lx\"", hash);
     return buffer;
@@ -524,7 +525,9 @@ chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...)
     if (!body)
     {
         perror("malloc failed");
-        return (chttpx_response_t){cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_HTML, (unsigned char*)"<h1>Internal Server Error</h1>", strlen("<h1>Internal Server Error</h1>")};
+        return (chttpx_response_t){cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_HTML,
+                                   (unsigned char*)"<h1>Internal Server Error</h1>",
+                                   strlen("<h1>Internal Server Error</h1>")};
     }
 
     memcpy(body, buffer, len);

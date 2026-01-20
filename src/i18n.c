@@ -58,7 +58,7 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
 
     size_t read_bytes = fread(data, 1, size, f);
     data[size] = '\0';
-    
+
     if (read_bytes != size)
     {
         free(data);
@@ -130,7 +130,8 @@ static void i18n_shutdown(void)
 void cHTTPX_i18n(const char* directory)
 {
     i18n_manager = calloc(1, sizeof(i18n_manager_t));
-    if (!i18n_manager) return;
+    if (!i18n_manager)
+        return;
 
     DIR* dir = opendir(directory);
     if (!dir)
@@ -212,4 +213,27 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
     }
 
     return key;
+}
+
+const char* LANGUAGE_CODES[LANG_COUNT] = {
+    "en", // LANG_EN
+    "ru", // LANG_RU
+    "es", // LANG_ES
+    "fr"  // LANG_FR
+};
+
+i18n_language_t i18n_lang_from_string(const char* code)
+{
+    if (!code)
+        return LANG_EN;
+
+    for (int i = 0; i < LANG_COUNT; i++)
+    {
+        if (strcmp(code, LANGUAGE_CODES[i]) == 0)
+        {
+            return (i18n_language_t)i;
+        }
+    }
+
+    return LANG_EN;
 }

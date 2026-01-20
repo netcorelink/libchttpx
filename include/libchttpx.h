@@ -32,6 +32,8 @@ extern "C" {
 
 #include "headers.h"
 
+#include "cookies.h"
+
 #include "i18n.h"
 
 #ifdef __cplusplus

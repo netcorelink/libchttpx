@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <string.h>
 
 #define MAX_LOCALES 64
 
@@ -35,6 +36,14 @@ typedef struct {
     size_t count;
     i18n_locale_t *default_locale;
 } i18n_manager_t;
+
+typedef enum {
+    LANG_EN,
+    LANG_RU,
+    LANG_ES,
+    LANG_FR,
+    LANG_COUNT
+} i18n_language_t;
 
 /**
  * Initializes the global i18n manager.
@@ -75,6 +84,8 @@ void cHTTPX_i18n(const char *directory);
  *   const char* text = cHTTPX_i18n_t("welcome", "ru");
  */
 const char* cHTTPX_i18n_t(const char *key, const char *lang);
+
+i18n_language_t i18n_lang_from_string(const char* code);
 
 #ifdef __cplusplus
 }

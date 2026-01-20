@@ -58,8 +58,6 @@ static pthread_mutex_t rate_limit_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t rl_max_requests = 5;
 static uint16_t rl_window_sec = 1;
 
-static const char* path_logfile;
-
 /**
  * Register a global middleware function.
  *
@@ -188,10 +186,10 @@ void _recovery_init(void)
 
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGABRT, &sa, NULL);
-    sigaction(SIGFPE,  &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
 }
 
-static chttpx_middleware_result_t recovery_middleware(chttpx_request_t *req, chttpx_response_t *res)
+static chttpx_middleware_result_t recovery_middleware(chttpx_request_t* req, chttpx_response_t* res)
 {
     recovery_active = 1;
 
@@ -200,7 +198,8 @@ static chttpx_middleware_result_t recovery_middleware(chttpx_request_t *req, cht
     {
         fprintf(stderr, "[RECOVERY] signal %d caught\n", sig);
 
-        *res = cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"oops, something went wrong\"}");
+        *res = cHTTPX_ResJson(cHTTPX_StatusInternalServerError,
+                              "{\"error\": \"oops, something went wrong\"}");
 
         recovery_active = 0;
         return out;

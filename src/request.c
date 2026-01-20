@@ -22,6 +22,7 @@
 
 #include "request.h"
 
+#include "i18n.h"
 #include "crosspltm.h"
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -30,7 +31,28 @@
 #include <cjson/cJSON.h>
 #endif
 
+#include <ctype.h>
 #include <stdio.h>
+
+typedef struct
+{
+    const char* required;
+    const char* min_length;
+    const char* max_length;
+    const char* invalid_email;
+    const char* generic;
+} validation_messages_t;
+
+validation_messages_t messages_en = {
+    "field '%s' is required", "field '%s' min length is %zu", "field '%s' max length is %zu",
+    "field '%s' is not a valid email", "field '%s' validation error"};
+
+validation_messages_t messages_ru = {"поле '%s' обязательно", "минимальная длина поля '%s' — %zu",
+                                     "максимальная длина поля '%s' — %zu",
+                                     "поле '%s' имеет неверный формат email",
+                                     "ошибка валидации поля '%s'"};
+
+validation_messages_t* messages[] = {&messages_en, &messages_ru};
 
 /**
  * Parse a JSON body and validate fields according to the provided definitions.
@@ -90,13 +112,63 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
     return 1;
 }
 
+static int is_valid_email(const char* email)
+{
+    if (!email)
+        return 0;
+
+    const char* at = strchr(email, '@');
+    if (!at || at == email)
+        return 0;
+
+    const char* dot = strrchr(at, '.');
+    if (!dot || dot == at + 1)
+        return 0;
+
+    for (const char* p = email; *p; p++)
+    {
+        if (!isalnum(*p) && *p != '@' && *p != '.' && *p != '_' && *p != '-')
+            return 0;
+    }
+
+    return 1;
+}
+
+static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, int key,
+                      const char* field_name, size_t num)
+{
+    validation_messages_t* msg = messages[lang];
+
+    switch (key)
+    {
+    case 0:
+        snprintf(error_msg, error_size, msg->required, field_name);
+        break;
+    case 1:
+        snprintf(error_msg, error_size, msg->min_length, field_name, num);
+        break;
+    case 2:
+        snprintf(error_msg, error_size, msg->max_length, field_name, num);
+        break;
+    case 3:
+        snprintf(error_msg, error_size, msg->invalid_email, field_name);
+        break;
+    default:
+        snprintf(error_msg, error_size, msg->generic, field_name);
+        break;
+    }
+}
+
 /*
  * Validates an array of cHTTPX_FieldValidation structures.
  * This function ensures that required fields are present, string lengths are within limits,
  * and basic validation for integers and boolean fields is performed.
  */
-int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
+int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count,
+                    const char* lang_code)
 {
+    i18n_language_t lang = i18n_lang_from_string(lang_code);
+
     for (size_t i = 0; i < field_count; i++)
     {
         chttpx_validation_t* f = &fields[i];
@@ -108,31 +180,37 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
         case FIELD_STRING:
             v = *(char**)f->target;
 
-            if (!v)
+            if (!v || strlen(v) == 0)
             {
                 if (f->required)
                 {
-                    snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required",
-                             f->name);
+                    set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
                     return 0;
                 }
-                break;
+                continue;
             }
 
             size_t len = strlen(v);
 
             if (f->min_length && len < f->min_length)
             {
-                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' min length is %zu",
-                         f->name, f->min_length);
+                set_error(req->error_msg, sizeof(req->error_msg), lang, 1, f->name, f->min_length);
                 return 0;
             }
 
             if (f->max_length && len > f->max_length)
             {
-                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' max length is %zu",
-                         f->name, f->max_length);
+                set_error(req->error_msg, sizeof(req->error_msg), lang, 2, f->name, f->max_length);
                 return 0;
+            }
+
+            if (f->validator == VALIDATOR_EMAIL)
+            {
+                if (!is_valid_email(v))
+                {
+                    set_error(req->error_msg, sizeof(req->error_msg), lang, 3, f->name, 0);
+                    return 0;
+                }
             }
 
             break;
@@ -141,7 +219,7 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
         case FIELD_BOOL:
             if (f->required && !*(uint8_t*)f->target)
             {
-                snprintf(req->error_msg, sizeof(req->error_msg), "field '%s' is required", f->name);
+                set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
                 return 0;
             }
             break;

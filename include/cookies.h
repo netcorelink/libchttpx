@@ -9,6 +9,8 @@ extern "C" {
 
 void _parse_req_cookies(chttpx_request_t *req);
 
+const char* cHTTPX_Cookie(chttpx_request_t *req, const char *name);
+
 #ifdef __cplusplus
 }
 #endif

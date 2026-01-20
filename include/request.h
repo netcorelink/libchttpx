@@ -58,11 +58,18 @@ typedef enum {
     FIELD_BOOL
 } validation_t;
 
+typedef enum {
+    VALIDATOR_NONE,
+    VALIDATOR_EMAIL,
+    VALIDATOR_PHONE,
+    VALIDATOR_URL,
+} validator_type_t;
+
 typedef struct {
     const char *name;
 
-    /* Type field str/int/bool */
-    validation_t type;
+    /* Target value in struct */
+    void *target;
 
     /* Required field */
     uint8_t required;
@@ -71,8 +78,10 @@ typedef struct {
     size_t min_length;
     size_t max_length;
 
-    /* Target value in struct */
-    void *target;
+    /* Type field str/int/bool */
+    validation_t type;
+
+    validator_type_t validator;
 } chttpx_validation_t;
 
 // REQuest
@@ -140,7 +149,7 @@ int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t fiel
  * This function ensures that required fields are present, string lengths are within limits,
  * and basic validation for integers and boolean fields is performed.
  */
-int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count);
+int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count, const char* lang_code);
 
 /**
  * Macro to define a string field for JSON request validation.
@@ -156,7 +165,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
  *
  * @return A chttpx_validation_t structure initialized for a string field.
  */
-#define chttpx_validation_str(name, required, min_length, max_length, ptr) (chttpx_validation_t){name, FIELD_STRING, required, min_length, max_length, ptr}
+#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator) (chttpx_validation_t){name, ptr, FIELD_STRING, required, min_length, max_length, validator}
 
 /**
  * Macro to define an integer field for JSON request validation.
@@ -168,7 +177,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
  *
  * @return A chttpx_validation_t structure initialized for an integer field.
  */
-#define chttpx_validation_int(name, required, ptr) (chttpx_validation_t){name, FIELD_INT required, 0, 0, ptr}
+#define chttpx_validation_integer(name, ptr, required) (chttpx_validation_t){name, ptr, FIELD_INT, required, 0, 0}
 
 /**
  * Macro to define a boolean field for JSON request validation.
@@ -180,7 +189,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
  *
  * @return A chttpx_validation_t structure initialized for a boolean field.
  */
-#define chttpx_validation_bool(name, required, ptr) (chttpx_validation_t){name, FIELD_BOOL, required, 0, 0, ptr}
+#define chttpx_validation_boolean(name, ptr, required) (chttpx_validation_t){name, ptr, FIELD_BOOL, required, 0, 0}
 
 
 #ifdef __cplusplus
