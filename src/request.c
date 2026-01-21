@@ -64,9 +64,15 @@ validation_messages_t* messages[] = {&messages_en, &messages_ru};
  */
 int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
-    req->body[req->body_size] = '\0';
+    char* body = malloc(req->body_size + 1);
+    if (!body) return 0;
+    
+    memcpy(body, (const void*)req->body, req->body_size);
+    body[req->body_size] = '\0';
 
-    cJSON* json = cJSON_Parse((const char*)req->body);
+    cJSON* json = cJSON_Parse(body);
+    free(body);
+
     if (!json)
     {
         snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON");
@@ -78,10 +84,9 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
         chttpx_validation_t* f = &fields[i];
         cJSON* item = cJSON_GetObjectItem(json, f->name);
 
-        if (!item)
-        {
-            continue;
-        }
+        if (!item) continue;
+
+        f->present = 1;
 
         switch (f->type)
         {
@@ -112,6 +117,7 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
     return 1;
 }
 
+/* Validator email string */
 static int is_valid_email(const char* email)
 {
     if (!email)
@@ -164,32 +170,25 @@ static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, 
  * This function ensures that required fields are present, string lengths are within limits,
  * and basic validation for integers and boolean fields is performed.
  */
-int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count,
-                    const char* lang_code)
+int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l)
 {
-    i18n_language_t lang = i18n_lang_from_string(lang_code);
+    i18n_language_t lang = i18n_lang_from_string(l ? l : "en");
 
     for (size_t i = 0; i < field_count; i++)
     {
         chttpx_validation_t* f = &fields[i];
 
-        char* v;
-
-        switch (f->type)
+        if (f->required && !f->present)
         {
-        case FIELD_STRING:
-            v = *(char**)f->target;
+            set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
+            return 0;
+        }
 
-            if (!v || strlen(v) == 0)
-            {
-                if (f->required)
-                {
-                    set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
-                    return 0;
-                }
-                continue;
-            }
+        if (!f->present) continue;
 
+        if (f->type == FIELD_STRING)
+        {
+            char* v = *(char**)f->target;
             size_t len = strlen(v);
 
             if (f->min_length && len < f->min_length)
@@ -204,25 +203,11 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
                 return 0;
             }
 
-            if (f->validator == VALIDATOR_EMAIL)
+            if (f->validator == VALIDATOR_EMAIL && !is_valid_email(v))
             {
-                if (!is_valid_email(v))
-                {
-                    set_error(req->error_msg, sizeof(req->error_msg), lang, 3, f->name, 0);
-                    return 0;
-                }
-            }
-
-            break;
-
-        case FIELD_INT:
-        case FIELD_BOOL:
-            if (f->required && !*(uint8_t*)f->target)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
+                set_error(req->error_msg, sizeof(req->error_msg), lang, 3, f->name, 0);
                 return 0;
             }
-            break;
         }
     }
 

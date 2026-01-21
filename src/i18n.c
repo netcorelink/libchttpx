@@ -56,7 +56,7 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
         return loc;
     }
 
-    size_t read_bytes = fread(data, 1, size, f);
+    long read_bytes = fread(data, 1, size, f);
     data[size] = '\0';
 
     if (read_bytes != size)
@@ -97,6 +97,8 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
 
 static void i18n_shutdown(void)
 {
+    if (!i18n_manager) return;
+
     for (size_t i = 0; i < i18n_manager->count; i++)
     {
         for (size_t j = 0; j < i18n_manager->locales[i].count; j++)
@@ -107,6 +109,9 @@ static void i18n_shutdown(void)
 
         free(i18n_manager->locales[i].entries);
     }
+
+    free(i18n_manager);
+    i18n_manager = NULL;
 }
 
 /**
@@ -135,7 +140,11 @@ void cHTTPX_i18n(const char* directory)
 
     DIR* dir = opendir(directory);
     if (!dir)
+    {
+        free(i18n_manager);
+        i18n_manager = NULL;
         return;
+    }
 
     struct dirent* ent;
     while ((ent = readdir(dir)) != NULL)
