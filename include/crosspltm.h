@@ -25,6 +25,12 @@ extern "C" {
     #define chttpx_close(s) close(s)
 #endif
 
+#ifdef _WIN32
+    typedef SOCKET chttpx_socket_t;
+#else
+    typedef int chttpx_socket_t;
+#endif
+
 #ifdef CHTTPX_PLATFORM_WINDOWS
     #include <time.h>
     static struct tm *localtime_r(const time_t *timep, struct tm *result) {

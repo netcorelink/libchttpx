@@ -24,7 +24,7 @@
 
 #include "crosspltm.h"
 
-const char* cHTTPX_ClientInetIP(int client_fd)
+const char* cHTTPX_ClientInetIP(chttpx_socket_t client_fd)
 {
     static char ip[INET6_ADDRSTRLEN];
     struct sockaddr_storage addr;
@@ -36,12 +36,18 @@ const char* cHTTPX_ClientInetIP(int client_fd)
     if (addr.ss_family == AF_INET)
     {
         struct sockaddr_in* s = (struct sockaddr_in*)&addr;
-        inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
+        if (!inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip)))
+        {
+            return "-";
+        }
     }
     else if (addr.ss_family == AF_INET6)
     {
         struct sockaddr_in6* s = (struct sockaddr_in6*)&addr;
-        inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
+        if (!inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip)))
+        {
+            return "-";
+        }
     }
     else
     {

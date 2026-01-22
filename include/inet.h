@@ -12,7 +12,9 @@
 extern "C" {
 #endif
 
-const char* cHTTPX_ClientInetIP(int client_fd);
+#include "crosspltm.h"
+
+const char* cHTTPX_ClientInetIP(chttpx_socket_t client_fd);
 
 #ifdef __cplusplus
 }

@@ -157,7 +157,7 @@ void cHTTPX_Listen()
 
     while (1)
     {
-        int client_fd = accept(serv->server_fd, NULL, NULL);
+        chttpx_socket_t client_fd = accept(serv->server_fd, NULL, NULL);
         if (client_fd < 0)
             continue;
 

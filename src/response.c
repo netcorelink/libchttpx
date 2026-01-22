@@ -168,7 +168,7 @@ static size_t read_req(int fd, char* buffer, size_t buffer_size)
     return total;
 }
 
-static void set_client_timeout(int client_fd)
+static void set_client_timeout(chttpx_socket_t client_fd)
 {
     if (!serv)
     {
@@ -229,7 +229,7 @@ static const char* generate_etag(const unsigned char* body, size_t body_size);
  *
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
-static void send_response(chttpx_request_t* req, chttpx_response_t res, int client_fd)
+static void send_response(chttpx_request_t* req, chttpx_response_t res, chttpx_socket_t client_fd)
 {
     char buffer[BUFFER_SIZE];
 
@@ -284,7 +284,7 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, int clie
         send(client_fd, res.body, res.body_size, 0);
 }
 
-static void is_method_options(chttpx_request_t* req, int client_fd)
+static void is_method_options(chttpx_request_t* req, chttpx_socket_t client_fd)
 {
     if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
     {
@@ -297,7 +297,7 @@ static void is_method_options(chttpx_request_t* req, int client_fd)
     }
 }
 
-static chttpx_request_t* parse_req_buffer(int client_fd, char* buffer, size_t received)
+static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffer, size_t received)
 {
     chttpx_request_t* req = calloc(1, sizeof(chttpx_request_t));
     if (!req)
