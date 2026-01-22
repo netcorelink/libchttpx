@@ -4,9 +4,9 @@
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-chttpx_response_t home_index(chttpx_request_t* req)
+void home_index(chttpx_request_t* req, chttpx_response_t *res)
 {
-    return cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
+    *res = cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
 }
 
 typedef struct
@@ -16,7 +16,7 @@ typedef struct
     bool is_admin;
 } user_t;
 
-chttpx_response_t create_user(chttpx_request_t* req)
+void create_user(chttpx_request_t* req, chttpx_response_t *res)
 {
     user_t user = {0};
 
@@ -33,18 +33,18 @@ chttpx_response_t create_user(chttpx_request_t* req)
     free(user.uuid);
     free(user.password);
 
-    return cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", cHTTPX_i18n_t("welcome", "ru"));
+    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", cHTTPX_i18n_t("welcome", "ru"));
 
 error:
     free(user.uuid);
     free(user.password);
 
-    return cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+    *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
 }
 
-chttpx_response_t picture_handler(chttpx_request_t* req)
+void picture_handler(chttpx_request_t* req, chttpx_response_t *res)
 {
-    return cHTTPX_ResFile(cHTTPX_StatusOK, cHTTPX_CTYPE_PNG, "./prog.png");
+    *res = cHTTPX_ResFile(cHTTPX_StatusOK, cHTTPX_CTYPE_PNG, "./prog.png");
 }
 
 int main()

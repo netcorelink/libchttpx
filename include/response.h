@@ -28,7 +28,7 @@ typedef struct {
     size_t body_size;
 } chttpx_response_t;
 
-typedef chttpx_response_t (*chttpx_handler_t)(chttpx_request_t *req);
+typedef void (*chttpx_handler_t)(chttpx_request_t *req, chttpx_response_t *res);
 
 /**
  * Handle a single client connection.

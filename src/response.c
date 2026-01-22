@@ -407,7 +407,7 @@ void* chttpx_handle(void* arg)
     is_method_options(req, client_sock);
 
     chttpx_route_t* r = find_route(req);
-    chttpx_response_t res;
+    chttpx_response_t res = {0};
 
     if (r)
     {
@@ -423,7 +423,7 @@ void* chttpx_handle(void* arg)
         }
 
         /* Handler */
-        res = r->handler(req);
+        r->handler(req, &res);
     }
     else
     {
