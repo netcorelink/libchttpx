@@ -22,16 +22,16 @@ iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install
 
 ---
 
-<p align="center"><h1>Documentation</h1></p>
+<p align="center"><h1 align="center">Documentation</h1></p>
 
-### Initial HTTP server
+### Initial http server
 
 ```c
-#include <libchttpx.h>
+#include <libchttpx/libchttpx.h>
 
 int main()
 {
-  chttpx_serv_t serv;
+  chttpx_serv_t serv = {0};
 
   if (cHTTPX_Init(&serv, 80) != 0) {
     printf("Failed to start server\n");
@@ -47,7 +47,7 @@ int main()
 }
 ```
 
-## 2 | Server timeouts settings
+### Server timeouts settings
 
 ```c
 /* Timeouts */
@@ -56,7 +56,7 @@ serv.write_timeout_sec = 300;
 serv.idle_timeout_sec = 90;
 ```
 
-## 3 | CORS Settings
+### CORS Settings
 
 `origins` – Array of allowed origin strings (e.g. "https://example.com"). Each origin must match exactly the value of the "Origin" header.
 
@@ -73,10 +73,10 @@ const char *allowed_origins[] = {
   "http://localhost:8080",
 };
 
-cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, NULL);
+cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, "Accept-Language, Auth");
 ```
 
-## 4 | Middlewares
+### Middlewares
 
 Example: Middleware for checking the authenticated user.
 
@@ -99,7 +99,7 @@ Middlewares are connected `before cHTTPX_Route`.
 cHTTPX_MiddlewareUse(auth_middleware);
 ```
 
-## 5 | Routes
+### Routes
 
 `method` – HTTP method string, e.g., "GET", "POST".
 
@@ -113,39 +113,30 @@ cHTTPX_Route("GET", "/users/{uuid}/{org}", get_user); // ?org=netcorelink
 cHTTPX_Route("POST", "/users", create_user);
 ```
 
-## 6 | Handlers
+### Handlers
 
 HTML page return.
 
-> Return type from `chttpx_response_t` functions.
-
 ```c
-chttpx_response_t home_index(chttpx_request_t *req) {
-  return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_HTML, "<h1>This is home page!</h1>"};
+void home_index(chttpx_request_t *req, chttpx_response_t *res) {
+  *res = cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
 }
 ```
 
-## 7 | Http Response
+### Http Response
 
-Option 1
-
-> Suitable for responses with unknown Content-Type libraries.
-
-```c
-return (chttpx_response_t){cHTTPX_StatusOK, cHTTPX_CTYPE_JSON, "Hello, world!"};
-```
-
-Option 2
-
-> Suitable for errors or JSON responses with and without parameters.
+Return Json response
 
 ```c
 return cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\"}}", uuid, page);
 ```
 
-## 8 | Http Request
+Return Html response
+Return Media response
 
-## 9 | Parsing JSON fields
+<!-- ### Http Request -->
+
+### Parsing JSON fields
 
 ```c
 typedef struct {
@@ -155,16 +146,17 @@ typedef struct {
 } user_t;
 
 chttpx_response_t create_user(chttpx_request_t *req) {
-  user_t user;
+  user_t user = {0};
 
   chttpx_validation_t fields[] = {
-    chttpx_validation_str("uuid", true, 0, 36, &user.uuid),
-    chttpx_validation_str("password", true, 6, 16, &user.password),
-    chttpx_validation_bool("is_admin", false, &user.is_admin)
+    chttpx_validation_str("uuid", &user.uuid, true, 0, 36, VALIDATOR_NONE),
+    chttpx_validation_str("password", &user.password, true, 6, 16, VALIDATOR_NONE),
+    chttpx_validation_bool("is_admin", &user.is_admin, false),
   };
 
-  if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields))) {
-    return cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+  if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields), "en")) {
+    *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+    goto cleanup;
   }
 
   /* ... */
@@ -173,7 +165,7 @@ chttpx_response_t create_user(chttpx_request_t *req) {
 
 > When working with cHTTPX_Parse, you need to refer to `req->error_msg`.
 
-## 10 | Validations fields
+### Validations fields
 
 Validates an array of `cHTTPX_FieldValidation` structures.
 
@@ -183,8 +175,9 @@ and basic validation for integers and boolean fields is performed.
 > When working with cHTTPX_Validate, you need to refer to `req->error_msg`.
 
 ```c
-if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields))) {
-  return cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields), "en")) {
+  *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+  goto cleanup;
 }
 ```
 
@@ -194,7 +187,7 @@ Example response by validation:
 - Field password min length is 6.
 - Field password max length is 16.
 
-## 11 | Get Headers
+### Get Headers
 
 ```c
 const char *origin = cHTTPX_Header(req, "Origin");
@@ -207,7 +200,7 @@ cHTTPX_Header - Get a request header by name.
 - req – Pointer to the HTTP request.
 - name – Header name (case-insensitive).
 
-## 12 | Get Params
+### Get Params
 
 > The path must contain the /{uuid} construct.
 
@@ -222,7 +215,7 @@ cHTTPX_Param - Get a route parameter value by its name.
 - req – Pointer to the HTTP request.
 - name – Name of the route parameter (e.g., "uuid").
 
-## 13 | Get Query params
+### Get Query params
 
 ```c
 const char *sizeParam = cHTTPX_Query(req, "size");
