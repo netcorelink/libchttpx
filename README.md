@@ -22,9 +22,9 @@ iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install
 
 ---
 
-# `libchttpx` documentation
+## documentation
 
-## 1 | Initial HTTP server
+### Initial HTTP server
 
 ```c
 #include <libchttpx.h>
