@@ -15,7 +15,6 @@ extern "C" {
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <netinet/in.h>
 
 #define MAX_BUFFER_BODY (1024ULL * 1024 * 1024) // 1GB
 #define BUFFER_SIZE 16384
@@ -105,7 +104,7 @@ typedef struct {
     char protocol[16];
 
     /* Client IP request */
-    char client_ip[INET6_ADDRSTRLEN];
+    char client_ip[46];
 
     /* Error request message */
     char error_msg[BUFFER_SIZE];

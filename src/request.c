@@ -26,7 +26,7 @@
 #include "crosspltm.h"
 
 #if defined(_WIN32) || defined(_WIN64)
-#include "lib/cjson/cJSON.h"
+#include "../lib/cjson/cJSON.h"
 #else
 #include <cjson/cJSON.h>
 #endif
@@ -66,7 +66,7 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
 {
     char* body = malloc(req->body_size + 1);
     if (!body) return 0;
-    
+
     memcpy(body, (const void*)req->body, req->body_size);
     body[req->body_size] = '\0';
 

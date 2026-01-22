@@ -293,7 +293,7 @@ static void is_method_options(chttpx_request_t* req, int client_fd)
                                  .body = NULL,
                                  .body_size = 0};
         send_response(req, res, client_fd);
-        close(client_fd);
+        chttpx_close(client_fd);
     }
 }
 
@@ -391,7 +391,7 @@ void* chttpx_handle(void* arg)
             send_response(&dummy_req, res, client_sock);
         }
 
-        close(client_sock);
+        chttpx_close(client_sock);
         return NULL;
     }
 
@@ -399,7 +399,7 @@ void* chttpx_handle(void* arg)
     chttpx_request_t* req = parse_req_buffer(client_sock, buf, received);
     if (!req)
     {
-        close(client_sock);
+        chttpx_close(client_sock);
         return NULL;
     }
 
@@ -417,7 +417,7 @@ void* chttpx_handle(void* arg)
             if (!serv->middleware.middlewares[i](req, &res))
             {
                 send_response(req, res, client_sock);
-                close(client_sock);
+                chttpx_close(client_sock);
                 return NULL;
             }
         }
@@ -445,7 +445,7 @@ void* chttpx_handle(void* arg)
     free(req->query);
     free(req);
 
-    close(client_sock);
+    chttpx_close(client_sock);
     return NULL;
 }
 

@@ -60,7 +60,7 @@ int main()
     cHTTPX_i18n("/home/noneandundefined/Documents/Projects/netcorelink/libchttpx/public-emp");
 
     // middlewares
-    cHTTPX_MiddlewareRecovery();
+    // cHTTPX_MiddlewareRecovery();
     cHTTPX_MiddlewareRateLimiter(3, 1);
 
     cHTTPX_Route("GET", "/", home_index);

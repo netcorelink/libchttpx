@@ -178,6 +178,14 @@ static void recovery_signal_handler(int sig)
  * the handler will transfer control back to the recovery middleware
  * using setjmp/longjmp instead of terminating the process.
  */
+#if defined(_WIN32) || defined(_WIN64)
+void _recovery_init(void)
+{
+    signal(SIGSEGV, recovery_signal_handler);
+    signal(SIGABRT, recovery_signal_handler);
+    signal(SIGFPE,  recovery_signal_handler);
+}
+#else
 void _recovery_init(void)
 {
     struct sigaction sa = {0};
@@ -188,6 +196,7 @@ void _recovery_init(void)
     sigaction(SIGABRT, &sa, NULL);
     sigaction(SIGFPE, &sa, NULL);
 }
+#endif
 
 static chttpx_middleware_result_t recovery_middleware(chttpx_request_t* req, chttpx_response_t* res)
 {

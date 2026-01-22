@@ -20,8 +20,12 @@ extern "C" {
 #endif
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    #define close(s) closesocket(s)
+    #define chttpx_close(s) closesocket(s)
+#else
+    #define chttpx_close(s) close(s)
+#endif
 
+#ifdef CHTTPX_PLATFORM_WINDOWS
     #include <time.h>
     static struct tm *localtime_r(const time_t *timep, struct tm *result) {
         /* WIN32: localtime_s */

@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #if defined(_WIN32) || defined(_WIN64)
-#include "lib/cjson/cJSON.h"
+#include "../lib/cjson/cJSON.h"
 #else
 #include <cjson/cJSON.h>
 #endif

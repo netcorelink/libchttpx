@@ -166,7 +166,7 @@ void cHTTPX_Listen()
         if (!client_sock)
         {
             perror("malloc failed");
-            close(client_fd);
+            chttpx_close(client_fd);
             continue;
         }
         *client_sock = client_fd;

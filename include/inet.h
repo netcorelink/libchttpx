@@ -12,8 +12,6 @@
 extern "C" {
 #endif
 
-#include <netinet/in.h>
-
 const char* cHTTPX_ClientInetIP(int client_fd);
 
 #ifdef __cplusplus
