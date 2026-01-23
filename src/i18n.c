@@ -97,7 +97,8 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
 
 static void i18n_shutdown(void)
 {
-    if (!i18n_manager) return;
+    if (!i18n_manager)
+        return;
 
     for (size_t i = 0; i < i18n_manager->count; i++)
     {

@@ -64,7 +64,7 @@ typedef struct {
 } rate_limiter_entry_t;
 
 /**
- * @brief Configure the rate limiter and register the middleware.
+ * Configure the rate limiter and register the middleware.
  * 
  * Example:
  * cHTTPX_MiddlewareRateLimiter(10, 1); // 10 requests per second
@@ -105,6 +105,28 @@ void _recovery_init(void);
  * @param res Pointer to the HTTP response structure.
  */
 void cHTTPX_MiddlewareRecovery();
+
+/**
+ * Writes the HTTP request and response log to a file.
+ *
+ * This function is called after a request has been processed and a response
+ * has been generated. It collects information about the client, HTTP method,
+ * request path, protocol, response status, response size, and processing time,
+ * then writes it to a log file.
+ *
+ * @param req Pointer to the chttpx_request_t request structure.
+ * @param res Pointer to the chttpx_response_t response structure.
+ */
+void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res);
+
+/**
+ * Registers a middleware for logging HTTP requests.
+ *
+ * This middleware is executed after every request to log request and response
+ * information into a log file. If logging has not been initialized via
+ * cHTTPX_LoggingInit, this middleware does not perform any logging.
+ */
+void cHTTPX_MiddlewareLogging();
 
 #ifdef __cplusplus
 extern }

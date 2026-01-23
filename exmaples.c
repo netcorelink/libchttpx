@@ -4,7 +4,7 @@
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-void home_index(chttpx_request_t* req, chttpx_response_t *res)
+void home_index(chttpx_request_t* req, chttpx_response_t* res)
 {
     *res = cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
 }
@@ -16,7 +16,7 @@ typedef struct
     bool is_admin;
 } user_t;
 
-void create_user(chttpx_request_t* req, chttpx_response_t *res)
+void create_user(chttpx_request_t* req, chttpx_response_t* res)
 {
     user_t user = {0};
 
@@ -26,9 +26,11 @@ void create_user(chttpx_request_t* req, chttpx_response_t *res)
         chttpx_validation_boolean("is_admin", &user.is_admin, false),
     };
 
-    if (!cHTTPX_Parse(req, fields, ARRAY_LEN(fields))) goto error;
+    if (!cHTTPX_Parse(req, fields, ARRAY_LEN(fields)))
+        goto error;
 
-    if (!cHTTPX_Validate(req, fields, ARRAY_LEN(fields), "ru")) goto error;
+    if (!cHTTPX_Validate(req, fields, ARRAY_LEN(fields), "ru"))
+        goto error;
 
     free(user.uuid);
     free(user.password);
@@ -42,12 +44,12 @@ error:
     *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
 }
 
-void picture_handler(chttpx_request_t* req, chttpx_response_t *res)
+void picture_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     *res = cHTTPX_ResFile(cHTTPX_StatusOK, cHTTPX_CTYPE_PNG, "./prog.png");
 }
 
-void file_upload(chttpx_request_t* req, chttpx_response_t *res)
+void file_upload(chttpx_request_t* req, chttpx_response_t* res)
 {
     if (req->filename[0] == '\0')
     {
@@ -56,7 +58,7 @@ void file_upload(chttpx_request_t* req, chttpx_response_t *res)
     }
 
     FILE* f = fopen(req->filename, "rb");
-    if (!f) 
+    if (!f)
     {
         *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", "Не удалось открыть временный файл");
         return;
@@ -105,6 +107,7 @@ int main()
 
     // middlewares
     cHTTPX_MiddlewareRecovery();
+    cHTTPX_MiddlewareLogging();
     cHTTPX_MiddlewareRateLimiter(3, 1);
 
     /* Initial router */

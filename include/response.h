@@ -14,6 +14,8 @@ extern "C" {
 
 #include "request.h"
 
+#include <time.h>
+
 // RESponse
 typedef struct {
     /* Response status code */
@@ -26,6 +28,10 @@ typedef struct {
     const unsigned char *body;
     /* Response body size */
     size_t body_size;
+
+    /* Times for logging */
+    struct timespec start_ts;
+    struct timespec end_ts;
 } chttpx_response_t;
 
 typedef void (*chttpx_handler_t)(chttpx_request_t *req, chttpx_response_t *res);

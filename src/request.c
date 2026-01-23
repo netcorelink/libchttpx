@@ -43,14 +43,11 @@ typedef struct
     const char* generic;
 } validation_messages_t;
 
-validation_messages_t messages_en = {
-    "field '%s' is required", "field '%s' min length is %zu", "field '%s' max length is %zu",
-    "field '%s' is not a valid email", "field '%s' validation error"};
+validation_messages_t messages_en = {"field '%s' is required", "field '%s' min length is %zu", "field '%s' max length is %zu",
+                                     "field '%s' is not a valid email", "field '%s' validation error"};
 
-validation_messages_t messages_ru = {"поле '%s' обязательно", "минимальная длина поля '%s' — %zu",
-                                     "максимальная длина поля '%s' — %zu",
-                                     "поле '%s' имеет неверный формат email",
-                                     "ошибка валидации поля '%s'"};
+validation_messages_t messages_ru = {"поле '%s' обязательно", "минимальная длина поля '%s' — %zu", "максимальная длина поля '%s' — %zu",
+                                     "поле '%s' имеет неверный формат email", "ошибка валидации поля '%s'"};
 
 validation_messages_t* messages[] = {&messages_en, &messages_ru};
 
@@ -65,7 +62,8 @@ validation_messages_t* messages[] = {&messages_en, &messages_ru};
 int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
     char* body = malloc(req->body_size + 1);
-    if (!body) return 0;
+    if (!body)
+        return 0;
 
     memcpy(body, (const void*)req->body, req->body_size);
     body[req->body_size] = '\0';
@@ -84,7 +82,8 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
         chttpx_validation_t* f = &fields[i];
         cJSON* item = cJSON_GetObjectItem(json, f->name);
 
-        if (!item) continue;
+        if (!item)
+            continue;
 
         f->present = 1;
 
@@ -140,8 +139,7 @@ static int is_valid_email(const char* email)
     return 1;
 }
 
-static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, int key,
-                      const char* field_name, size_t num)
+static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, int key, const char* field_name, size_t num)
 {
     validation_messages_t* msg = messages[lang];
 
@@ -184,7 +182,8 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
             return 0;
         }
 
-        if (!f->present) continue;
+        if (!f->present)
+            continue;
 
         if (f->type == FIELD_STRING)
         {

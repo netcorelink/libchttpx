@@ -108,7 +108,7 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
 }
 
 /* Register a route handler for a specific HTTP method and path. */
-static void route(const char *method, const char *path, chttpx_handler_t handler)
+static void route(const char* method, const char* path, chttpx_handler_t handler)
 {
     if (!serv)
     {
@@ -146,7 +146,7 @@ chttpx_router_t cHTTPX_RoutePathPrefix(const char* prefix)
     {
         r.prefix = strdup(prefix);
     }
-    else 
+    else
     {
         r.prefix = strdup("");
     }
@@ -154,20 +154,23 @@ chttpx_router_t cHTTPX_RoutePathPrefix(const char* prefix)
     return r;
 }
 
-void cHTTPX_RegisterRoute(chttpx_router_t* r, const char *method, const char *path, chttpx_handler_t handler)
+void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler)
 {
-    if (!r || !r->serv || !method || !path || !handler) return;
+    if (!r || !r->serv || !method || !path || !handler)
+        return;
 
     char fpath[MAX_PATH];
 
-    if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix, path) >= (int)sizeof(fpath)) return;
+    if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix, path) >= (int)sizeof(fpath))
+        return;
 
     route(method, fpath, handler);
 }
 
 static void* handle_client_wrapper(void* arg)
 {
-    if (!serv) return NULL;
+    if (!serv)
+        return NULL;
 
     chttpx_handle(arg);
 
@@ -190,7 +193,8 @@ void cHTTPX_Listen()
 
     while (1)
     {
-        if (serv->current_clients >= serv->max_clients) continue;
+        if (serv->current_clients >= serv->max_clients)
+            continue;
 
         chttpx_socket_t client_fd = accept(serv->server_fd, NULL, NULL);
         if (client_fd < 0)
@@ -222,7 +226,8 @@ void cHTTPX_Listen()
 
 void cHTTPX_Shutdown()
 {
-    if (!serv) return;
+    if (!serv)
+        return;
 
     for (size_t i = 0; i < serv->routes_count; i++)
     {

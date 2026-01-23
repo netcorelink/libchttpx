@@ -37,8 +37,7 @@
 
 chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...);
 
-static int match_route(const char* template, const char* path, chttpx_param_t* params,
-                       int* param_count)
+static int match_route(const char* template, const char* path, chttpx_param_t* params, int* param_count)
 {
     int count = 0;
     const char* t = template;
@@ -271,9 +270,8 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%b/%Y:%H:%M:%S %z", timeinfo);
 
-    printf("[%s] - - [%s] \"%s %s %s\" %d %zu \"%s\"\n", req->client_ip, time_str,
-           req->protocol[0] ? req->protocol : "HTTP/1.1", req->method ? req->method : "-",
-           req->path ? req->path : "-", res.status, res.body_size,
+    printf("[%s] - - [%s] \"%s %s %s\" %d %zu \"%s\"\n", req->client_ip, time_str, req->protocol[0] ? req->protocol : "HTTP/1.1",
+           req->method ? req->method : "-", req->path ? req->path : "-", res.status, res.body_size,
            req->user_agent[0] ? (const char*)req->user_agent : "-");
     /* --- */
     /* LOG */
@@ -288,10 +286,7 @@ static void is_method_options(chttpx_request_t* req)
 {
     if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
     {
-        chttpx_response_t res = {.status = cHTTPX_StatusNoContent,
-                                 .content_type = cHTTPX_CTYPE_TEXT,
-                                 .body = NULL,
-                                 .body_size = 0};
+        chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
         send_response(req, res);
         chttpx_close(req->client_fd);
     }
@@ -386,8 +381,8 @@ void* chttpx_handle(void* arg)
         if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
             chttpx_request_t dummy_req = {0};
-            chttpx_response_t res =
-                cHTTPX_ResJson(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
+            chttpx_response_t res = cHTTPX_ResJson(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
+
             send_response(&dummy_req, res);
         }
 
@@ -409,6 +404,9 @@ void* chttpx_handle(void* arg)
     chttpx_route_t* r = find_route(req);
     chttpx_response_t res = {0};
 
+    /* Start time for logging */
+    clock_gettime(CLOCK_MONOTONIC, &res.start_ts);
+
     if (r)
     {
         /* Use middlewares */
@@ -416,9 +414,13 @@ void* chttpx_handle(void* arg)
         {
             if (!serv->middleware.middlewares[i](req, &res))
             {
+                /* End time for logging */
+                clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
+
                 send_response(req, res);
-                chttpx_close(client_sock);
-                return NULL;
+                postmiddleware_logging_write(req, &res);
+
+                goto cleanup;
             }
         }
 
@@ -430,8 +432,15 @@ void* chttpx_handle(void* arg)
         res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
     }
 
+    /* End time for logging */
+    clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
+
     send_response(req, res);
 
+    /* Logging response */
+    postmiddleware_logging_write(req, &res);
+
+cleanup:
     free(req->method);
     free(req->path);
     free(req->body);
@@ -490,13 +499,17 @@ chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
     if (!body)
     {
         perror("malloc failed");
-        return (chttpx_response_t){cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_JSON,
-                                   (unsigned char*)"{\"error\": \"internal server error\"}", 34};
+        return (chttpx_response_t){.status = cHTTPX_StatusInternalServerError,
+                                   .content_type = cHTTPX_CTYPE_JSON,
+                                   .body = (unsigned char*)"{\"error\": \"internal server error\"}",
+                                   .body_size = 34,
+                                   .start_ts = {0},
+                                   .end_ts = {0}};
     }
 
     memcpy(body, buffer, len);
 
-    return (chttpx_response_t){status, cHTTPX_CTYPE_JSON, body, len};
+    return (chttpx_response_t){.status = status, .content_type = cHTTPX_CTYPE_JSON, .body = body, .body_size = len, .start_ts = {0}, .end_ts = {0}};
 }
 
 /**
@@ -525,15 +538,18 @@ chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...)
     if (!body)
     {
         perror("malloc failed");
-        return (chttpx_response_t){cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_HTML,
-                                   (unsigned char*)"<h1>Internal Server Error</h1>",
-                                   strlen("<h1>Internal Server Error</h1>")};
+        return (chttpx_response_t){.status = cHTTPX_StatusInternalServerError,
+                                   .content_type = cHTTPX_CTYPE_HTML,
+                                   .body = (unsigned char*)"<h1>Internal Server Error</h1>",
+                                   .body_size = strlen("<h1>Internal Server Error</h1>"),
+                                   .start_ts = {0},
+                                   .end_ts = {0}};
     }
 
     memcpy(body, buffer, len);
     body[len] = '\0';
 
-    return (chttpx_response_t){status, cHTTPX_CTYPE_HTML, body, len};
+    return (chttpx_response_t){.status = status, .content_type = cHTTPX_CTYPE_HTML, .body = body, .body_size = len, .start_ts = {0}, .end_ts = {0}};
 }
 
 /**
@@ -548,20 +564,19 @@ chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...)
  * @param body_size Size of the data buffer in bytes
  * @return Initialized chttpx_response_t
  */
-chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type,
-                                   const unsigned char* body, size_t body_size)
+chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type, const unsigned char* body, size_t body_size)
 {
     unsigned char* buffer = malloc(body_size);
     if (!buffer)
     {
         perror("malloc failed");
-        return cHTTPX_ResJson(cHTTPX_StatusInternalServerError,
-                              "{\"error\": \"internal server error\"}");
+        return cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"internal server error\"}");
     }
 
     memcpy(buffer, body, body_size);
 
-    return (chttpx_response_t){status, content_type, buffer, body_size};
+    return (chttpx_response_t){
+        .status = status, .content_type = content_type, .body = buffer, .body_size = body_size, .start_ts = {0}, .end_ts = {0}};
 }
 
 /**
@@ -588,5 +603,5 @@ chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, cons
     fread(data, 1, size, f);
     fclose(f);
 
-    return (chttpx_response_t){status, content_type, data, size};
+    return (chttpx_response_t){.status = status, .content_type = content_type, .body = data, .body_size = size, .start_ts = {0}, .end_ts = {0}};
 }

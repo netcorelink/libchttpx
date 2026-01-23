@@ -52,7 +52,8 @@ void _parse_media(chttpx_request_t* req)
         }
 
         FILE* f = fopen(tmp_filename, "rb");
-        if (!f) return;
+        if (!f)
+            return;
 
         char line[1024];
         while (fgets(line, sizeof(line), f))
@@ -65,7 +66,8 @@ void _parse_media(chttpx_request_t* req)
                 if (end)
                 {
                     size_t len = end - start;
-                    if (len >= sizeof(req->filename)) len = sizeof(req->filename) - 1;
+                    if (len >= sizeof(req->filename))
+                        len = sizeof(req->filename) - 1;
                     memcpy(req->filename, start, len);
                     req->filename[len] = '\0';
                     break;
@@ -102,7 +104,8 @@ static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_len
 {
     snprintf(tmp_filename, tmp_filename_size, "/tmp/upload_%ld.tmp", random());
     FILE* f = fopen(tmp_filename, "wb");
-    if (!f) return 1;
+    if (!f)
+        return 1;
 
     unsigned char buffer[FILE_BUFFER];
     size_t total = 0;
@@ -111,10 +114,12 @@ static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_len
     while (total < content_length)
     {
         size_t to_read = sizeof(buffer);
-        if (content_length - total < to_read) to_read = content_length - total;
+        if (content_length - total < to_read)
+            to_read = content_length - total;
 
         n = recv(client_fd, buffer, to_read, 0);
-        if (n <= 0) break;
+        if (n <= 0)
+            break;
 
         fwrite(buffer, 1, n, f);
         total += n;

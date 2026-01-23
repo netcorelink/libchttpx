@@ -47,7 +47,7 @@ const char* cHTTPX_Header(chttpx_request_t* req, const char* name)
 }
 
 /**
- * @brief Get the client's IP from the request.
+ * Get the client's IP from the request.
  *
  * @param req a pointer to the query structure
  * @return const char* Client's IP

@@ -18,6 +18,8 @@
 *.ilk
 *.map
 *.exp
+log/
+logs/
 
 # Precompiled Headers
 *.gch

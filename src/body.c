@@ -71,7 +71,8 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         while (remaining > 0)
         {
             ssize_t n = recv(client_fd, (char*)req->body + total_read, remaining, 0);
-            if (n <= 0) break;
+            if (n <= 0)
+                break;
             total_read += n;
             remaining -= n;
         }

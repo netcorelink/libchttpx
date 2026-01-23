@@ -47,8 +47,7 @@
  *                       If NULL, defaults to:
  *                       "Content-Type"
  */
-void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods,
-                 const char* headers)
+void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods, const char* headers)
 {
     if (!serv)
     {

@@ -10,7 +10,7 @@ AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
 
-ColumnLimit: 100
+ColumnLimit: 150
 
 PointerAlignment: Left
 SpaceBeforeParens: ControlStatements
