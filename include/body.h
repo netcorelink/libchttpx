@@ -14,7 +14,9 @@ extern "C" {
 
 #include "request.h"
 
-void _parse_req_body(chttpx_request_t *req, char *buffer, size_t buffer_len);
+#define MAX_BODY_IN_MEMORY 1048576 // 1 MB 
+
+void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buffer, size_t buffer_len);
 
 #ifdef __cplusplus
 extern }

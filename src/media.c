@@ -27,63 +27,100 @@
 #include "request.h"
 #include "crosspltm.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-static void _parse_multipart(chttpx_request_t* req);
+/* Save body(file) to temp file */
+static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_length, char* tmp_filename, size_t tmp_filename_size);
 
+/* Parse media in request */
 void _parse_media(chttpx_request_t* req)
 {
     const char* content_type = cHTTPX_Header(req, "Content-Type");
     if (!content_type || !req->body)
         return;
 
+    char tmp_filename[512];
+
     if (strstr(content_type, cHTTPX_CTYPE_MULTI))
     {
-        _parse_multipart(req);
+        if (_save_body_to_temp_file(req->client_fd, req->content_length, tmp_filename, sizeof(tmp_filename)) != 0)
+        {
+            fprintf(stderr, "error write body in temp file\n");
+            return;
+        }
+
+        FILE* f = fopen(tmp_filename, "rb");
+        if (!f) return;
+
+        char line[1024];
+        while (fgets(line, sizeof(line), f))
+        {
+            char* start = strstr(line, "filename=\"");
+            if (start)
+            {
+                start += 10;
+                char* end = strchr(start, '"');
+                if (end)
+                {
+                    size_t len = end - start;
+                    if (len >= sizeof(req->filename)) len = sizeof(req->filename) - 1;
+                    memcpy(req->filename, start, len);
+                    req->filename[len] = '\0';
+                    break;
+                }
+            }
+        }
+
+        fclose(f);
+
+        snprintf(req->filename, sizeof(req->filename), "%.*s", (int)(sizeof(req->filename) - 1), tmp_filename);
     }
     else
     {
-        const char* name = strchr(req->path, '/');
-        if (name)
+        if (_save_body_to_temp_file(req->client_fd, req->content_length, tmp_filename, sizeof(tmp_filename)) != 0)
+        {
+            fprintf(stderr, "error write body in temp file\n");
+            return;
+        }
+
+        const char* name = strrchr(req->path, '/');
+        if (name && *(name + 1) != '\0')
         {
             strncpy(req->filename, name + 1, sizeof(req->filename) - 1);
         }
         else
         {
-            strcpy(req->filename, "upload.bin");
+            strcpy(req->filename, tmp_filename);
         }
     }
 }
 
-static void _parse_multipart(chttpx_request_t* req)
+/* Save body(file) to temp file */
+static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_length, char* tmp_filename, size_t tmp_filename_size)
 {
-    unsigned char* data = req->body;
-    size_t data_len = req->body_size;
+    snprintf(tmp_filename, tmp_filename_size, "/tmp/upload_%ld.tmp", random());
+    FILE* f = fopen(tmp_filename, "wb");
+    if (!f) return 1;
 
-    unsigned char* filename_pos = memmem(data, data_len, "filename=\"", 10);
-    if (!filename_pos)
-        return;
+    unsigned char buffer[FILE_BUFFER];
+    size_t total = 0;
+    ssize_t n;
 
-    unsigned char* end_quote = memmem(filename_pos, data + data_len - filename_pos, "\"", 1);
-    if (!end_quote)
-        return;
+    while (total < content_length)
+    {
+        size_t to_read = sizeof(buffer);
+        if (content_length - total < to_read) to_read = content_length - total;
 
-    size_t fname_len = end_quote - filename_pos;
-    if (fname_len >= sizeof(req->filename))
-        fname_len = sizeof(req->filename) - 1;
+        n = recv(client_fd, buffer, to_read, 0);
+        if (n <= 0) break;
 
-    memcpy(req->filename, filename_pos, fname_len);
-    req->filename[fname_len] = '\0';
+        fwrite(buffer, 1, n, f);
+        total += n;
+    }
 
-    unsigned char* file_start = memmem(end_quote, data + data_len - end_quote, "\r\n\r\n", 4);
-    if (!file_start)
-        return;
-    file_start += 4;
+    fclose(f);
 
-    unsigned char* file_end = memmem(file_start, data + data_len - file_start, "\r\n--", 4);
-    if (!file_end)
-        file_end = data + data_len;
-
-    req->body = file_start;
-    req->body_size = file_end - file_start;
+    return total == content_length ? 0 : 1;
 }

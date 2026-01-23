@@ -229,7 +229,7 @@ static const char* generate_etag(const unsigned char* body, size_t body_size);
  *
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
-static void send_response(chttpx_request_t* req, chttpx_response_t res, chttpx_socket_t client_fd)
+static void send_response(chttpx_request_t* req, chttpx_response_t res)
 {
     char buffer[BUFFER_SIZE];
 
@@ -278,13 +278,13 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res, chttpx_s
     /* --- */
     /* LOG */
 
-    send(client_fd, buffer, strlen(buffer), 0);
+    send(req->client_fd, buffer, strlen(buffer), 0);
 
     if (res.body && res.body_size > 0)
-        send(client_fd, res.body, res.body_size, 0);
+        send(req->client_fd, res.body, res.body_size, 0);
 }
 
-static void is_method_options(chttpx_request_t* req, chttpx_socket_t client_fd)
+static void is_method_options(chttpx_request_t* req)
 {
     if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
     {
@@ -292,8 +292,8 @@ static void is_method_options(chttpx_request_t* req, chttpx_socket_t client_fd)
                                  .content_type = cHTTPX_CTYPE_TEXT,
                                  .body = NULL,
                                  .body_size = 0};
-        send_response(req, res, client_fd);
-        chttpx_close(client_fd);
+        send_response(req, res);
+        chttpx_close(req->client_fd);
     }
 }
 
@@ -351,7 +351,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     }
 
     /* Parse body request */
-    _parse_req_body(req, buffer, received);
+    _parse_req_body(req, client_fd, buffer, received);
 
     /* Parse media request */
     _parse_media(req);
@@ -388,7 +388,7 @@ void* chttpx_handle(void* arg)
             chttpx_request_t dummy_req = {0};
             chttpx_response_t res =
                 cHTTPX_ResJson(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
-            send_response(&dummy_req, res, client_sock);
+            send_response(&dummy_req, res);
         }
 
         chttpx_close(client_sock);
@@ -404,7 +404,7 @@ void* chttpx_handle(void* arg)
     }
 
     /* ALLOWED OPTIONS METHOD */
-    is_method_options(req, client_sock);
+    is_method_options(req);
 
     chttpx_route_t* r = find_route(req);
     chttpx_response_t res = {0};
@@ -416,7 +416,7 @@ void* chttpx_handle(void* arg)
         {
             if (!serv->middleware.middlewares[i](req, &res))
             {
-                send_response(req, res, client_sock);
+                send_response(req, res);
                 chttpx_close(client_sock);
                 return NULL;
             }
@@ -430,7 +430,7 @@ void* chttpx_handle(void* arg)
         res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
     }
 
-    send_response(req, res, client_sock);
+    send_response(req, res);
 
     free(req->method);
     free(req->path);

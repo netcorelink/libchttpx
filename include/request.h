@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+#include "crosspltm.h"
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -90,12 +92,18 @@ typedef struct {
 
 // REQuest
 typedef struct {
-    char *method;
-    char *path;
+    char* method;
+    char* path;
 
     /* Body */
-    unsigned char *body;
+    unsigned char* body;
     size_t body_size;
+
+    /* Content len. request */
+    size_t content_length;
+
+    /* Client socket */
+    chttpx_socket_t client_fd;
 
     /* User-Agent */
     char user_agent[512];
@@ -116,7 +124,7 @@ typedef struct {
     /* Query params in URL
      * exmaple: ?name=netcorelink
      */
-    chttpx_query_t *query;
+    chttpx_query_t* query;
     size_t query_count;
 
     /* Params in URL
@@ -132,10 +140,10 @@ typedef struct {
     /* Media
      * @filename - File name
      */
-    char filename[256];
+    char filename[384];
 
     /* Context REQuest */
-    void *context;
+    void* context;
 } chttpx_request_t;
 
 /**

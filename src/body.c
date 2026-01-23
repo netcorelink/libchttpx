@@ -26,10 +26,24 @@
 
 #include <stdio.h>
 
-void _parse_req_body(chttpx_request_t* req, char* buffer, size_t buffer_len)
+/* Parse body in request */
+void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buffer, size_t buffer_len)
 {
+    req->client_fd = client_fd;
+
+    size_t content_length = 0;
+    const char* cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
+    if (cl_header && sscanf(cl_header, "Content-Length: %zu", &content_length) == 1)
+    {
+        req->content_length = content_length;
+    }
+    else
+    {
+        req->content_length = 0;
+    }
+
     const char* body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
-    if (!body_start)
+    if (!body_start || req->content_length == 0)
     {
         req->body = NULL;
         req->body_size = 0;
@@ -38,38 +52,36 @@ void _parse_req_body(chttpx_request_t* req, char* buffer, size_t buffer_len)
 
     body_start += 4;
 
-    size_t content_length = 0;
-    const char* cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
-    if (!cl_header || sscanf(cl_header, "Content-Length: %zu", &content_length) != 1)
-    {
-        req->body = NULL;
-        req->body_size = 0;
-        return;
-    }
-
-    if (content_length <= 0)
-    {
-        req->body = NULL;
-        req->body_size = 0;
-        return;
-    }
-
     size_t body_in_buffer = buffer_len - (body_start - buffer);
-    if (body_in_buffer < (size_t)content_length)
+    if (body_in_buffer > 0 && req->content_length <= MAX_BODY_IN_MEMORY)
     {
-        req->body = NULL;
-        req->body_size = 0;
+        req->body = malloc(req->content_length + 1);
+        if (!req->body)
+        {
+            perror("malloc failed");
+            req->body_size = 0;
+            return;
+        }
+
+        memcpy(req->body, body_start, body_in_buffer);
+
+        size_t remaining = req->content_length - body_in_buffer;
+        size_t total_read = body_in_buffer;
+
+        while (remaining > 0)
+        {
+            ssize_t n = recv(client_fd, (char*)req->body + total_read, remaining, 0);
+            if (n <= 0) break;
+            total_read += n;
+            remaining -= n;
+        }
+
+        req->body_size = total_read;
+        ((char*)req->body)[req->body_size] = '\0';
+
         return;
     }
 
-    req->body = malloc(content_length);
-    if (!req->body)
-    {
-        perror("malloc failed");
-        req->body_size = 0;
-        return;
-    }
-
-    memcpy(req->body, body_start, content_length);
-    req->body_size = content_length;
+    req->body = NULL;
+    req->body_size = 0;
 }

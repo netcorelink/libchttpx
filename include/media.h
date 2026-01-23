@@ -14,6 +14,8 @@ extern "C" {
 
 #include "request.h"
 
+#define FILE_BUFFER 65536
+
 void _parse_media(chttpx_request_t *req);
 
 #ifdef __cplusplus

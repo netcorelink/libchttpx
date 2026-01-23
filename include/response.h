@@ -32,7 +32,7 @@ typedef void (*chttpx_handler_t)(chttpx_request_t *req, chttpx_response_t *res);
 
 /**
  * Handle a single client connection.
- * @param client_fd The file descriptor of the accepted client socket.
+ * @param arg The file descriptor of the accepted client socket.
  * This function reads the request, parses it, calls the matching route handler,
  * and sends the response back to the client.
  */

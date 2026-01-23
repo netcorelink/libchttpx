@@ -35,7 +35,7 @@ chttpx_serv_t* serv = NULL;
  * @param port The TCP port on which the server will listen (e.g., 80, 8080).
  * This function must be called before registering routes or starting the server.
  */
-int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port)
+int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
 {
     serv = serv_p;
 
@@ -53,6 +53,8 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port)
 
     serv->port = port;
     serv->server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    serv->max_clients = max_clients ? *(size_t*)max_clients : MAX_CLIENTS_DEFAULT;
+    serv->current_clients = 0;
 
 #ifdef _WIN32
     if (serv->server_fd == INVALID_SOCKET)
@@ -105,15 +107,8 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port)
     return 0;
 }
 
-/**
- * Register a route handler for a specific HTTP method and path.
- * @param method HTTP method string, e.g., "GET", "POST".
- * @param path URL path to match, e.g., "/users".
- * @param handler Function pointer to handle the request. The handler should return
- * httpx_response_t. This allows the server to call the appropriate function when a matching request
- * is received.
- */
-void cHTTPX_Route(const char* method, const char* path, chttpx_handler_t handler)
+/* Register a route handler for a specific HTTP method and path. */
+static void route(const char *method, const char *path, chttpx_handler_t handler)
 {
     if (!serv)
     {
@@ -136,10 +131,48 @@ void cHTTPX_Route(const char* method, const char* path, chttpx_handler_t handler
         serv->routes_capacity = new_capacity;
     }
 
-    serv->routes[serv->routes_count].method = method;
-    serv->routes[serv->routes_count].path = path;
+    serv->routes[serv->routes_count].method = strdup(method);
+    serv->routes[serv->routes_count].path = strdup(path);
     serv->routes[serv->routes_count].handler = handler;
     serv->routes_count++;
+}
+
+chttpx_router_t cHTTPX_RoutePathPrefix(const char* prefix)
+{
+    chttpx_router_t r;
+    r.serv = serv;
+
+    if (prefix && *prefix)
+    {
+        r.prefix = strdup(prefix);
+    }
+    else 
+    {
+        r.prefix = strdup("");
+    }
+
+    return r;
+}
+
+void cHTTPX_RegisterRoute(chttpx_router_t* r, const char *method, const char *path, chttpx_handler_t handler)
+{
+    if (!r || !r->serv || !method || !path || !handler) return;
+
+    char fpath[MAX_PATH];
+
+    if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix, path) >= (int)sizeof(fpath)) return;
+
+    route(method, fpath, handler);
+}
+
+static void* handle_client_wrapper(void* arg)
+{
+    if (!serv) return NULL;
+
+    chttpx_handle(arg);
+
+    serv->current_clients--;
+    return NULL;
 }
 
 /**
@@ -157,9 +190,14 @@ void cHTTPX_Listen()
 
     while (1)
     {
+        if (serv->current_clients >= serv->max_clients) continue;
+
         chttpx_socket_t client_fd = accept(serv->server_fd, NULL, NULL);
         if (client_fd < 0)
             continue;
+
+        /* Inc. max clients */
+        serv->current_clients++;
 
         /* Get client socket */
         int* client_sock = malloc(sizeof(int));
@@ -172,7 +210,7 @@ void cHTTPX_Listen()
         *client_sock = client_fd;
 
         thread_t thread_id;
-        _thread_create(&thread_id, chttpx_handle, client_sock);
+        _thread_create(&thread_id, handle_client_wrapper, client_sock);
 
 #if defined(_WIN32) || defined(_WIN64)
         CloseHandle(thread_id);
@@ -180,4 +218,28 @@ void cHTTPX_Listen()
         pthread_detach(thread_id);
 #endif
     }
+}
+
+void cHTTPX_Shutdown()
+{
+    if (!serv) return;
+
+    for (size_t i = 0; i < serv->routes_count; i++)
+    {
+        free((char*)serv->routes[i].method);
+        free((char*)serv->routes[i].path);
+    }
+
+    free(serv->routes);
+    serv->routes = NULL;
+    serv->routes_count = 0;
+    serv->routes_capacity = 0;
+#ifdef _WIN32
+    chttpx_close(serv->server_fd);
+#else
+    chttpx_close(serv->server_fd);
+#endif
+    serv->server_fd = 0;
+
+    serv = NULL;
 }

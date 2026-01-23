@@ -17,7 +17,7 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS =
+LIN_LDFLAGS = -lcjson
 WIN_LDFLAGS = -lws2_32
 
 LIN_SRCS = $(filter-out ./lib/cjson/cJSON.c, $(shell find . -name '*.c'))
