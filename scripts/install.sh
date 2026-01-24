@@ -18,7 +18,7 @@ else
     echo "cjson not found. Installing...."
 
     if command -v apt >/dev/null 2>&1; then
-        sudo apt update
+        # sudo apt update
         sudo apt install -y libcjson-dev
     elif command -v pacman >/dev/null 2>&1; then
         sudo pacman -Sy --noconfirm cjson
