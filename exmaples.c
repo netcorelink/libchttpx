@@ -32,16 +32,15 @@ void create_user(chttpx_request_t* req, chttpx_response_t* res)
     if (!cHTTPX_Validate(req, fields, ARRAY_LEN(fields), "ru"))
         goto error;
 
-    free(user.uuid);
-    free(user.password);
-
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", cHTTPX_i18n_t("welcome", "ru"));
+    return;
 
 error:
     free(user.uuid);
     free(user.password);
 
     *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+    return;
 }
 
 void picture_handler(chttpx_request_t* req, chttpx_response_t* res)

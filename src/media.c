@@ -38,64 +38,22 @@ static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_len
 void _parse_media(chttpx_request_t* req)
 {
     const char* content_type = cHTTPX_Header(req, "Content-Type");
-    if (!content_type || !req->body)
+    if (!content_type)
         return;
 
-    char tmp_filename[512];
-
-    if (strstr(content_type, cHTTPX_CTYPE_MULTI))
+    if (req->content_length > 0 && (!content_type || !strstr(content_type, cHTTPX_CTYPE_JSON)))
     {
+        char tmp_filename[512];
         if (_save_body_to_temp_file(req->client_fd, req->content_length, tmp_filename, sizeof(tmp_filename)) != 0)
         {
             fprintf(stderr, "error write body in temp file\n");
             return;
         }
-
-        FILE* f = fopen(tmp_filename, "rb");
-        if (!f)
-            return;
-
-        char line[1024];
-        while (fgets(line, sizeof(line), f))
-        {
-            char* start = strstr(line, "filename=\"");
-            if (start)
-            {
-                start += 10;
-                char* end = strchr(start, '"');
-                if (end)
-                {
-                    size_t len = end - start;
-                    if (len >= sizeof(req->filename))
-                        len = sizeof(req->filename) - 1;
-                    memcpy(req->filename, start, len);
-                    req->filename[len] = '\0';
-                    break;
-                }
-            }
-        }
-
-        fclose(f);
 
         snprintf(req->filename, sizeof(req->filename), "%.*s", (int)(sizeof(req->filename) - 1), tmp_filename);
-    }
-    else
-    {
-        if (_save_body_to_temp_file(req->client_fd, req->content_length, tmp_filename, sizeof(tmp_filename)) != 0)
-        {
-            fprintf(stderr, "error write body in temp file\n");
-            return;
-        }
 
-        const char* name = strrchr(req->path, '/');
-        if (name && *(name + 1) != '\0')
-        {
-            strncpy(req->filename, name + 1, sizeof(req->filename) - 1);
-        }
-        else
-        {
-            strcpy(req->filename, tmp_filename);
-        }
+        req->body = NULL;
+        req->body_size = 0;
     }
 }
 

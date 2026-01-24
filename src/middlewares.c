@@ -307,9 +307,9 @@ void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res)
     if (f)
     {
         fprintf(f,
-            "%s - - [%s] "
-            "\"%s %s %s\" %d %zu \"%s\" %.4fms\n",
-            req->client_ip, timebuf, req->method, req->path, req->protocol, res->status, res->body_size, req->user_agent, ms);
+                "%s - - [%s] "
+                "\"%s %s %s\" %d %zu \"%s\" %.4fms\n",
+                req->client_ip, timebuf, req->method, req->path, req->protocol, res->status, res->body_size, req->user_agent, ms);
 
         fclose(f);
     }
