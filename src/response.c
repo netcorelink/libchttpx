@@ -301,12 +301,18 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
         return NULL;
     }
 
+    if (received >= BUFFER_SIZE) received = BUFFER_SIZE - 1;
+
     buffer[received] = '\0';
 
     char method[16], path[MAX_PATH];
-    sscanf(buffer, "%15s %4095s", method, path);
+    
+    if (sscanf(buffer, "%15s %4095s", method, path) != 2)
+    {
+        free(req);
+        return NULL;
+    }
 
-    memset(req, 0, sizeof(*req));
     req->method = strdup(method);
     req->path = strdup(path);
 
@@ -331,11 +337,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     }
 
     /* Protocol */
-    const char* host = cHTTPX_Header(req, "Host");
-    if (host)
-    {
-        strncpy(req->protocol, "HTTP/1.1", sizeof(req->protocol) - 1);
-    }
+    strncpy(req->protocol, "HTTP/1.1", sizeof(req->protocol) - 1);
 
     /* Parse query request */
     char* query = strchr(req->path, '?');
@@ -375,7 +377,7 @@ void* chttpx_handle(void* arg)
     set_client_timeout(client_sock);
 
     char buf[BUFFER_SIZE];
-    size_t received = read_req(client_sock, buf, BUFFER_SIZE);
+    ssize_t received = read_req(client_sock, buf, BUFFER_SIZE);
     if (received <= 0)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
