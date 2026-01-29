@@ -90,6 +90,9 @@ typedef struct {
     uint8_t present;
 } chttpx_validation_t;
 
+/* Function for free REQuest context */
+typedef void (*chttpx_context_free_fn)(void*);
+
 // REQuest
 typedef struct {
     char* method;
@@ -99,7 +102,7 @@ typedef struct {
     unsigned char* body;
     size_t body_size;
 
-    /* Content len. request */
+    /* Content len. REQuest */
     size_t content_length;
 
     /* Client socket */
@@ -111,10 +114,10 @@ typedef struct {
     /* HTTP/1.1 HTTP/2 ... */
     char protocol[16];
 
-    /* Client IP request */
+    /* Client IP REQuest */
     char client_ip[46];
 
-    /* Error request message */
+    /* Error REQuest message */
     char error_msg[BUFFER_SIZE];
 
     /* Headers in REQuest */
@@ -144,6 +147,7 @@ typedef struct {
 
     /* Context REQuest */
     void* context;
+    chttpx_context_free_fn context_free;
 } chttpx_request_t;
 
 /**

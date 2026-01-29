@@ -194,6 +194,7 @@ static void set_client_timeout(chttpx_socket_t client_fd)
 #endif
 }
 
+/* Cors */
 static const char* allowed_origin_cors(const char* req_origin)
 {
     if (!serv)
@@ -218,6 +219,7 @@ static const char* allowed_origin_cors(const char* req_origin)
     return NULL;
 }
 
+/* Etag for response cache */
 static const char* generate_etag(const unsigned char* body, size_t body_size);
 
 /**
@@ -254,7 +256,8 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
         n += snprintf(buffer + n, sizeof(buffer) - n,
                       "Access-Control-Allow-Origin: %s\r\n"
                       "Access-Control-Allow-Methods: %s\r\n"
-                      "Access-Control-Allow-Headers: %s\r\n",
+                      "Access-Control-Allow-Headers: %s\r\n"
+                      "Access-Control-Allow-Credentials: true\r\n",
                       allowed_origin, serv->cors.methods, serv->cors.headers);
     }
 
@@ -282,6 +285,15 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
         send(req->client_fd, res.body, res.body_size, 0);
 }
 
+static void send_sse_event(chttpx_request_t* req, const char* data)
+{
+    char buffer[1024];
+    snprintf(buffer, sizeof(buffer), "data: %s\n\n", data);
+
+    send(req->client_fd, buffer, strlen(buffer), 0);
+}
+
+/* For OPTIONS method */
 static void is_method_options(chttpx_request_t* req)
 {
     if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
@@ -289,6 +301,18 @@ static void is_method_options(chttpx_request_t* req)
         chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
         send_response(req, res);
         chttpx_close(req->client_fd);
+    }
+}
+
+static void chttpx_context_free(chttpx_request_t* req)
+{
+    if (req->context)
+    {
+        if (req->context_free)
+            req->context_free(req->context);
+
+        req->context = NULL;
+        req->context_free = NULL;
     }
 }
 
@@ -301,12 +325,13 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
         return NULL;
     }
 
-    if (received >= BUFFER_SIZE) received = BUFFER_SIZE - 1;
+    if (received >= BUFFER_SIZE)
+        received = BUFFER_SIZE - 1;
 
     buffer[received] = '\0';
 
     char method[16], path[MAX_PATH];
-    
+
     if (sscanf(buffer, "%15s %4095s", method, path) != 2)
     {
         free(req);
@@ -443,6 +468,9 @@ void* chttpx_handle(void* arg)
     postmiddleware_logging_write(req, &res);
 
 cleanup:
+    /* Free REQuest context */
+    chttpx_context_free(req);
+
     free(req->method);
     free(req->path);
     free(req->body);

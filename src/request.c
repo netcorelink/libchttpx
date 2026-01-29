@@ -92,6 +92,7 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
         case FIELD_STRING:
             if (cJSON_IsString(item))
             {
+                *(char**)f->target = NULL;
                 *(char**)f->target = strdup(item->valuestring);
             }
             break;
@@ -99,6 +100,7 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
         case FIELD_INT:
             if (cJSON_IsNumber(item))
             {
+                *(int*)f->target = 0;
                 *(int*)f->target = item->valueint;
             }
             break;
@@ -106,6 +108,7 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
         case FIELD_BOOL:
             if (cJSON_IsBool(item))
             {
+                *(uint8_t*)f->target = 0;
                 *(uint8_t*)f->target = cJSON_IsTrue(item);
             }
             break;

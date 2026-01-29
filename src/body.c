@@ -51,38 +51,50 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     }
 
     body_start += 4;
-
     size_t body_in_buffer = buffer_len - (body_start - buffer);
-    if (body_in_buffer > 0 && req->content_length <= MAX_BODY_IN_MEMORY)
+
+    if (req->content_length > MAX_BODY_IN_MEMORY)
     {
-        req->body = malloc(req->content_length + 1);
-        if (!req->body)
-        {
-            perror("malloc failed");
-            req->body_size = 0;
-            return;
-        }
-
-        memcpy(req->body, body_start, body_in_buffer);
-
-        size_t remaining = req->content_length - body_in_buffer;
-        size_t total_read = body_in_buffer;
-
-        while (remaining > 0)
-        {
-            ssize_t n = recv(client_fd, (char*)req->body + total_read, remaining, 0);
-            if (n <= 0)
-                break;
-            total_read += n;
-            remaining -= n;
-        }
-
-        req->body_size = total_read;
-        ((char*)req->body)[req->body_size] = '\0';
-
+        req->body = NULL;
+        req->body_size = 0;
         return;
     }
 
-    req->body = NULL;
-    req->body_size = 0;
+    req->body = malloc(req->content_length + 1);
+    if (!req->body)
+    {
+        perror("malloc failed");
+        req->body_size = 0;
+        return;
+    }
+
+    memcpy(req->body, body_start, body_in_buffer);
+
+    size_t remaining = req->content_length - body_in_buffer;
+    size_t total_read = body_in_buffer;
+
+    while (remaining > 0)
+    {
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(client_fd, &fds);
+
+        struct timeval tv;
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
+
+        int r = select(client_fd + 1, &fds, NULL, NULL, &tv);
+        if (r <= 0)
+            break;
+
+        ssize_t n = recv(client_fd, (char*)req->body + total_read, remaining, 0);
+        if (n <= 0)
+            break;
+
+        total_read += n;
+        remaining -= n;
+    }
+
+    req->body_size = total_read;
+    ((char*)req->body)[req->body_size] = '\0';
 }
