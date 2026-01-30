@@ -22,6 +22,7 @@
 
 #include "body.h"
 
+#include "headers.h"
 #include "crosspltm.h"
 
 #include <stdio.h>
@@ -42,6 +43,9 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         req->content_length = 0;
     }
 
+    const char* content_type = cHTTPX_Header(req, "Content-Type");
+    int is_json_or_text = content_type && (strstr(content_type, "application/json") || strstr(content_type, "text/"));
+
     const char* body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start || req->content_length == 0)
     {
@@ -53,7 +57,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     body_start += 4;
     size_t body_in_buffer = buffer_len - (body_start - buffer);
 
-    if (req->content_length > MAX_BODY_IN_MEMORY)
+    if (!is_json_or_text || req->content_length > MAX_BODY_IN_MEMORY)
     {
         req->body = NULL;
         req->body_size = 0;

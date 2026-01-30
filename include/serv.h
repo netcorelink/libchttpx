@@ -103,6 +103,14 @@ void cHTTPX_RegisterRoute(chttpx_router_t* r, const char *method, const char *pa
  */
 void cHTTPX_Listen();
 
+/**
+ * Shutdown the HTTPX server and release all resources.
+ *
+ * This function gracefully stops the server:
+ *  - closes listening and client sockets
+ *  - stops accepting new connections
+ *  - releases allocated memory and internal structures
+ */
 void cHTTPX_Shutdown();
 
 #ifdef __cplusplus

@@ -27,15 +27,67 @@
 #include "request.h"
 #include "crosspltm.h"
 
+#include <errno.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* Save body(file) to temp file */
-static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_length, char* tmp_filename, size_t tmp_filename_size);
+static int _save_body_to_temp_file(chttpx_request_t* req, char* initial_buffer, size_t initial_len, char* tmp_filename, size_t tmp_filename_size);
+/* Get ext file by content type */
+static const char* content_type_to_ext(const char* content_type);
+
+/* Ext map with content types */
+static const content_type_map_t content_type_map[] = {
+    { cHTTPX_CTYPE_HTML,  ".html" },
+    { cHTTPX_CTYPE_TEXT,  ".txt" },
+    { cHTTPX_CTYPE_XML,   ".xml" },
+    { cHTTPX_CTYPE_CSS,   ".css" },
+    { cHTTPX_CTYPE_CSV,   ".csv" },
+    { cHTTPX_CTYPE_JSON,  ".json" },
+    { cHTTPX_CTYPE_FORM,  ".txt" },
+    { cHTTPX_CTYPE_MULTI, ".bin" },
+
+    { cHTTPX_CTYPE_OCTET, ".bin" },
+
+    { cHTTPX_CTYPE_JS,    ".js" },
+
+    { cHTTPX_CTYPE_PNG,   ".png" },
+    { cHTTPX_CTYPE_JPEG,  ".jpg" },
+    { cHTTPX_CTYPE_GIF,   ".gif" },
+    { cHTTPX_CTYPE_WEBP,  ".webp" },
+    { cHTTPX_CTYPE_SVG,   ".svg" },
+    { cHTTPX_CTYPE_BMP,   ".bmp" },
+
+    { cHTTPX_CTYPE_MP3,   ".mp3" },
+    { cHTTPX_CTYPE_WAV,   ".wav" },
+    { cHTTPX_CTYPE_OGG,   ".ogg" },
+
+    { cHTTPX_CTYPE_MP4,   ".mp4" },
+    { cHTTPX_CTYPE_WEBM,  ".webm" },
+    { cHTTPX_CTYPE_AVI,   ".avi" },
+
+    { cHTTPX_CTYPE_ZIP,   ".zip" },
+    { cHTTPX_CTYPE_RAR,   ".rar" },
+    { cHTTPX_CTYPE_7Z,    ".7z" },
+
+    { cHTTPX_CTYPE_PDF,   ".pdf" },
+    { cHTTPX_CTYPE_DOC,   ".doc" },
+    { cHTTPX_CTYPE_DOCX,  ".docx" },
+    { cHTTPX_CTYPE_XLS,   ".xls" },
+    { cHTTPX_CTYPE_XLSX,  ".xlsx" },
+
+    { cHTTPX_CTYPE_WOFF,  ".woff" },
+    { cHTTPX_CTYPE_WOFF2, ".woff2" },
+    { cHTTPX_CTYPE_TTF,   ".ttf" },
+    { cHTTPX_CTYPE_OTF,   ".otf" },
+
+    { NULL, ".tmp" }
+};
 
 /* Parse media in request */
-void _parse_media(chttpx_request_t* req)
+void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
 {
     const char* content_type = cHTTPX_Header(req, "Content-Type");
     if (!content_type)
@@ -44,7 +96,7 @@ void _parse_media(chttpx_request_t* req)
     if (req->content_length > 0 && (!content_type || !strstr(content_type, cHTTPX_CTYPE_JSON)))
     {
         char tmp_filename[512];
-        if (_save_body_to_temp_file(req->client_fd, req->content_length, tmp_filename, sizeof(tmp_filename)) != 0)
+        if (_save_body_to_temp_file(req, buffer, buffer_len, tmp_filename, sizeof(tmp_filename)) != 0)
         {
             fprintf(stderr, "error write body in temp file\n");
             return;
@@ -57,33 +109,77 @@ void _parse_media(chttpx_request_t* req)
     }
 }
 
-/* Save body(file) to temp file */
-static int _save_body_to_temp_file(chttpx_socket_t client_fd, size_t content_length, char* tmp_filename, size_t tmp_filename_size)
+/* Save file to temp file */
+static int _save_body_to_temp_file(chttpx_request_t* req, char* initial_buffer, size_t initial_len, char* tmp_filename, size_t tmp_filename_size)
 {
-    snprintf(tmp_filename, tmp_filename_size, "/tmp/upload_%ld.tmp", random());
+    const char* ext = content_type_to_ext(cHTTPX_Header(req, "Content-Type"));
+
+    snprintf(tmp_filename, tmp_filename_size, "/tmp/upload_%ld%s", random(), ext);
     FILE* f = fopen(tmp_filename, "wb");
     if (!f)
         return 1;
 
-    unsigned char buffer[FILE_BUFFER];
-    size_t total = 0;
-    ssize_t n;
+    size_t total_written = 0;
 
-    while (total < content_length)
+    const char* body_start = memmem(initial_buffer, initial_len, "\r\n\r\n", 4);
+    if (!body_start)
     {
-        size_t to_read = sizeof(buffer);
-        if (content_length - total < to_read)
-            to_read = content_length - total;
+        fclose(f);
+        return 1;
+    }
 
-        n = recv(client_fd, buffer, to_read, 0);
+    body_start += 4;
+    size_t body_in_buffer = initial_len - (body_start - initial_buffer);
+    if (body_in_buffer > req->content_length) body_in_buffer = req->content_length;
+
+    if (fwrite(body_start, 1, body_in_buffer, f) != body_in_buffer)
+    {
+        fclose(f);
+        return 1;
+    }
+    total_written += body_in_buffer;
+
+    unsigned char tmp_buf[FILE_BUFFER];
+
+    while (total_written < req->content_length)
+    {
+        size_t to_read = FILE_BUFFER;
+        if (req->content_length - total_written < to_read) to_read = req->content_length - total_written;
+
+        ssize_t n = recv(req->client_fd, tmp_buf, to_read, 0);
         if (n <= 0)
-            break;
+        {
+            if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+                continue;
+            fclose(f);
+            return 1;
+        }
 
-        fwrite(buffer, 1, n, f);
-        total += n;
+        if (fwrite(tmp_buf, 1, n, f) != (size_t)n)
+        {
+            fclose(f);
+            return 1;
+        }
+
+        total_written += n;
     }
 
     fclose(f);
+    return 0;
+}
 
-    return total == content_length ? 0 : 1;
+/* Get ext file by content type */
+static const char* content_type_to_ext(const char* content_type)
+{
+    if (!content_type) return ".tmp";
+
+    for (size_t i = 0; content_type_map[i].ctype; i++)
+    {
+        if (strstr(content_type, content_type_map[i].ctype)) 
+        {
+            return content_type_map[i].ext;
+        }
+    }
+
+    return ".tmp";
 }

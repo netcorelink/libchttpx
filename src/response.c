@@ -116,52 +116,26 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
     return NULL;
 }
 
-static size_t read_req(int fd, char* buffer, size_t buffer_size)
+static ssize_t read_req(int fd, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
 
     while (1)
     {
-        size_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
-        if (n <= 0)
-            return -1;
-
-        total += n;
-
         if (total >= buffer_size - 1)
-            return -1;
-        buffer[total] = '\0';
-
-        if (memmem(buffer, buffer_size, "\r\n\r\n", 4))
             break;
-        if (total >= buffer_size - 1)
-            return -1;
-    }
 
-    int content_length = 0;
-    char* cl = memmem(buffer, buffer_size, "Content-Length:", 15);
-    if (cl)
-    {
-        sscanf(cl, "Content-Length: %d", &content_length);
-    }
-
-    /* Body */
-    char* body_start = memmem(buffer, buffer_size, "\r\n\r\n", 4);
-    size_t headers_len = body_start ? (size_t)(body_start - buffer + 4) : total;
-    size_t body_in_buf = total - headers_len;
-
-    while (body_in_buf < (size_t)content_length)
-    {
-        size_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
+        ssize_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
         if (n <= 0)
             return -1;
 
         total += n;
-        body_in_buf += n;
-        buffer[total] = '\0';
 
-        if (total >= buffer_size - 1)
-            return -1;
+        if (total < buffer_size)
+            buffer[total] = '\0';
+
+        if (memmem(buffer, total, "\r\n\r\n", 4))
+            break;
     }
 
     return total;
@@ -376,7 +350,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     _parse_req_body(req, client_fd, buffer, received);
 
     /* Parse media request */
-    _parse_media(req);
+    _parse_media(req, buffer, received);
 
     return req;
 }
@@ -405,14 +379,6 @@ void* chttpx_handle(void* arg)
     ssize_t received = read_req(client_sock, buf, BUFFER_SIZE);
     if (received <= 0)
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-            chttpx_request_t dummy_req = {0};
-            chttpx_response_t res = cHTTPX_ResJson(cHTTPX_StatusRequestTimeout, "{\"error\": \"read timeout\"}");
-
-            send_response(&dummy_req, res);
-        }
-
         chttpx_close(client_sock);
         return NULL;
     }

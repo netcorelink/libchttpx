@@ -47,17 +47,14 @@ const char* cHTTPX_Header(chttpx_request_t* req, const char* name)
 }
 
 /**
- * Get the client's IP from the request.
+ * Get the client's IP from the HEADER request.
  *
  * @param req a pointer to the query structure
  * @return const char* Client's IP
  */
 const char* cHTTPX_ClientIP(chttpx_request_t* req)
 {
-    if (!req)
-    {
-        return "";
-    }
+    if (!req) return "";
 
     const char* ip = cHTTPX_Header(req, "X-Forwarded-For");
     if (!ip)
@@ -86,6 +83,7 @@ static void add_header(chttpx_request_t* req, const char* name, const char* valu
     h->value[len_value] = '\0';
 }
 
+/* Parse headers in request */
 void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len)
 {
     char* line_start = buffer;

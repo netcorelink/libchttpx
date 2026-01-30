@@ -18,7 +18,7 @@ extern "C" {
 #include <stdio.h>
 #include <pthread.h>
 
-#define MAX_MIDDLEWARES 32
+#define MAX_MIDDLEWARES 128
 
 /* Enum for result all middlewares */
 typedef enum {

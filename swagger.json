@@ -1,0 +1,69 @@
+{
+  "openapi": "3.0.0",
+  "servers": [
+    { "url": "http://localhost:80/api/v1", "description": "Local" }
+  ],
+  "info": {
+    "title": "Example API",
+    "version": "2.0.0",
+    "description": "This is a high-performance real-time messaging chat."
+  },
+  "paths": {
+    "/file": {
+      "patch": {
+        "summary": "Uploading a user's avatar",
+        "description": "Updates the current user's avatar via a file",
+        "tags": ["File"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "avatar": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The image file for the avatar"
+                  }
+                },
+                "required": ["avatar"]
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              },
+              "description": "Upload a JPEG avatar"
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              },
+              "description": "Upload a PNG avatar"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Avatar uploaded successfully",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -50,6 +50,7 @@ const char* cHTTPX_Query(chttpx_request_t* req, const char* name)
     return NULL;
 }
 
+/* Parse queries in request */
 void _parse_req_query(chttpx_request_t* req, char* query)
 {
     char* token = strtok(query, "&");

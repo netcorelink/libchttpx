@@ -45,6 +45,8 @@ typedef enum {
     LANG_COUNT
 } i18n_language_t;
 
+i18n_language_t i18n_lang_from_string(const char* code);
+
 /**
  * Initializes the global i18n manager.
  *
@@ -84,8 +86,6 @@ void cHTTPX_i18n(const char *directory);
  *   const char* text = cHTTPX_i18n_t("welcome", "ru");
  */
 const char* cHTTPX_i18n_t(const char *key, const char *lang);
-
-i18n_language_t i18n_lang_from_string(const char* code);
 
 #ifdef __cplusplus
 }

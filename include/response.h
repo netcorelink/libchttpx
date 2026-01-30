@@ -34,6 +34,7 @@ typedef struct {
     struct timespec end_ts;
 } chttpx_response_t;
 
+/* handler */
 typedef void (*chttpx_handler_t)(chttpx_request_t *req, chttpx_response_t *res);
 
 /**

@@ -23,13 +23,14 @@ extern "C" {
 const char* cHTTPX_Header(chttpx_request_t *req, const char *name);
 
 /**
- * Get the client's IP from the request.
+ * Get the client's IP from the HEADER request.
  * 
  * @param req a pointer to the query structure
  * @return const char* Client's IP
  */
-// const char *cHTTPX_ClientIP(chttpx_request_t *req);
+const char *cHTTPX_ClientIP(chttpx_request_t *req);
 
+/* Parse headers in request */
 void _parse_req_headers(chttpx_request_t *req, char *buffer, size_t buffer_len);
 
 #ifdef __cplusplus

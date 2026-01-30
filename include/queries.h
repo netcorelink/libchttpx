@@ -26,6 +26,7 @@ extern "C" {
  */
 const char* cHTTPX_Query(chttpx_request_t *req, const char *name);
 
+/* Parse queries in request */
 void _parse_req_query(chttpx_request_t *req, char *query);
 
 #ifdef __cplusplus
