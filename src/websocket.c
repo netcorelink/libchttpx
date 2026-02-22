@@ -45,3 +45,14 @@ int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key)
 
     return 0;
 }
+
+// static wsocket_read_frame(chttpx_socket_t client_fd, wsocket_frame_t* out)
+// {
+//     unsigned char hdr[2];
+
+//     if (recv(client_fd, hdr, 2, MSG_WAITALL) <= 0) return -1;
+
+//     int opcode = hdr[0] & 0x0F;
+//     int masked = hdr[1] & 0x80;
+//     int len = hdr[1] & 0x7F;
+// }

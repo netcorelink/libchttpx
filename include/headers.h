@@ -20,7 +20,32 @@ extern "C" {
  * @param name Header name (case-insensitive).
  * @return Pointer to header value if found, otherwise NULL.
  */
-const char* cHTTPX_Header(chttpx_request_t *req, const char *name);
+const char* cHTTPX_HeaderGet(chttpx_request_t *req, const char *name);
+
+/**
+ * Add a new HTTP header.
+ *
+ * This function appends a header to the request/response header list.
+ * Unlike HeaderSet, it does NOT replace existing headers with the same name.
+ * This is required for headers like "Set-Cookie" that may appear multiple times.
+ *
+ * @param req   Pointer to HTTP request/response structure.
+ * @param name  Header name.
+ * @param value Header value.
+ */
+int cHTTPX_HeaderAdd(chttpx_request_t* req, const char* name, const char* value);
+
+/**
+ * Set or add a request header.
+ * If header exists (case-insensitive), its value will be replaced.
+ * Otherwise a new header will be added.
+ *
+ * @param req Pointer to the HTTP request.
+ * @param name Header name.
+ * @param value Header value.
+ * @return 0 on success, -1 on error.
+ */
+int cHTTPX_HeaderSet(chttpx_request_t *req, const char *name, const char *value);
 
 /**
  * Get the client's IP from the HEADER request.

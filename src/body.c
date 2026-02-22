@@ -43,8 +43,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         req->content_length = 0;
     }
 
-    const char* content_type = cHTTPX_Header(req, "Content-Type");
-    int is_json_or_text = content_type && (strstr(content_type, "application/json") || strstr(content_type, "text/"));
+    int is_json_or_text = req->content_type && (strstr(req->content_type, "application/json") || strstr(req->content_type, "text/"));
 
     const char* body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start || req->content_length == 0)

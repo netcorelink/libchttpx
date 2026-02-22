@@ -9,6 +9,30 @@
 
 #include <stdlib.h>
 
+#define CHTTPX_WSOCKET_OPCODE_CONTINUATION 0x0
+#define CHTTPX_WSOCKET_OPCODE_TEXT 0x1
+#define CHTTPX_WSOCKET_OPCODE_BINARY 0x2
+#define CHTTPX_WSOCKET_OPCODE_CLOSE 0x8
+#define CHTTPX_WSOCKET_OPCODE_PING 0x9
+#define CHTTPX_WSOCKET_OPCODE_PONG 0xA
+
+typedef struct {
+    /* FIN - final fragment 
+     * 1 eq. this is the last frame of the message
+     * 0 eq. the message is divided into several parts 
+     */
+    int fin;
+    /* Check define CHTTPX_WSOCKET_OPCODE */
+    int opcode;
+    int masked;
+    /* Length data in payload */
+    uint64_t payload_len;
+    /* Mask for XOR payload */
+    unsigned char mask[4];
+    /* Data in socket */
+    unsigned char* payload;
+} wsocket_frame_t;
+
 typedef struct {
     int socket;
     int connected;

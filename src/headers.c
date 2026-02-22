@@ -30,7 +30,7 @@
  * @param name Header name (case-insensitive).
  * @return Pointer to header value if found, otherwise NULL.
  */
-const char* cHTTPX_Header(chttpx_request_t* req, const char* name)
+const char* cHTTPX_HeaderGet(chttpx_request_t* req, const char* name)
 {
     if (!req || req->headers_count == 0 || !name)
         return NULL;
@@ -47,6 +47,77 @@ const char* cHTTPX_Header(chttpx_request_t* req, const char* name)
 }
 
 /**
+ * Add a new HTTP header.
+ *
+ * This function appends a header to the request/response header list.
+ * Unlike HeaderSet, it does NOT replace existing headers with the same name.
+ * This is required for headers like "Set-Cookie" that may appear multiple times.
+ *
+ * @param req   Pointer to HTTP request/response structure.
+ * @param name  Header name.
+ * @param value Header value.
+ */
+int cHTTPX_HeaderAdd(chttpx_request_t* req, const char* name, const char* value)
+{
+    if (!req || !name || !value)
+        return -1;
+
+    if (req->headers_count >= MAX_HEADERS)
+        return -1;
+
+    chttpx_header_t* h = &req->headers[req->headers_count];
+
+    strncpy(h->name, name, MAX_HEADER_NAME - 1);
+    h->name[MAX_HEADER_NAME - 1] = '\0';
+
+    strncpy(h->value, value, MAX_HEADER_VALUE - 1);
+    h->value[MAX_HEADER_VALUE - 1] = '\0';
+
+    req->headers_count++;
+
+    return 0;
+}
+
+/**
+ * Set or add a request header.
+ * If header exists (case-insensitive), its value will be replaced.
+ * Otherwise a new header will be added.
+ *
+ * @param req Pointer to the HTTP request.
+ * @param name Header name.
+ * @param value Header value.
+ * @return 0 on success, -1 on error.
+ */
+int cHTTPX_HeaderSet(chttpx_request_t* req, const char* name, const char* value)
+{
+    if (!req || !name || !value)
+        return -1;
+
+    for (size_t i = 0; i < req->headers_count; i++)
+    {
+        if (strcasecmp(req->headers[i].name, name) == 0)
+        {
+            strncpy(req->headers[i].value, value, MAX_HEADER_VALUE - 1);
+            req->headers[i].value[MAX_HEADER_VALUE - 1] = '\0';
+            return 0;
+        }
+    }
+
+    if (req->headers_count >= MAX_HEADERS)
+        return -1;
+
+    strncpy(req->headers[req->headers_count].name, name, MAX_HEADER_NAME - 1);
+    req->headers[req->headers_count].name[MAX_HEADER_NAME - 1] = '\0';
+
+    strncpy(req->headers[req->headers_count].value, value, MAX_HEADER_VALUE - 1);
+    req->headers[req->headers_count].value[MAX_HEADER_VALUE - 1] = '\0';
+
+    req->headers_count++;
+
+    return 0;
+}
+
+/**
  * Get the client's IP from the HEADER request.
  *
  * @param req a pointer to the query structure
@@ -54,11 +125,12 @@ const char* cHTTPX_Header(chttpx_request_t* req, const char* name)
  */
 const char* cHTTPX_ClientIP(chttpx_request_t* req)
 {
-    if (!req) return "";
+    if (!req)
+        return "";
 
-    const char* ip = cHTTPX_Header(req, "X-Forwarded-For");
+    const char* ip = cHTTPX_HeaderGet(req, "X-Forwarded-For");
     if (!ip)
-        ip = cHTTPX_Header(req, "Remote-Addr");
+        ip = cHTTPX_HeaderGet(req, "Remote-Addr");
 
     return ip;
 }

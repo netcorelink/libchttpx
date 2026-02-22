@@ -209,7 +209,7 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     char buffer[BUFFER_SIZE];
 
     /* Cors */
-    const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_Header(req, "Origin")) : NULL;
+    const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
     int n = snprintf(buffer, sizeof(buffer),
                      "HTTP/1.1 %d OK\r\n"
@@ -233,6 +233,12 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
                       "Access-Control-Allow-Headers: %s\r\n"
                       "Access-Control-Allow-Credentials: true\r\n",
                       allowed_origin, serv->cors.methods, serv->cors.headers);
+    }
+
+    /* Add all request headers */
+    for (size_t i = 0; i < req->headers_count; i++)
+    {
+        n += snprintf(buffer + n, sizeof(buffer) - n, "%s: %s\r\n", req->headers[i].name, req->headers[i].value);
     }
 
     strcat(buffer, "\r\n");
@@ -328,12 +334,15 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     /* Parse cookies */
     _parse_req_cookies(req);
 
+    /* Content-Type */
+    const char* content_type = cHTTPX_HeaderGet(req, "Content-Type");
+    if (content_type)
+        snprintf(req->content_type, sizeof(req->content_type), "%s", content_type ? content_type : cHTTPX_CTYPE_JSON);
+
     /* User-Agent */
-    const char* user_agent = cHTTPX_Header(req, "User-Agent");
+    const char* user_agent = cHTTPX_HeaderGet(req, "User-Agent");
     if (user_agent)
-    {
         snprintf(req->user_agent, sizeof(req->user_agent), "%s", user_agent);
-    }
 
     /* Protocol */
     strncpy(req->protocol, "HTTP/1.1", sizeof(req->protocol) - 1);
@@ -436,6 +445,9 @@ void* chttpx_handle(void* arg)
 cleanup:
     /* Free REQuest context */
     chttpx_context_free(req);
+
+    /* Free REQuest cookie */
+    chttpx_free_req_cookie(req);
 
     free(req->method);
     free(req->path);

@@ -255,15 +255,6 @@ static double diff_ms(struct timespec a, struct timespec b)
     return (b.tv_sec - a.tv_sec) * 1000.0 + (b.tv_nsec - a.tv_nsec) / 1e6;
 }
 
-static void ensure_dir(const char* path)
-{
-    struct stat st;
-    if (stat(path, &st) != 0)
-    {
-        mkdir(path, 0755);
-    }
-}
-
 /**
  * Writes the HTTP request and response log to a file.
  *
@@ -284,18 +275,14 @@ void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res)
     struct tm tm_now;
     localtime_r(&now, &tm_now);
 
-    char root_dir[] = "logs";
-    char date_dir[16]; // DD.MM
-    snprintf(date_dir, sizeof(date_dir), "%02d.%02d", tm_now.tm_mday, tm_now.tm_mon + 1);
+    char log_dir[256];
+    snprintf(log_dir, sizeof(log_dir), "./logs/log_%02d%02d%d", tm_now.tm_mday, tm_now.tm_mon + 1, tm_now.tm_year + 1900);
 
-    ensure_dir(root_dir);
-
-    char full_dir[256];
-    snprintf(full_dir, sizeof(full_dir), "%s/%s", root_dir, date_dir);
-    ensure_dir(full_dir);
+    mkdir("./logs", 0755);
+    mkdir(log_dir, 0755);
 
     char log_file[512];
-    snprintf(log_file, sizeof(log_file), "%s/server.log", full_dir);
+    snprintf(log_file, sizeof(log_file), "%s/server.log", log_dir);
 
     char timebuf[64];
     strftime(timebuf, sizeof(timebuf), "%d/%b/%Y:%H:%M:%S %z", &tm_now);

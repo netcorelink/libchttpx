@@ -25,11 +25,13 @@ extern "C" {
 #define MAX_HEADER_NAME 128
 #define MAX_HEADER_VALUE 4096
 
+/* Header structure */
 typedef struct {
     char name[MAX_HEADER_NAME];
     char value[MAX_HEADER_VALUE];
 } chttpx_header_t;
 
+/* Query structure */
 typedef struct {
     char *name;
     char *value;
@@ -39,18 +41,29 @@ typedef struct {
 #define MAX_PARAM_NAME 128
 #define MAX_PARAM_VALUE 1024
 
+/* Param structure */
 typedef struct {
     char name[MAX_PARAM_NAME];
     char value[MAX_PARAM_VALUE];
 } chttpx_param_t;
 
 #define MAX_COOKIES 64
-#define MAX_COOKIE_NAME 128
-#define MAX_COOKIE_VALUE 1024
 
+/* Cookie structure */
 typedef struct {
-    char name[MAX_COOKIE_NAME];
-    char value[MAX_COOKIE_VALUE];
+    char* name;
+    char* value;
+
+    char* path;
+    char* domain;
+
+    time_t expires;
+
+    bool http_only;
+    bool secure;
+
+    /* 0 - None; 1 - Lax; 2 - Strict; 3 - None */
+    int same_site;
 } chttpx_cookie_t;
 
 /* Validation structs */
@@ -104,6 +117,9 @@ typedef struct {
 
     /* Content len. REQuest */
     size_t content_length;
+
+    /* Content type REQuest */
+    char content_type[512];
 
     /* Client socket */
     chttpx_socket_t client_fd;
