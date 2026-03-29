@@ -96,12 +96,60 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
                 *(char**)f->target = strdup(item->valuestring);
             }
             break;
+        
+        case FIELD_STRING_ARRAY:
+            if (cJSON_IsArray(item))
+            {
+                size_t count = cJSON_GetArraySize(item);
 
-        case FIELD_INT:
+                chttpx_string_array_t* arr = (chttpx_string_array_t*)f->target;
+                arr->count = count;
+                arr->items = malloc(sizeof(char*) * count);
+
+                for (size_t j = 0; j < count; j++)
+                {
+                    cJSON* el = cJSON_GetArrayItem(item, j);
+                    if (cJSON_IsString(el))
+                    {
+                        arr->items[j] = strdup(el->valuestring);
+                    }
+                    else
+                    {
+                        arr->items[j] = NULL;
+                    }
+                }
+            }
+            break;
+
+        case FIELD_NUMBER:
             if (cJSON_IsNumber(item))
             {
                 *(int*)f->target = 0;
                 *(int*)f->target = item->valueint;
+            }
+            break;
+
+        case FIELD_NUMBER_ARRAY:
+            if (cJSON_IsArray(item))
+            {
+                size_t count = cJSON_GetArraySize(item);
+
+                chttpx_number_array_t* arr = (chttpx_number_array_t*)f->target;
+                arr->count = count;
+                arr->items = malloc(sizeof(int) * count);
+
+                for (size_t j = 0; j < count; j++)
+                {
+                    cJSON* el = cJSON_GetArrayItem(item, j);
+                    if (cJSON_IsNumber(el))
+                    {
+                        arr->items[j] = el->valueint;
+                    }
+                    else
+                    {
+                        arr->items[j] = 0;
+                    }
+                }
             }
             break;
 

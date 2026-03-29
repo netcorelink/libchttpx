@@ -24,6 +24,10 @@ typedef struct {
     /* Response content type */
     const char *content_type;
 
+    /* Headers in REQuest */
+    chttpx_header_t headers[MAX_HEADERS];
+    size_t headers_count;
+
     /* Response body */
     const unsigned char *body;
     /* Response body size */

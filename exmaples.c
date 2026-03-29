@@ -57,12 +57,31 @@ void swagger_gui_handler(chttpx_request_t* req, chttpx_response_t* res)
     return;
 }
 
+void array(chttpx_request_t* req, chttpx_response_t* res)
+{
+    chttpx_string_array_t tags = {0};
+
+    chttpx_validation_t fields[] = {
+        {.name="tags", .type=FIELD_STRING_ARRAY, .target=&tags},
+    };
+
+    if (!cHTTPX_Parse(req, fields, ARRAY_LEN(fields)))
+        goto error;
+
+    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", tags.items[0]);
+    return;
+
+error:
+    *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
+    return;
+}
+
 void create_user(chttpx_request_t* req, chttpx_response_t* res)
 {
     user_t user = {0};
 
     chttpx_validation_t fields[] = {
-        chttpx_validation_string("email", &user.uuid, true, 0, 254, VALIDATOR_EMAIL),
+        chttpx_validation_string("uuid", &user.uuid, true, 0, 254, VALIDATOR_NONE),
         chttpx_validation_string("password", &user.password, false, 6, 16, VALIDATOR_NONE),
         chttpx_validation_boolean("is_admin", &user.is_admin, false),
     };
@@ -72,6 +91,8 @@ void create_user(chttpx_request_t* req, chttpx_response_t* res)
 
     if (!cHTTPX_Validate(req, fields, ARRAY_LEN(fields), "ru"))
         goto error;
+
+    printf("%s", user.uuid);
 
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": \"%s\"}", cHTTPX_i18n_t("welcome", "ru"));
     return;
@@ -95,7 +116,7 @@ void picture_handler(chttpx_request_t* req, chttpx_response_t* res)
                                     .http_only = false,
                                     .secure = false};
 
-    if (cHTTPX_CookieSet(req, &cookieAccess) != 0)
+    if (cHTTPX_CookieSet(res, &cookieAccess) != 0)
     {
         goto error;
     }

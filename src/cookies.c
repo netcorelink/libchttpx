@@ -113,9 +113,9 @@ const chttpx_cookie_t* cHTTPX_CookieGet(chttpx_request_t* req, const char* name)
  * @param req     Pointer to HTTP request/response structure.
  * @param cookie  Pointer to cookie structure.
  */
-int cHTTPX_CookieSet(chttpx_request_t* req, const chttpx_cookie_t* cookie)
+int cHTTPX_CookieSet(chttpx_response_t* res, const chttpx_cookie_t* cookie)
 {
-    if (!req || !cookie)
+    if (!res || !cookie)
         return -1;
 
     char buffer[1024];
@@ -167,5 +167,5 @@ int cHTTPX_CookieSet(chttpx_request_t* req, const chttpx_cookie_t* cookie)
         offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; HttpOnly");
     }
 
-    return cHTTPX_HeaderAdd(req, "Set-Cookie", buffer);
+    return cHTTPX_HeaderAdd(res, "Set-Cookie", buffer);
 }

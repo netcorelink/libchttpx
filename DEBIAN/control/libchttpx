@@ -1,5 +1,5 @@
 Package: libchttpx
-Version: 1.0.0
+Version: 1.5.2
 Section: libs
 Priority: optional
 Architecture: amd64

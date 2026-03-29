@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "request.h"
+#include "response.h"
 
 /* Parse cookie in request */
 void _parse_req_cookies(chttpx_request_t *req);
@@ -43,7 +44,7 @@ const chttpx_cookie_t* cHTTPX_CookieGet(chttpx_request_t *req, const char *name)
  * @param req     Pointer to HTTP request/response structure.
  * @param cookie  Pointer to cookie structure.
  */
-int cHTTPX_CookieSet(chttpx_request_t* req, const chttpx_cookie_t* cookie);
+int cHTTPX_CookieSet(chttpx_response_t* res, const chttpx_cookie_t* cookie);
 
 #ifdef __cplusplus
 }

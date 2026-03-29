@@ -236,12 +236,12 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     }
 
     /* Add all request headers */
-    for (size_t i = 0; i < req->headers_count; i++)
+    for (size_t i = 0; i < res.headers_count; i++)
     {
-        n += snprintf(buffer + n, sizeof(buffer) - n, "%s: %s\r\n", req->headers[i].name, req->headers[i].value);
+        n += snprintf(buffer + n, sizeof(buffer) - n, "%s: %s\r\n", res.headers[i].name, res.headers[i].value);
     }
 
-    strcat(buffer, "\r\n");
+    n += snprintf(buffer + n, sizeof(buffer) - n, "\r\n");
 
     /* LOG */
     /* --- */
@@ -503,7 +503,9 @@ chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
     va_end(args);
 
     size_t len = strlen(buffer);
-    unsigned char* body = malloc(len);
+    unsigned char* body = malloc(len + 1);
+    memcpy(body, buffer, len);
+    body[len] = '\0';
     if (!body)
     {
         perror("malloc failed");

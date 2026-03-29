@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 #include "request.h"
+#include "response.h"
 
 /**
  * Get a request header by name.
@@ -29,11 +30,11 @@ const char* cHTTPX_HeaderGet(chttpx_request_t *req, const char *name);
  * Unlike HeaderSet, it does NOT replace existing headers with the same name.
  * This is required for headers like "Set-Cookie" that may appear multiple times.
  *
- * @param req   Pointer to HTTP request/response structure.
+ * @param res   Pointer to HTTP request/response structure.
  * @param name  Header name.
  * @param value Header value.
  */
-int cHTTPX_HeaderAdd(chttpx_request_t* req, const char* name, const char* value);
+int cHTTPX_HeaderAdd(chttpx_response_t* res, const char* name, const char* value);
 
 /**
  * Set or add a request header.

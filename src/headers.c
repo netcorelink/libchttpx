@@ -57,15 +57,15 @@ const char* cHTTPX_HeaderGet(chttpx_request_t* req, const char* name)
  * @param name  Header name.
  * @param value Header value.
  */
-int cHTTPX_HeaderAdd(chttpx_request_t* req, const char* name, const char* value)
+int cHTTPX_HeaderAdd(chttpx_response_t* res, const char* name, const char* value)
 {
-    if (!req || !name || !value)
+    if (!res || !name || !value)
         return -1;
 
-    if (req->headers_count >= MAX_HEADERS)
+    if (res->headers_count >= MAX_HEADERS)
         return -1;
 
-    chttpx_header_t* h = &req->headers[req->headers_count];
+    chttpx_header_t* h = &res->headers[res->headers_count];
 
     strncpy(h->name, name, MAX_HEADER_NAME - 1);
     h->name[MAX_HEADER_NAME - 1] = '\0';
@@ -73,7 +73,7 @@ int cHTTPX_HeaderAdd(chttpx_request_t* req, const char* name, const char* value)
     strncpy(h->value, value, MAX_HEADER_VALUE - 1);
     h->value[MAX_HEADER_VALUE - 1] = '\0';
 
-    req->headers_count++;
+    res->headers_count++;
 
     return 0;
 }

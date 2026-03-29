@@ -69,9 +69,21 @@ typedef struct {
 /* Validation structs */
 typedef enum {
     FIELD_STRING,
-    FIELD_INT,
-    FIELD_BOOL
+    FIELD_NUMBER,
+    FIELD_BOOL,
+    FIELD_STRING_ARRAY,
+    FIELD_NUMBER_ARRAY
 } validation_t;
+
+typedef struct {
+    char** items;
+    size_t count;
+} chttpx_string_array_t;
+
+typedef struct {
+    int* items;
+    size_t count;
+} chttpx_number_array_t;
 
 typedef enum {
     VALIDATOR_NONE,
@@ -209,7 +221,7 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
  *
  * @return A chttpx_validation_t structure initialized for an integer field.
  */
-#define chttpx_validation_integer(name, ptr, required) (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_INT, VALIDATOR_NONE, 0}
+#define chttpx_validation_integer(name, ptr, required) (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0}
 
 /**
  * Macro to define a boolean field for JSON request validation.

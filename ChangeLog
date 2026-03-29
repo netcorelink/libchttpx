@@ -1,0 +1,7 @@
+- libchttpx v1.5.2 Latest
+
+Fixed a critical error related to headers responses.
+
+- libchttpx v1.5.1
+
+Fixed a critical error with the FIELD_INT field in request.
