@@ -1,0 +1,49 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev clang-format
+
+      - name: Build release archive
+        run: |
+          make lin-lib
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: libchttpx-dev.tar.gz
+          body: |
+            <p align="center">
+              <img alt="golangci-lint logo" src="https://avatars.githubusercontent.com/u/252895549?s=400&u=6c747c431c2844620af7772fcd716ef423a6ab1d&v=4" height="150" />
+              <h3 align="center">netcorelink/libchttpx</h3>
+              <p align="center">A powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers</p>
+            </p>
+
+            ---
+
+            > :warning: **Warning:** Use the `linux environment` for stable library operation.
+
+            ## Linux
+
+            ```bash
+            curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+            ```
+
+            ## Windows
+
+            ```powershell
+            iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
+            ```
