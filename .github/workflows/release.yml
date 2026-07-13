@@ -24,6 +24,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: libchttpx ${{ github.ref_name }}
           files: libchttpx-dev.tar.gz
           body: |
             <p align="center">
