@@ -33,7 +33,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     req->client_fd = client_fd;
 
     size_t content_length = 0;
-    const char* cl_header = memmem(buffer, buffer_len, "Content-Length:", 15);
+    const char* cl_header = memmem_case(buffer, buffer_len, "Content-Length:", strlen("Content-Length:"));
     if (cl_header && sscanf(cl_header, "%*[^0-9]%zu", &content_length) == 1)
     {
         req->content_length = content_length;
