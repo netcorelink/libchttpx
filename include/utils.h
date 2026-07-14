@@ -43,4 +43,35 @@ inline int _thread_join(thread_t thread)
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+#include <ctype.h>
+
+static inline const char* memmem_case(const void* haystack, size_t haystack_len, const void* needle, size_t needle_len)
+{
+    const unsigned char* h = (const unsigned char*)haystack;
+    const unsigned char* n = (const unsigned char*)needle;
+
+    if (needle_len == 0)
+        return (const char*)haystack;
+
+    if (haystack_len < needle_len)
+        return NULL;
+
+    for (size_t i = 0; i <= haystack_len - needle_len; i++)
+    {
+        size_t j = 0;
+
+        while (j < needle_len &&
+               tolower((unsigned char)h[i + j]) ==
+               tolower((unsigned char)n[j]))
+        {
+            j++;
+        }
+
+        if (j == needle_len)
+            return (const char*)(h + i);
+    }
+
+    return NULL;
+}
+
 #endif
