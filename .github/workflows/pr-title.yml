@@ -12,20 +12,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate conventional PR title
-        uses: amannn/action-semantic-pull-request@v5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          types: |
-            feat
-            fix
-            docs
-            style
-            refactor
-            perf
-            test
-            build
-            ci
-            chore
-            revert
-          requireScope: false
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Skip WIP PRs: title starts with [wip]
+          if echo "$TITLE" | grep -qiE '^\[wip\]'; then
+            echo "Skipped: WIP PR"
+            exit 0
+          fi
+
+          # type: description  |  type(scope): description  |  type!: breaking change
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'
+
+          if echo "$TITLE" | grep -qiE "$pattern"; then
+            echo "PR title is valid: $TITLE"
+            exit 0
+          fi
+
+          echo "::error::Invalid PR title: \"$TITLE\""
+          echo ""
+          echo "Use conventional commit format:"
+          echo "  type: short description"
+          echo ""
+          echo "Examples:"
+          echo "  feat: add auth middleware"
+          echo "  fix: correct Content-Length parsing"
+          echo "  ci: fix workflows and formatting"
+          echo "  chore: update dependabot config"
+          echo ""
+          echo "Breaking change:"
+          echo "  feat!: rename cHTTPX_Parse API"
+          echo ""
+          echo "NOT valid: Feat/ci fix  (use colon, not slash)"
+          exit 1
