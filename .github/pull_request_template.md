@@ -19,6 +19,8 @@ Use a **conventional commit** title — it becomes the release version on merge:
 
 - [ ] PR title follows the table above
 - [ ] Code builds on Linux (`make lin` and `make libchttpx.so`)
+- [ ] Tests pass (`make test`)
+- [ ] Example server builds separately (`make example`) if needed
 - [ ] Code builds on Windows (`make win`) if applicable
 - [ ] Source is formatted (`make lin-format` or `clang-format`)
 - [ ] README updated if public API or usage changed
