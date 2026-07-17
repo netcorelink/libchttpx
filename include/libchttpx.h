@@ -37,6 +37,8 @@ extern "C"
 
 #include "i18n.h"
 
+#include "websocket.h"
+
 #ifdef __cplusplus
 }
 #endif

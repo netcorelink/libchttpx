@@ -30,68 +30,15 @@
 #include "headers.h"
 #include "cookies.h"
 #include "queries.h"
+#include "params.h"
 #include "crosspltm.h"
+#include "websocket.h"
 
 #include <errno.h>
 #include <stdarg.h>
 
 chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...);
 
-static int match_route(const char* template, const char* path, chttpx_param_t* params, int* param_count)
-{
-    int count = 0;
-    const char* t = template;
-    const char* p = path;
-
-    while (*t && *p)
-    {
-        if (*t == '{')
-        {
-            const char* t_end = strchr(t, '}');
-            if (!t_end)
-                return 0;
-
-            if (count >= MAX_PARAMS)
-                return 0;
-
-            size_t name_len = t_end - t - 1;
-            strncpy(params[count].name, t + 1, name_len);
-            params[count].name[name_len] = 0;
-
-            const char* slash = strchr(p, '/');
-
-            size_t val_len = slash ? (size_t)(slash - p) : strlen(p);
-
-            if (val_len >= MAX_PARAM_VALUE)
-                val_len = MAX_PARAM_VALUE - 1;
-            strncpy(params[count].value, p, val_len);
-            params[count].value[val_len] = 0;
-
-            count++;
-            t = t_end + 1;
-            p += val_len;
-        }
-        else
-        {
-            if (*t != *p)
-                return 0;
-            t++;
-            p++;
-        }
-    }
-
-    if (*t || *p)
-        return 0;
-    *param_count = count;
-
-    return 1;
-}
-
-/**
- * Find a registered route by HTTP method and path.
- * @param req  Pointer to the current HTTP request structure.
- * @return Pointer to the matching chttpx_route_t if found, NULL otherwise.
- */
 static chttpx_route_t* find_route(chttpx_request_t* req)
 {
     if (!serv)
@@ -106,7 +53,7 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
             continue;
 
         int count = 0;
-        if (match_route(serv->routes[i].path, req->path, req->params, &count))
+        if (cHTTPX_MatchPath(serv->routes[i].path, req->path, req->params, &count))
         {
             req->params_count = count;
             return &serv->routes[i];
@@ -403,6 +350,23 @@ void* chttpx_handle(void* arg)
     /* ALLOWED OPTIONS METHOD */
     is_method_options(req);
 
+    int ws_result = cHTTPX_WSocketTryHandle(req);
+    int keep_socket = 0;
+    if (ws_result == 1)
+    {
+        keep_socket = 1;
+        goto cleanup;
+    }
+
+    if (ws_result == -1)
+    {
+        chttpx_response_t res =
+            cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"websocket upgrade failed\"}");
+            
+        send_response(req, res);
+        goto cleanup;
+    }
+
     chttpx_route_t* r = find_route(req);
     chttpx_response_t res = {0};
 
@@ -462,7 +426,8 @@ cleanup:
     free(req->query);
     free(req);
 
-    chttpx_close(client_sock);
+    if (!keep_socket)
+        chttpx_close(client_sock);
     return NULL;
 }
 
