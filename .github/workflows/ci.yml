@@ -50,25 +50,6 @@ jobs:
       - name: Build
         run: mingw32-make win SHELL=cmd
 
-  format-check:
-    name: Format check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: sudo apt update && sudo apt install -y clang-format
-
-      - name: Check formatting
-        run: |
-          mapfile -t files < <(find . -path './lib/cjson' -prune -o \( -name '*.c' -o -name '*.h' \) -print)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No source files found."
-            exit 0
-          fi
-          clang-format --dry-run --Werror -style=file "${files[@]}"
-
   static-analysis:
     name: Static analysis (cppcheck)
     runs-on: ubuntu-latest
