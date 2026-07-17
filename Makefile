@@ -1,4 +1,5 @@
-TARGET=chttpx-server
+TARGET = libchttpx-tests
+EXAMPLE_TARGET = chttpx-server
 
 RELEASE_DIR = libchttpx-dev
 TAR = $(RELEASE_DIR).tar.gz
@@ -17,40 +18,60 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS = -lcjson
+LIN_LDFLAGS = -lcjson -lpthread
 WIN_LDFLAGS = -lws2_32
 
-LIN_SRCS = $(filter-out ./lib/cjson/cJSON.c, $(shell find . -name '*.c'))
-WIN_SRCS = $(wildcard *.c) $(wildcard */*.c) $(wildcard */*/*.c)
+LIB_SRCS = $(wildcard src/*.c)
+LIB_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIB_SRCS))
 
-LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
-WIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(WIN_SRCS))
+TEST_SRCS = $(wildcard tests/test_*.c)
+TEST_OBJS = $(patsubst tests/%.c,$(OBJDIR)/tests/%.o,$(TEST_SRCS))
+
+EXAMPLE_OBJ = $(OBJDIR)/exmaples.o
+
+WIN_LIB_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
 
 # LINux build
 # -
 
-lin: $(BINDIR)/$(TARGET)
+lin: $(BINDIR)/$(TARGET) libchttpx.so
 
-$(BINDIR)/$(TARGET): $(LIN_OBJS)
+$(BINDIR)/$(TARGET): $(LIB_OBJS) $(TEST_OBJS)
 	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $(LIN_OBJS) $(LIN_LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(LIB_OBJS) $(TEST_OBJS) $(LIN_LDFLAGS)
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+
+$(OBJDIR)/tests/%.o: tests/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+
+example: $(BINDIR)/$(EXAMPLE_TARGET)
+
+$(BINDIR)/$(EXAMPLE_TARGET): $(LIB_OBJS) $(EXAMPLE_OBJ)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -o $@ $(LIB_OBJS) $(EXAMPLE_OBJ) $(LIN_LDFLAGS)
 
 # WINdows build
 # -
 
 win:
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
+	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_LIB_SRCS) exmaples.c -o $(BINDIR)/$(EXAMPLE_TARGET).exe $(WIN_LDFLAGS)
+
+win-test: $(BINDIR)/$(TARGET).exe
+
+$(BINDIR)/$(TARGET).exe:
+	if not exist $(BINDIR) mkdir $(BINDIR)
+	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_LIB_SRCS) $(TEST_SRCS) -o $@ $(WIN_LDFLAGS)
 
 # LINux shared library
 # -
 
-libchttpx.so: $(LIN_OBJS)
-	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS)
+libchttpx.so: $(LIB_OBJS)
+	$(CC) -shared -fPIC -o libchttpx.so $(LIB_OBJS) $(LIN_LDFLAGS)
 
 # LINux lib install
 # -
@@ -67,9 +88,9 @@ lib-install: libchttpx.so
 # WINdows lib compile
 # -
 
-win-lib: $(WIN_OBJS)
+win-lib:
 	@echo "Building Windows DLL..."
-	$(CC) -shared -o $(TARGET_DLL) $(WIN_OBJS) -Wl,--out-implib,libchttpx.a -lws2_32
+	$(CC) -shared -o $(TARGET_DLL) $(WIN_LIB_SRCS) -Wl,--out-implib,libchttpx.a -lws2_32
 
 	@echo "Copying files to $(WIN_LIB_DIR)..."
 	@mkdir -p $(WIN_LIB_DIR)
@@ -106,13 +127,21 @@ lin-lib: clean libchttpx.so
 # LINux run
 # -
 
-lin-run: lin
+test: lin
 	$(BINDIR)/$(TARGET)
+
+lin-run: test
+
+lin-example: example
+	$(BINDIR)/$(EXAMPLE_TARGET)
 
 # WINdows run
 # -
 
 win-run: win
+	$(BINDIR)\$(EXAMPLE_TARGET).exe
+
+win-test-run: win-test
 	$(BINDIR)\$(TARGET).exe
 
 # LINux format
@@ -120,16 +149,16 @@ win-run: win
 
 lin-format:
 	@echo ">> Formatting clang source files"
-	$(CLANG_FORMAT) -i $(LIN_SRCS)
+	$(CLANG_FORMAT) -i $(LIB_SRCS) $(TEST_SRCS)
 
 # WINdows format
 # -
 
 win-format:
 	@echo ">> Formatting clang source files"
-	$(CLANG_FORMAT) -i $(WIN_SRCS)
+	$(CLANG_FORMAT) -i $(WIN_LIB_SRCS) $(TEST_SRCS) exmaples.c
 
-run: run-lin
+run: lin-run
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR) *.a *.dll
