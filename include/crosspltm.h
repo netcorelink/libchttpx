@@ -40,12 +40,13 @@ extern "C" {
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     static struct tm *localtime_r(const time_t *timep, struct tm *result) {
-        /* WIN32: localtime_s */
+        memset(result, 0, sizeof(*result));
         localtime_s(result, timep);
         return result;
     }
 
     static struct tm *gmtime_r(const time_t *timep, struct tm *result) {
+        memset(result, 0, sizeof(*result));
         gmtime_s(result, timep);
         return result;
     }

@@ -272,7 +272,7 @@ void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res)
         return;
 
     time_t now = time(NULL);
-    struct tm tm_now;
+    struct tm tm_now = {0};
     localtime_r(&now, &tm_now);
 
     char log_dir[256];

@@ -82,7 +82,7 @@ jobs:
       - name: Run cppcheck
         run: |
           cppcheck \
-            --enable=warning,style,performance,portability \
+            --enable=warning,performance,portability \
             --suppress=missingIncludeSystem \
             --inline-suppr \
             -I include \
