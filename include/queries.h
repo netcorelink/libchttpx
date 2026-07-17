@@ -9,28 +9,30 @@
 #define QUERIES_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include "request.h"
 
-/**
- * Get a query parameter value by name.
- *
- * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
- * and returns the value associated with the given parameter name.
- *
- * @param req   Pointer to the current HTTP request.
- * @param name  Name of the query parameter.
- * @return Pointer to the parameter value string if found, or NULL if not present.
- */
-const char* cHTTPX_Query(chttpx_request_t *req, const char *name);
+    /**
+     * Get a query parameter value by name.
+     *
+     * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
+     * and returns the value associated with the given parameter name.
+     *
+     * @param req   Pointer to the current HTTP request.
+     * @param name  Name of the query parameter.
+     * @return Pointer to the parameter value string if found, or NULL if not present.
+     */
+    const char* cHTTPX_Query(chttpx_request_t* req, const char* name);
 
-/* Parse queries in request */
-void _parse_req_query(chttpx_request_t *req, char *query);
+    /* Parse queries in request */
+    void _parse_req_query(chttpx_request_t* req, char* query);
 
 #ifdef __cplusplus
-extern }
+    extern
+}
 #endif
 
 #endif

@@ -1,0 +1,47 @@
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate conventional PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Skip WIP PRs: title starts with [wip]
+          if echo "$TITLE" | grep -qiE '^\[wip\]'; then
+            echo "Skipped: WIP PR"
+            exit 0
+          fi
+
+          # type: description  |  type(scope): description  |  type!: breaking change
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'
+
+          if echo "$TITLE" | grep -qiE "$pattern"; then
+            echo "PR title is valid: $TITLE"
+            exit 0
+          fi
+
+          echo "::error::Invalid PR title: \"$TITLE\""
+          echo ""
+          echo "Use conventional commit format:"
+          echo "  type: short description"
+          echo ""
+          echo "Examples:"
+          echo "  feat: add auth middleware"
+          echo "  fix: correct Content-Length parsing"
+          echo "  ci: fix workflows and formatting"
+          echo "  chore: update dependabot config"
+          echo ""
+          echo "Breaking change:"
+          echo "  feat!: rename cHTTPX_Parse API"
+          echo ""
+          echo "NOT valid: Feat/ci fix  (use colon, not slash)"
+          exit 1

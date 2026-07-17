@@ -24,7 +24,7 @@
 
 int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key)
 {
-    char accept_key[128];
+    char accept_key[128] = {0};
     char buffer[256];
 
     char key_concat[128];

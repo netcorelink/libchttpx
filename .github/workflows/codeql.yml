@@ -30,8 +30,13 @@ jobs:
         with:
           languages: ${{ matrix.language }}
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev
+
+      - name: Build
+        run: make libchttpx.so
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

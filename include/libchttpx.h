@@ -9,7 +9,8 @@
 #define LIBCHTTPX_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include "http.h"

@@ -9,7 +9,8 @@
 #define REQUEST_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include "crosspltm.h"
@@ -25,175 +26,185 @@ extern "C" {
 #define MAX_HEADER_NAME 128
 #define MAX_HEADER_VALUE 4096
 
-/* Header structure */
-typedef struct {
-    char name[MAX_HEADER_NAME];
-    char value[MAX_HEADER_VALUE];
-} chttpx_header_t;
+    /* Header structure */
+    typedef struct
+    {
+        char name[MAX_HEADER_NAME];
+        char value[MAX_HEADER_VALUE];
+    } chttpx_header_t;
 
-/* Query structure */
-typedef struct {
-    char *name;
-    char *value;
-} chttpx_query_t;
+    /* Query structure */
+    typedef struct
+    {
+        char* name;
+        char* value;
+    } chttpx_query_t;
 
 #define MAX_PARAMS 64
 #define MAX_PARAM_NAME 128
 #define MAX_PARAM_VALUE 1024
 
-/* Param structure */
-typedef struct {
-    char name[MAX_PARAM_NAME];
-    char value[MAX_PARAM_VALUE];
-} chttpx_param_t;
+    /* Param structure */
+    typedef struct
+    {
+        char name[MAX_PARAM_NAME];
+        char value[MAX_PARAM_VALUE];
+    } chttpx_param_t;
 
 #define MAX_COOKIES 64
 
-/* Cookie structure */
-typedef struct {
-    char* name;
-    char* value;
+    /* Cookie structure */
+    typedef struct
+    {
+        char* name;
+        char* value;
 
-    char* path;
-    char* domain;
+        char* path;
+        char* domain;
 
-    time_t expires;
+        time_t expires;
 
-    bool http_only;
-    bool secure;
+        bool http_only;
+        bool secure;
 
-    /* 0 - None; 1 - Lax; 2 - Strict; 3 - None */
-    int same_site;
-} chttpx_cookie_t;
+        /* 0 - None; 1 - Lax; 2 - Strict; 3 - None */
+        int same_site;
+    } chttpx_cookie_t;
 
-/* Validation structs */
-typedef enum {
-    FIELD_STRING,
-    FIELD_NUMBER,
-    FIELD_BOOL,
-    FIELD_STRING_ARRAY,
-    FIELD_NUMBER_ARRAY
-} validation_t;
+    /* Validation structs */
+    typedef enum
+    {
+        FIELD_STRING,
+        FIELD_NUMBER,
+        FIELD_BOOL,
+        FIELD_STRING_ARRAY,
+        FIELD_NUMBER_ARRAY
+    } validation_t;
 
-typedef struct {
-    char** items;
-    size_t count;
-} chttpx_string_array_t;
+    typedef struct
+    {
+        char** items;
+        size_t count;
+    } chttpx_string_array_t;
 
-typedef struct {
-    int* items;
-    size_t count;
-} chttpx_number_array_t;
+    typedef struct
+    {
+        int* items;
+        size_t count;
+    } chttpx_number_array_t;
 
-typedef enum {
-    VALIDATOR_NONE,
-    VALIDATOR_EMAIL,
-    VALIDATOR_PHONE,
-    VALIDATOR_URL,
-} validator_type_t;
+    typedef enum
+    {
+        VALIDATOR_NONE,
+        VALIDATOR_EMAIL,
+        VALIDATOR_PHONE,
+        VALIDATOR_URL,
+    } validator_type_t;
 
-typedef struct {
-    const char *name;
+    typedef struct
+    {
+        const char* name;
 
-    /* Target value in struct */
-    void *target;
+        /* Target value in struct */
+        void* target;
 
-    /* Required field */
-    bool required;
+        /* Required field */
+        bool required;
 
-    /* Min/Max value string */
-    size_t min_length;
-    size_t max_length;
+        /* Min/Max value string */
+        size_t min_length;
+        size_t max_length;
 
-    /* Type field str/int/bool */
-    validation_t type;
+        /* Type field str/int/bool */
+        validation_t type;
 
-    /* Custom validator */
-    validator_type_t validator;
+        /* Custom validator */
+        validator_type_t validator;
 
-    /* Present type for boolean required */
-    uint8_t present;
-} chttpx_validation_t;
+        /* Present type for boolean required */
+        uint8_t present;
+    } chttpx_validation_t;
 
-/* Function for free REQuest context */
-typedef void (*chttpx_context_free_fn)(void*);
+    /* Function for free REQuest context */
+    typedef void (*chttpx_context_free_fn)(void*);
 
-// REQuest
-typedef struct {
-    char* method;
-    char* path;
+    // REQuest
+    typedef struct
+    {
+        char* method;
+        char* path;
 
-    /* Body */
-    unsigned char* body;
-    size_t body_size;
+        /* Body */
+        unsigned char* body;
+        size_t body_size;
 
-    /* Content len. REQuest */
-    size_t content_length;
+        /* Content len. REQuest */
+        size_t content_length;
 
-    /* Content type REQuest */
-    char content_type[512];
+        /* Content type REQuest */
+        char content_type[512];
 
-    /* Client socket */
-    chttpx_socket_t client_fd;
+        /* Client socket */
+        chttpx_socket_t client_fd;
 
-    /* User-Agent */
-    char user_agent[512];
+        /* User-Agent */
+        char user_agent[512];
 
-    /* HTTP/1.1 HTTP/2 ... */
-    char protocol[16];
+        /* HTTP/1.1 HTTP/2 ... */
+        char protocol[16];
 
-    /* Client IP REQuest */
-    char client_ip[46];
+        /* Client IP REQuest */
+        char client_ip[46];
 
-    /* Error REQuest message */
-    char error_msg[BUFFER_SIZE];
+        /* Error REQuest message */
+        char error_msg[BUFFER_SIZE];
 
-    /* Headers in REQuest */
-    chttpx_header_t headers[MAX_HEADERS];
-    size_t headers_count;
+        /* Headers in REQuest */
+        chttpx_header_t headers[MAX_HEADERS];
+        size_t headers_count;
 
-    /* Query params in URL
-     * exmaple: ?name=netcorelink
+        /* Query params in URL
+         * exmaple: ?name=netcorelink
+         */
+        chttpx_query_t* query;
+        size_t query_count;
+
+        /* Params in URL
+         * exmaple: /{uuid}
+         */
+        chttpx_param_t params[MAX_PARAMS];
+        size_t params_count;
+
+        /* Cookies */
+        chttpx_cookie_t cookies[MAX_COOKIES];
+        size_t cookies_count;
+
+        /* Media
+         * @filename - File name
+         */
+        char filename[384];
+
+        /* Context REQuest */
+        void* context;
+        chttpx_context_free_fn context_free;
+    } chttpx_request_t;
+
+    /**
+     * Parse a JSON body and validate fields according to the provided definitions.
+     * @param req Pointer to the HTTP request.
+     * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
+     * @param field_count Number of fields in the array.
+     * @return 1 if parsing and validation succeed, 0 if there is an error.
+     * This function automatically checks required fields, string length, boolean types, etc.
      */
-    chttpx_query_t* query;
-    size_t query_count;
+    int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
-    /* Params in URL
-     * exmaple: /{uuid}
+    /*
+     * Validates an array of cHTTPX_FieldValidation structures.
+     * This function ensures that required fields are present, string lengths are within limits,
+     * and basic validation for integers and boolean fields is performed.
      */
-    chttpx_param_t params[MAX_PARAMS];
-    size_t params_count;
-
-    /* Cookies */
-    chttpx_cookie_t cookies[MAX_COOKIES];
-    size_t cookies_count;
-
-    /* Media
-     * @filename - File name
-     */
-    char filename[384];
-
-    /* Context REQuest */
-    void* context;
-    chttpx_context_free_fn context_free;
-} chttpx_request_t;
-
-/**
- * Parse a JSON body and validate fields according to the provided definitions.
- * @param req Pointer to the HTTP request.
- * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
- * @param field_count Number of fields in the array.
- * @return 1 if parsing and validation succeed, 0 if there is an error.
- * This function automatically checks required fields, string length, boolean types, etc.
- */
-int cHTTPX_Parse(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count);
-
-/*
- * Validates an array of cHTTPX_FieldValidation structures.
- * This function ensures that required fields are present, string lengths are within limits,
- * and basic validation for integers and boolean fields is performed.
- */
-int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t field_count, const char* l);
+    int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
 /**
  * Macro to define a string field for JSON request validation.
@@ -209,7 +220,8 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
  *
  * @return A chttpx_validation_t structure initialized for a string field.
  */
-#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator) (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0}
+#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
+    (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0}
 
 /**
  * Macro to define an integer field for JSON request validation.
@@ -235,9 +247,9 @@ int cHTTPX_Validate(chttpx_request_t *req, chttpx_validation_t *fields, size_t f
  */
 #define chttpx_validation_boolean(name, ptr, required) (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0}
 
-
 #ifdef __cplusplus
-extern }
+    extern
+}
 #endif
 
 #endif

@@ -96,7 +96,7 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
                 *(char**)f->target = strdup(item->valuestring);
             }
             break;
-        
+
         case FIELD_STRING_ARRAY:
             if (cJSON_IsArray(item))
             {
