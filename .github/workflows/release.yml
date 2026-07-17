@@ -1,9 +1,22 @@
+# Runs when a tag is pushed manually (local: git push origin v1.5.6).
+# Tags created by Auto Release Tag do NOT trigger this workflow (GitHub limitation).
+# Use "Run workflow" below to publish an existing tag without re-pushing it.
+
 name: Release
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v1.5.6)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -11,20 +24,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev clang-format
+          sudo apt install -y gcc make libcjson-dev
 
       - name: Build release archive
-        run: |
-          make lin-lib
+        run: make lin-lib
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: libchttpx ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: libchttpx ${{ github.event.inputs.tag || github.ref_name }}
           files: libchttpx-dev.tar.gz
           body: |
             <p align="center">
