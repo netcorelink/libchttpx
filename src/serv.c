@@ -25,6 +25,7 @@
 #include "utils.h"
 #include "crosspltm.h"
 #include "middlewares.h"
+#include "websocket.h"
 
 /* Extern server struct data */
 chttpx_serv_t* serv = NULL;
@@ -101,6 +102,10 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
     serv->routes = NULL;
     serv->routes_count = 0;
     serv->routes_capacity = 0;
+
+    serv->ws_routes = NULL;
+    serv->ws_routes_count = 0;
+    serv->ws_routes_capacity = 0;
 
     printf("HTTP server started on port %d...\n", port);
 
@@ -239,6 +244,16 @@ void cHTTPX_Shutdown()
     serv->routes = NULL;
     serv->routes_count = 0;
     serv->routes_capacity = 0;
+
+    for (size_t i = 0; i < serv->ws_routes_count; i++)
+        free(serv->ws_routes[i].path);
+
+    free(serv->ws_routes);
+    serv->ws_routes = NULL;
+    serv->ws_routes_count = 0;
+    serv->ws_routes_capacity = 0;
+
+    cHTTPX_WSocketShutdown();
 #ifdef _WIN32
     chttpx_close(serv->server_fd);
 #else

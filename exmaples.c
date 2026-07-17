@@ -2,6 +2,9 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -25,7 +28,10 @@ void swagger_json_handler(chttpx_request_t* req, chttpx_response_t* res)
 
 void swagger_gui_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    char* url = "http://localhost:80/api/v1";
+    const char* port_env = getenv("CHTTPX_PORT");
+    const char* port = port_env && port_env[0] != '\0' ? port_env : "8080";
+    char url[128];
+    snprintf(url, sizeof(url), "http://localhost:%s/api/v1", port);
 
     char swagger_html[8192];
     snprintf(swagger_html, sizeof(swagger_html),
@@ -153,12 +159,51 @@ void file_upload(chttpx_request_t* req, chttpx_response_t* res)
     return;
 }
 
+void chat_on_open(chttpx_wsocket_t* ws, void* userdata)
+{
+    (void)userdata;
+    const char* room = cHTTPX_WSocketParam(ws, "room_id");
+    char welcome[256];
+    snprintf(welcome, sizeof(welcome), "Welcome to room %s!", room ? room : "?");
+    cHTTPX_WSocketSend(ws, welcome);
+}
+
+void chat_on_message(chttpx_wsocket_t* ws, const unsigned char* data, size_t len, int opcode, void* userdata)
+{
+    (void)opcode;
+    (void)userdata;
+
+    char msg[4096];
+    if (len >= sizeof(msg))
+        len = sizeof(msg) - 1;
+    memcpy(msg, data, len);
+    msg[len] = '\0';
+
+    /* Only clients in the same room (same URL path) receive the message. */
+    cHTTPX_WSocketBroadcastPeers(ws, msg);
+}
+
+void chat_on_close(chttpx_wsocket_t* ws, void* userdata)
+{
+    (void)ws;
+    (void)userdata;
+}
+
+static chttpx_wsocket_callbacks_t chat_callbacks = {
+    .on_open = chat_on_open,
+    .on_message = chat_on_message,
+    .on_close = chat_on_close,
+};
+
 int main()
 {
     chttpx_serv_t serv = {0};
 
-    size_t max_clients = 2;
-    if (cHTTPX_Init(&serv, 80, &max_clients) != 0)
+    const char* port_env = getenv("CHTTPX_PORT");
+    uint16_t port = port_env ? (uint16_t)atoi(port_env) : 8080;
+
+    size_t max_clients = 1024;
+    if (cHTTPX_Init(&serv, port, &max_clients) != 0)
     {
         printf("Failed to start server\n");
         return 1;
@@ -180,6 +225,8 @@ int main()
     cHTTPX_RegisterRoute(&v1, "PATCH", "/file", file_upload);
     cHTTPX_RegisterRoute(&v1, "GET", "/doc.api/swagger/json", swagger_json_handler);
     cHTTPX_RegisterRoute(&v1, "GET", "/doc.api/swagger/gui", swagger_gui_handler);
+    /* Client connects: ws://host/api/v1/ws/chat/lobby  (room_id = "lobby") */
+    cHTTPX_WSocketRegisterRoute(&v1, "/ws/chat/{room_id}", &chat_callbacks);
 
     /* At the very end, to start listening to incoming requests from users. */
     cHTTPX_Listen();

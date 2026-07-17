@@ -19,9 +19,16 @@ extern "C"
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define MAX_PATH 4096
 #define MAX_CLIENTS_DEFAULT 255
+
+    typedef struct chttpx_wsocket chttpx_wsocket_t;
+    typedef void (*chttpx_wsocket_on_open_t)(chttpx_wsocket_t* ws, void* userdata);
+    typedef void (*chttpx_wsocket_on_message_t)(chttpx_wsocket_t* ws, const unsigned char* data, size_t len,
+                                                int opcode, void* userdata);
+    typedef void (*chttpx_wsocket_on_close_t)(chttpx_wsocket_t* ws, void* userdata);
 
     /* Base struct route for library */
     typedef struct
@@ -30,6 +37,15 @@ extern "C"
         const char* path;
         chttpx_handler_t handler;
     } chttpx_route_t;
+
+    typedef struct
+    {
+        char* path;
+        chttpx_wsocket_on_open_t on_open;
+        chttpx_wsocket_on_message_t on_message;
+        chttpx_wsocket_on_close_t on_close;
+        void* userdata;
+    } chttpx_wsocket_route_entry_t;
 
     typedef struct
     {
@@ -49,6 +65,11 @@ extern "C"
         chttpx_route_t* routes;
         size_t routes_count;
         size_t routes_capacity;
+
+        /* WebSocket routes */
+        chttpx_wsocket_route_entry_t* ws_routes;
+        size_t ws_routes_count;
+        size_t ws_routes_capacity;
 
         /* Middlewares */
         chttpx_middleware_stack_t middleware;
