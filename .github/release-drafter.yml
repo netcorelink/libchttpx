@@ -1,0 +1,74 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+version-template: '$MAJOR.$MINOR.$PATCH'
+
+categories:
+  - title: 'Features'
+    labels:
+      - feature
+      - enhancement
+
+  - title: 'Bug Fixes'
+    labels:
+      - bug
+      - fix
+
+  - title: 'Security'
+    labels:
+      - security
+
+  - title: 'Documentation'
+    labels:
+      - documentation
+
+  - title: 'Maintenance'
+    labels:
+      - chore
+      - dependencies
+      - ci
+
+  - title: 'Breaking Changes'
+    labels:
+      - breaking
+
+change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
+change-title-escapes: '\<*_&'
+
+version-resolver:
+  major:
+    labels:
+      - breaking
+  minor:
+    labels:
+      - feature
+      - enhancement
+  patch:
+    labels:
+      - bug
+      - fix
+      - chore
+      - dependencies
+      - ci
+      - documentation
+      - security
+
+template: |
+  ## Changes
+
+  $CHANGES
+
+  ## Install
+
+  ### Linux
+
+  ```bash
+  curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+  ```
+
+  ### Windows
+
+  ```powershell
+  iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
+  ```
+
+  **Full changelog**: https://github.com/netcorelink/libchttpx/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION

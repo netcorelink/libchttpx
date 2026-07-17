@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <string.h>
+#include <ctype.h>
 
 #if defined(_WIN32) || defined(_WIN64)
     #define CHTTPX_PLATFORM_WINDOWS
@@ -25,6 +26,13 @@ extern "C" {
     #define chttpx_close(s) close(s)
 #endif
 
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    #include <winsock2.h>
+    #include <windows.h>
+    #include <ws2tcpip.h>
+    #include <time.h>
+#endif
+
 #ifdef _WIN32
     typedef SOCKET chttpx_socket_t;
 #else
@@ -32,19 +40,19 @@ extern "C" {
 #endif
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    #include <time.h>
     static struct tm *localtime_r(const time_t *timep, struct tm *result) {
         /* WIN32: localtime_s */
         localtime_s(result, timep);
         return result;
     }
+
+    static struct tm *gmtime_r(const time_t *timep, struct tm *result) {
+        gmtime_s(result, timep);
+        return result;
+    }
 #endif
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    #include <winsock2.h>
-    #include <windows.h>
-    #include <ws2tcpip.h>
-#else
+#ifdef CHTTPX_PLATFORM_POSIX
     #include <unistd.h>
     #include <sys/time.h>
     #include <arpa/inet.h>
@@ -72,6 +80,32 @@ extern "C" {
 
     #define memmem(haystack, haystacklen, needle, needlelen) memmem_win(haystack, haystacklen, needle, needlelen)
 #endif
+
+static const void *memmem_case(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
+    if (!needlelen) {
+        return haystack;
+    }
+    if (needlelen > haystacklen) {
+        return NULL;
+    }
+
+    const unsigned char *h = haystack;
+    const unsigned char *n = needle;
+
+    for (size_t i = 0; i <= haystacklen - needlelen; i++) {
+        size_t j = 0;
+        for (; j < needlelen; j++) {
+            if (tolower(h[i + j]) != tolower(n[j])) {
+                break;
+            }
+        }
+        if (j == needlelen) {
+            return h + i;
+        }
+    }
+
+    return NULL;
+}
 
 #ifdef __cplusplus
 }

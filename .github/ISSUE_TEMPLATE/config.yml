@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/netcorelink/libchttpx#readme
+    about: Read the README for usage examples and API overview
+  - name: Releases
+    url: https://github.com/netcorelink/libchttpx/releases
+    about: Download the latest release

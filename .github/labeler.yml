@@ -1,0 +1,33 @@
+core:
+  - changed-files:
+      - any-glob-to-any-file: src/**
+
+api:
+  - changed-files:
+      - any-glob-to-any-file: include/**
+
+scripts:
+  - changed-files:
+      - any-glob-to-any-file: scripts/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: .github/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - ChangeLog
+          - "/**/*.md"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: lib/**
+
+packaging:
+  - changed-files:
+      - any-glob-to-any-file:
+          - DEBIAN/**
+          - Makefile
+          - libchttpx.pc
