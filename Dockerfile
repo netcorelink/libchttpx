@@ -12,8 +12,7 @@ FROM debian:bookworm-slim AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        gcc \
-        make \
+        build-essential \
         libcjson-dev \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
@@ -32,8 +31,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        gcc \
-        make \
+        build-essential \
         libcjson-dev \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
