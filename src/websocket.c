@@ -415,7 +415,8 @@ static int ws_add_connection(chttpx_socket_t fd, chttpx_wsocket_route_entry_t* r
         ws_engine.capacity = new_cap;
     }
 
-    ws_connection_t* conn = &ws_engine.items[ws_engine.count];
+    size_t slot = ws_engine.count;
+    ws_connection_t* conn = &ws_engine.items[slot];
     memset(conn, 0, sizeof(*conn));
     conn->public_ws.socket = fd;
     conn->public_ws.connected = 1;
@@ -435,10 +436,7 @@ static int ws_add_connection(chttpx_socket_t fd, chttpx_wsocket_route_entry_t* r
     ws_set_nonblocking(fd);
     ws_engine.count++;
 
-    if (conn->on_open)
-        conn->on_open(&conn->public_ws, conn->route_userdata);
-
-    return 0;
+    return (int)slot;
 }
 
 const char* cHTTPX_WSocketParam(chttpx_wsocket_t* ws, const char* name)
@@ -717,7 +715,14 @@ static void* ws_poll_loop(void* arg)
                 continue;
             }
             if (FD_ISSET(conn->public_ws.socket, &readfds))
+            {
+                ws_unlock();
                 ws_poll_process_readable(conn);
+                ws_lock();
+                if (i >= ws_engine.count)
+                    break;
+                conn = &ws_engine.items[i];
+            }
             if (!conn->public_ws.connected)
             {
                 ws_remove_connection(i);
@@ -790,13 +795,17 @@ int cHTTPX_WSocketTryHandle(chttpx_request_t* req)
     ws_engine_start();
 
     ws_lock();
-    if (ws_add_connection(req->client_fd, route, req) != 0)
+    int slot = ws_add_connection(req->client_fd, route, req);
+    ws_unlock();
+    if (slot < 0)
     {
-        ws_unlock();
         chttpx_close(req->client_fd);
         return -1;
     }
-    ws_unlock();
+
+    ws_connection_t* conn = &ws_engine.items[(size_t)slot];
+    if (conn->on_open)
+        conn->on_open(&conn->public_ws, conn->route_userdata);
 
     return 1;
 }

@@ -30,12 +30,6 @@ extern "C"
      */
     int cHTTPX_MatchPath(const char* template, const char* path, chttpx_param_t* params, int* param_count);
 
-    /**
-     * Match a route template against a request path.
-     * @return 1 if matched, 0 otherwise.
-     */
-    int cHTTPX_MatchPath(const char* template, const char* path, chttpx_param_t* params, int* param_count);
-
 #ifdef __cplusplus
     extern
 }

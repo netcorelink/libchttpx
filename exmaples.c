@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
@@ -27,7 +28,10 @@ void swagger_json_handler(chttpx_request_t* req, chttpx_response_t* res)
 
 void swagger_gui_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    char* url = "http://localhost:80/api/v1";
+    const char* port_env = getenv("CHTTPX_PORT");
+    const char* port = port_env && port_env[0] != '\0' ? port_env : "8080";
+    char url[128];
+    snprintf(url, sizeof(url), "http://localhost:%s/api/v1", port);
 
     char swagger_html[8192];
     snprintf(swagger_html, sizeof(swagger_html),
@@ -195,8 +199,11 @@ int main()
 {
     chttpx_serv_t serv = {0};
 
+    const char* port_env = getenv("CHTTPX_PORT");
+    uint16_t port = port_env ? (uint16_t)atoi(port_env) : 8080;
+
     size_t max_clients = 1024;
-    if (cHTTPX_Init(&serv, 80, &max_clients) != 0)
+    if (cHTTPX_Init(&serv, port, &max_clients) != 0)
     {
         printf("Failed to start server\n");
         return 1;
