@@ -16,10 +16,11 @@
 #define CHTTPX_WSOCKET_OPCODE_PING 0x9
 #define CHTTPX_WSOCKET_OPCODE_PONG 0xA
 
-typedef struct {
-    /* FIN - final fragment 
+typedef struct
+{
+    /* FIN - final fragment
      * 1 eq. this is the last frame of the message
-     * 0 eq. the message is divided into several parts 
+     * 0 eq. the message is divided into several parts
      */
     int fin;
     /* Check define CHTTPX_WSOCKET_OPCODE */
@@ -33,7 +34,8 @@ typedef struct {
     unsigned char* payload;
 } wsocket_frame_t;
 
-typedef struct {
+typedef struct
+{
     int socket;
     int connected;
 } chttpx_wsocket_t;

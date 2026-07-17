@@ -9,85 +9,86 @@
 #define HTTP_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /* HTTP Content Types */
 /* HTML document. Use this for web pages rendered by browsers. */
-#define cHTTPX_CTYPE_HTML   "text/html"
+#define cHTTPX_CTYPE_HTML "text/html"
 /* Plain text. Use for simple text responses or logs. */
-#define cHTTPX_CTYPE_TEXT   "text/plain"
+#define cHTTPX_CTYPE_TEXT "text/plain"
 /* XML document. Use for XML-based APIs or configurations. */
-#define cHTTPX_CTYPE_XML    "application/xml"
+#define cHTTPX_CTYPE_XML "application/xml"
 /* CSS stylesheet. Use when returning CSS files for web pages. */
-#define cHTTPX_CTYPE_CSS    "text/css"
+#define cHTTPX_CTYPE_CSS "text/css"
 /* CSV file. Use for spreadsheet-style data exports. */
-#define cHTTPX_CTYPE_CSV    "text/csv"
+#define cHTTPX_CTYPE_CSV "text/csv"
 /* JSON data. Use for REST API responses and requests. */
-#define cHTTPX_CTYPE_JSON   "application/json"
+#define cHTTPX_CTYPE_JSON "application/json"
 /* URL-encoded form data. Typical for HTML form submissions. */
-#define cHTTPX_CTYPE_FORM   "application/x-www-form-urlencoded"
+#define cHTTPX_CTYPE_FORM "application/x-www-form-urlencoded"
 /* Multipart form data. Used for file uploads via forms. */
-#define cHTTPX_CTYPE_MULTI  "multipart/form-data"
+#define cHTTPX_CTYPE_MULTI "multipart/form-data"
 /* Raw binary stream. Use when content type is unknown. */
-#define cHTTPX_CTYPE_OCTET  "application/octet-stream"
+#define cHTTPX_CTYPE_OCTET "application/octet-stream"
 /* JavaScript script file. Used for web applications. */
-#define cHTTPX_CTYPE_JS     "application/javascript"
+#define cHTTPX_CTYPE_JS "application/javascript"
 /* PNG image format. Lossless compressed image. */
-#define cHTTPX_CTYPE_PNG    "image/png"
+#define cHTTPX_CTYPE_PNG "image/png"
 /* JPEG image format. Common for photos. */
-#define cHTTPX_CTYPE_JPEG   "image/jpeg"
+#define cHTTPX_CTYPE_JPEG "image/jpeg"
 /* GIF image format. Supports simple animations. */
-#define cHTTPX_CTYPE_GIF    "image/gif"
+#define cHTTPX_CTYPE_GIF "image/gif"
 /* WebP image format. Modern compressed image format. */
-#define cHTTPX_CTYPE_WEBP   "image/webp"
+#define cHTTPX_CTYPE_WEBP "image/webp"
 /* SVG vector image format. */
-#define cHTTPX_CTYPE_SVG    "image/svg+xml"
+#define cHTTPX_CTYPE_SVG "image/svg+xml"
 /* BMP bitmap image format. Rarely used on the web. */
-#define cHTTPX_CTYPE_BMP    "image/bmp"
+#define cHTTPX_CTYPE_BMP "image/bmp"
 /* MP3 audio format. Common compressed audio. */
-#define cHTTPX_CTYPE_MP3    "audio/mpeg"
+#define cHTTPX_CTYPE_MP3 "audio/mpeg"
 /* WAV audio format. Uncompressed audio. */
-#define cHTTPX_CTYPE_WAV    "audio/wav"
+#define cHTTPX_CTYPE_WAV "audio/wav"
 /* OGG audio format. Open-source audio container. */
-#define cHTTPX_CTYPE_OGG    "audio/ogg"
+#define cHTTPX_CTYPE_OGG "audio/ogg"
 /* MP4 video format. Most common video container. */
-#define cHTTPX_CTYPE_MP4    "video/mp4"
+#define cHTTPX_CTYPE_MP4 "video/mp4"
 /* WebM video format. Open-source video format. */
-#define cHTTPX_CTYPE_WEBM   "video/webm"
+#define cHTTPX_CTYPE_WEBM "video/webm"
 /* AVI video format. Older Microsoft video format. */
-#define cHTTPX_CTYPE_AVI    "video/x-msvideo"
+#define cHTTPX_CTYPE_AVI "video/x-msvideo"
 /* ZIP archive file. */
-#define cHTTPX_CTYPE_ZIP    "application/zip"
+#define cHTTPX_CTYPE_ZIP "application/zip"
 /* RAR archive file. */
-#define cHTTPX_CTYPE_RAR    "application/vnd.rar"
+#define cHTTPX_CTYPE_RAR "application/vnd.rar"
 /* 7-Zip archive file. */
-#define cHTTPX_CTYPE_7Z     "application/x-7z-compressed"
+#define cHTTPX_CTYPE_7Z "application/x-7z-compressed"
 /* PDF document file. */
-#define cHTTPX_CTYPE_PDF    "application/pdf"
+#define cHTTPX_CTYPE_PDF "application/pdf"
 /* Microsoft Word DOC document. */
-#define cHTTPX_CTYPE_DOC    "application/msword"
+#define cHTTPX_CTYPE_DOC "application/msword"
 /* Microsoft Word DOCX document. */
-#define cHTTPX_CTYPE_DOCX   "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+#define cHTTPX_CTYPE_DOCX "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 /* Microsoft Excel XLS spreadsheet. */
-#define cHTTPX_CTYPE_XLS    "application/vnd.ms-excel"
+#define cHTTPX_CTYPE_XLS "application/vnd.ms-excel"
 /* Microsoft Excel XLSX spreadsheet. */
-#define cHTTPX_CTYPE_XLSX   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+#define cHTTPX_CTYPE_XLSX "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 /* Web Open Font Format. */
-#define cHTTPX_CTYPE_WOFF   "font/woff"
+#define cHTTPX_CTYPE_WOFF "font/woff"
 /* Web Open Font Format 2. */
-#define cHTTPX_CTYPE_WOFF2  "font/woff2"
+#define cHTTPX_CTYPE_WOFF2 "font/woff2"
 /* TrueType font. */
-#define cHTTPX_CTYPE_TTF    "font/ttf"
+#define cHTTPX_CTYPE_TTF "font/ttf"
 /* OpenType font. */
-#define cHTTPX_CTYPE_OTF    "font/otf"
+#define cHTTPX_CTYPE_OTF "font/otf"
 
 /* HTTP methods */
-#define cHTTPX_MethodGet     "GET"
-#define cHTTPX_MethodPost    "POST"
-#define cHTTPX_MethodPut     "PUT"
-#define cHTTPX_MethodPatch   "PATCH"
-#define cHTTPX_MethodDelete  "DELETE"
+#define cHTTPX_MethodGet "GET"
+#define cHTTPX_MethodPost "POST"
+#define cHTTPX_MethodPut "PUT"
+#define cHTTPX_MethodPatch "PATCH"
+#define cHTTPX_MethodDelete "DELETE"
 #define cHTTPX_MethodOptions "OPTIONS"
 
 /* HTTP statuses */
@@ -172,7 +173,8 @@ extern "C" {
 #define cHTTPX_StatusInvalidSSLCertificate 526
 
 #ifdef __cplusplus
-extern }
+    extern
+}
 #endif
 
 #endif

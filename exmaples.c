@@ -62,7 +62,7 @@ void array(chttpx_request_t* req, chttpx_response_t* res)
     chttpx_string_array_t tags = {0};
 
     chttpx_validation_t fields[] = {
-        {.name="tags", .type=FIELD_STRING_ARRAY, .target=&tags},
+        {.name = "tags", .type = FIELD_STRING_ARRAY, .target = &tags},
     };
 
     if (!cHTTPX_Parse(req, fields, ARRAY_LEN(fields)))

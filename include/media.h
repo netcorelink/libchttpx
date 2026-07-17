@@ -9,7 +9,8 @@
 #define MEDIA_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include "http.h"
@@ -17,13 +18,14 @@ extern "C" {
 
 #define FILE_BUFFER 65536
 
-typedef struct {
-    const char* ctype;
-    const char* ext;
-} content_type_map_t;
+    typedef struct
+    {
+        const char* ctype;
+        const char* ext;
+    } content_type_map_t;
 
-/* Parse media in request */
-void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len);
+    /* Parse media in request */
+    void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len);
 
 #ifdef __cplusplus
 }
