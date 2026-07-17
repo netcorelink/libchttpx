@@ -6,7 +6,6 @@ extern "C" {
 #endif
 
 #include <string.h>
-#include <ctype.h>
 
 #if defined(_WIN32) || defined(_WIN64)
     #define CHTTPX_PLATFORM_WINDOWS
@@ -80,32 +79,6 @@ extern "C" {
 
     #define memmem(haystack, haystacklen, needle, needlelen) memmem_win(haystack, haystacklen, needle, needlelen)
 #endif
-
-static const void *memmem_case(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen) {
-    if (!needlelen) {
-        return haystack;
-    }
-    if (needlelen > haystacklen) {
-        return NULL;
-    }
-
-    const unsigned char *h = haystack;
-    const unsigned char *n = needle;
-
-    for (size_t i = 0; i <= haystacklen - needlelen; i++) {
-        size_t j = 0;
-        for (; j < needlelen; j++) {
-            if (tolower(h[i + j]) != tolower(n[j])) {
-                break;
-            }
-        }
-        if (j == needlelen) {
-            return h + i;
-        }
-    }
-
-    return NULL;
-}
 
 #ifdef __cplusplus
 }
