@@ -478,7 +478,7 @@ static const char* generate_etag(const unsigned char* body, size_t body_size)
     if (!buffer)
         return NULL;
 
-    snprintf(buffer, 64, "\"%lx\"", hash);
+    snprintf(buffer, 64, "\"%llx\"", (unsigned long long)hash);
     return buffer;
 }
 
@@ -504,8 +504,6 @@ chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
 
     size_t len = strlen(buffer);
     unsigned char* body = malloc(len + 1);
-    memcpy(body, buffer, len);
-    body[len] = '\0';
     if (!body)
     {
         perror("malloc failed");
@@ -518,6 +516,7 @@ chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
     }
 
     memcpy(body, buffer, len);
+    body[len] = '\0';
 
     return (chttpx_response_t){.status = status, .content_type = cHTTPX_CTYPE_JSON, .body = body, .body_size = len, .start_ts = {0}, .end_ts = {0}};
 }
@@ -610,6 +609,12 @@ chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, cons
     fseek(f, 0, SEEK_SET);
 
     unsigned char* data = malloc(size);
+    if (!data)
+    {
+        fclose(f);
+        return cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"internal server error\"}");
+    }
+
     fread(data, 1, size, f);
     fclose(f);
 
