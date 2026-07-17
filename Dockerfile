@@ -44,7 +44,7 @@ RUN ldconfig \
     && test -d /usr/local/include/libchttpx
 
 LABEL org.opencontainers.image.source="https://github.com/netcorelink/libchttpx" \
-      org.opencontainers.image.description="libchttpx C HTTP/WebSocket library (dev base image)" \
+      org.opencontainers.image.description="A powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers." \
       org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
