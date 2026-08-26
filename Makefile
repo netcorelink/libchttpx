@@ -5,7 +5,7 @@ RELEASE_DIR = libchttpx-dev
 TAR = $(RELEASE_DIR).tar.gz
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -Iinclude
+CFLAGS = -Wall -Wextra -Werror=implicit-function-declaration -O2 -Iinclude
 TARGET_DLL = libchttpx.dll
 CLANG_FORMAT = clang-format
 
