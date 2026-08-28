@@ -21,7 +21,7 @@ extern "C"
 #include <stdint.h>
 #include <stddef.h>
 
-#define MAX_PATH 4096
+#define CHTTPX_MAX_PATH 4096
 #define MAX_CLIENTS_DEFAULT 255
 
     typedef struct chttpx_wsocket chttpx_wsocket_t;

@@ -32,7 +32,7 @@ extern "C"
         chttpx_socket_t socket;
         int connected;
         /** Full request path, e.g. /api/v1/ws/chat/lobby-42 */
-        char path[MAX_PATH];
+        char path[CHTTPX_MAX_PATH];
         chttpx_param_t params[MAX_PARAMS];
         size_t params_count;
         void* userdata;

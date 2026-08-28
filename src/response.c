@@ -257,7 +257,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
 
     buffer[received] = '\0';
 
-    char method[16], path[MAX_PATH];
+    char method[16], path[CHTTPX_MAX_PATH];
 
     if (sscanf(buffer, "%15s %4095s", method, path) != 2)
     {

@@ -334,7 +334,7 @@ void cHTTPX_WSocketRegisterRoute(chttpx_router_t* r, const char* path, const cht
     if (!r || !path || !callbacks)
         return;
 
-    char fpath[MAX_PATH];
+    char fpath[CHTTPX_MAX_PATH];
     if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix ? r->prefix : "", path) >= (int)sizeof(fpath))
         return;
 

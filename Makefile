@@ -27,6 +27,7 @@ LIB_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIB_SRCS))
 TEST_SRCS = $(wildcard tests/test_*.c)
 TEST_OBJS = $(patsubst tests/%.c,$(OBJDIR)/tests/%.o,$(TEST_SRCS))
 
+EXAMPLE_SRC = .arch/exmaples.c
 EXAMPLE_OBJ = $(OBJDIR)/exmaples.o
 
 WIN_LIB_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
@@ -57,9 +58,13 @@ $(BINDIR)/$(EXAMPLE_TARGET): $(LIB_OBJS) $(EXAMPLE_OBJ)
 # WINdows build
 # -
 
+$(OBJDIR)/exmaples.o: $(EXAMPLE_SRC)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+
 win:
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_LIB_SRCS) exmaples.c -o $(BINDIR)/$(EXAMPLE_TARGET).exe $(WIN_LDFLAGS)
+	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_LIB_SRCS) $(EXAMPLE_SRC) -o $(BINDIR)/$(EXAMPLE_TARGET).exe $(WIN_LDFLAGS)
 
 win-test: $(BINDIR)/$(TARGET).exe
 
@@ -156,7 +161,7 @@ lin-format:
 
 win-format:
 	@echo ">> Formatting clang source files"
-	$(CLANG_FORMAT) -i $(WIN_LIB_SRCS) $(TEST_SRCS) exmaples.c
+	$(CLANG_FORMAT) -i $(WIN_LIB_SRCS) $(TEST_SRCS) $(EXAMPLE_SRC)
 
 run: lin-run
 
