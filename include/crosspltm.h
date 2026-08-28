@@ -6,13 +6,35 @@ extern "C"
 {
 #endif
 
-#include <string.h>
-
 #if defined(_WIN32) || defined(_WIN64)
 #define CHTTPX_PLATFORM_WINDOWS
 #else
 #define CHTTPX_PLATFORM_POSIX
 #endif
+
+#include <string.h>
+
+/** Portable memmem — libc version needs _GNU_SOURCE; undeclared use truncates ptr on amd64. */
+static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
+{
+    if (needlelen == 0)
+        return (void*)haystack;
+    if (needlelen > haystacklen)
+        return NULL;
+
+    const unsigned char* h = haystack;
+    const unsigned char* n = needle;
+
+    for (size_t i = 0; i <= haystacklen - needlelen; i++)
+    {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void*)(h + i);
+    }
+
+    return NULL;
+}
+
+#define memmem(haystack, haystacklen, needle, needlelen) chttpx_memmem(haystack, haystacklen, needle, needlelen)
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
 #define strdup _strdup
@@ -64,29 +86,6 @@ typedef int chttpx_socket_t;
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
 #define strcasecmp _stricmp
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    static void* memmem_win(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
-    {
-        if (!needlelen)
-            return (void*)haystack;
-        if (needlelen > haystacklen)
-            return NULL;
-
-        const unsigned char* h = haystack;
-        const unsigned char* n = needle;
-
-        for (size_t i = 0; i <= haystacklen - needlelen; i++)
-        {
-            if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
-                return (void*)(h + i);
-        }
-
-        return NULL;
-    }
-
-#define memmem(haystack, haystacklen, needle, needlelen) memmem_win(haystack, haystacklen, needle, needlelen)
 #endif
 
 #ifdef __cplusplus

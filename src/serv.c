@@ -164,7 +164,7 @@ void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* pa
     if (!r || !r->serv || !method || !path || !handler)
         return;
 
-    char fpath[MAX_PATH];
+    char fpath[CHTTPX_MAX_PATH];
 
     if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix, path) >= (int)sizeof(fpath))
         return;
@@ -202,7 +202,11 @@ void cHTTPX_Listen()
             continue;
 
         chttpx_socket_t client_fd = accept(serv->server_fd, NULL, NULL);
+#ifdef _WIN32
+        if (client_fd == INVALID_SOCKET)
+#else
         if (client_fd < 0)
+#endif
             continue;
 
         /* Inc. max clients */

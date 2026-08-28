@@ -88,10 +88,10 @@ static const content_type_map_t content_type_map[] = {{cHTTPX_CTYPE_HTML, ".html
 /* Parse media in request */
 void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
 {
-    if (!req->content_type)
+    if (req->content_type[0] == '\0')
         return;
 
-    if (req->content_length > 0 && (!req->content_type || !strstr(req->content_type, cHTTPX_CTYPE_JSON)))
+    if (req->content_length > 0 && !strstr(req->content_type, cHTTPX_CTYPE_JSON))
     {
         char tmp_filename[512];
         if (_save_body_to_temp_file(req, buffer, buffer_len, tmp_filename, sizeof(tmp_filename)) != 0)
@@ -112,7 +112,7 @@ static int _save_body_to_temp_file(chttpx_request_t* req, char* initial_buffer, 
 {
     const char* ext = content_type_to_ext(req->content_type);
 
-    snprintf(tmp_filename, tmp_filename_size, "/tmp/upload_%ld_%d%s", time(NULL), rand(), ext);
+    snprintf(tmp_filename, tmp_filename_size, "/tmp/upload_%lld_%d%s", (long long)time(NULL), rand(), ext);
     FILE* f = fopen(tmp_filename, "wb");
     if (!f)
         return 1;
