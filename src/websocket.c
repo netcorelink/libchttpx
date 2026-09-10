@@ -22,6 +22,8 @@
 
 #include "websocket.h"
 
+// Beta version
+
 int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key)
 {
     char accept_key[128] = {0};
