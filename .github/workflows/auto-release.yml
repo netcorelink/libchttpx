@@ -8,15 +8,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: auto-release-${{ github.ref }}
+  group: auto-release
   cancel-in-progress: false
 
 jobs:
   tag:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.version.outputs.changed }}
-      version_tag: ${{ steps.version.outputs.version_tag }}
+      changed: ${{ steps.release_version.outputs.changed }}
+      version_tag: ${{ steps.release_version.outputs.version_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,19 +28,69 @@ jobs:
         id: version
         with:
           tag_prefix: v
-          major_pattern: "BREAKING CHANGE|:!"
-          minor_pattern: "^feat(\\(.+\\))?!?:"
+          major_pattern: '/BREAKING CHANGE|^[a-z]+(\([^\r\n]+\))?!:/m'
+          minor_pattern: '/^feat(\([^\r\n]+\))?:/m'
           version_format: "${major}.${minor}.${patch}"
           bump_each_commit: false
           search_commit_body: true
 
+      - name: Resolve version against all release tags
+        id: release_version
+        shell: python
+        env:
+          CANDIDATE_TAG: ${{ steps.version.outputs.version_tag }}
+          VERSION_TYPE: ${{ steps.version.outputs.version_type }}
+        run: |
+          import os
+          import re
+          import subprocess
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          def version(tag):
+              match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+              return tuple(map(int, match.groups())) if match else None
+
+          git("fetch", "origin", "--tags")
+          head = git("rev-parse", "HEAD")
+          tags = {tag: version(tag) for tag in git("tag", "--list").splitlines()
+                  if version(tag) is not None}
+          existing = [tag for tag in tags if git("rev-list", "-1", tag) == head]
+          if existing:
+              tag = max(existing, key=version)
+              changed = "false"
+              print(f"Commit already released as {tag}; skipping tag creation.")
+          else:
+              tag = os.environ["CANDIDATE_TAG"]
+              candidate = version(tag)
+              if candidate is None:
+                  raise ValueError(f"Invalid release tag: {tag}")
+              latest = max(tags.values(), default=(0, 0, 0))
+              if candidate <= latest:
+                  major, minor, patch = latest
+                  bump = os.environ["VERSION_TYPE"]
+                  if bump == "major":
+                      candidate = (major + 1, 0, 0)
+                  elif bump == "minor":
+                      candidate = (major, minor + 1, 0)
+                  else:
+                      candidate = (major, minor, patch + 1)
+                  tag = "v" + ".".join(map(str, candidate))
+              changed = "true"
+              print(f"Release tag: {tag}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"changed={changed}\nversion_tag={tag}\n")
+
       - name: Create and push tag
-        if: steps.version.outputs.changed == 'true'
+        if: steps.release_version.outputs.changed == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.release_version.outputs.version_tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.version.outputs.version_tag }}"
-          git push origin "${{ steps.version.outputs.version_tag }}"
+          git tag "$RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
 
   release:
     needs: tag
