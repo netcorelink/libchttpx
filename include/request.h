@@ -19,6 +19,8 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+#define CHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 #define MAX_BUFFER_BODY (1024ULL * 1024 * 1024) // 1GB
 #define BUFFER_SIZE 16384
 
@@ -101,6 +103,16 @@ extern "C"
         VALIDATOR_URL,
     } validator_type_t;
 
+    typedef bool (*chttpx_custom_validator_t)(const void* value, char* error, size_t error_size);
+
+    typedef enum
+    {
+        CHTTPX_NORMALIZE_NONE = 0,
+        CHTTPX_TRIM = 1 << 0,
+        CHTTPX_LOWERCASE = 1 << 1,
+        CHTTPX_UPPERCASE = 1 << 2
+    } chttpx_normalizer_t;
+
     typedef struct
     {
         const char* name;
@@ -123,10 +135,28 @@ extern "C"
 
         /* Present type for boolean required */
         uint8_t present;
+
+        /* Optional transformations and application validator */
+        unsigned int normalizers;
+        chttpx_custom_validator_t custom_validator;
     } chttpx_validation_t;
 
     /* Function for free REQuest context */
     typedef void (*chttpx_context_free_fn)(void*);
+
+    typedef void (*chttpx_cleanup_fn)(void*);
+
+    typedef struct
+    {
+        const char* path;
+        const char* original_name;
+        const char* content_type;
+        size_t size;
+        bool temporary;
+        const char* field_name;
+    } chttpx_file_t;
+
+    typedef int (*chttpx_body_chunk_fn)(const unsigned char* data, size_t size, void* user_data);
 
     // REQuest
     typedef struct
@@ -159,6 +189,10 @@ extern "C"
         /* Error REQuest message */
         char error_msg[BUFFER_SIZE];
 
+        /* Request metadata */
+        char request_id[65];
+        char language[16];
+
         /* Headers in REQuest */
         chttpx_header_t headers[MAX_HEADERS];
         size_t headers_count;
@@ -184,10 +218,36 @@ extern "C"
          */
         char filename[384];
 
+        chttpx_file_t* files;
+        size_t files_count;
+
+        chttpx_query_t* form_values;
+        size_t form_values_count;
+
         /* Context REQuest */
         void* context;
         chttpx_context_free_fn context_free;
+
+        /* Internal request lifecycle state. */
+        void* _cleanup_entries;
+        void* _contexts;
+        chttpx_body_chunk_fn _body_chunk_fn;
+        void* _body_chunk_data;
+        int _parse_status;
     } chttpx_request_t;
+
+    void* cHTTPX_Alloc(chttpx_request_t* req, size_t size);
+    char* cHTTPX_Strdup(chttpx_request_t* req, const char* str);
+    int cHTTPX_Defer(chttpx_request_t* req, void* resource, chttpx_cleanup_fn cleanup_fn);
+    void* cHTTPX_Detach(chttpx_request_t* req, void* resource);
+    void cHTTPX_RequestCleanup(chttpx_request_t* req);
+
+    int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chttpx_context_free_fn cleanup_fn);
+    void* cHTTPX_ContextGet(chttpx_request_t* req, const char* name);
+    void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name);
+
+    const char* cHTTPX_BearerToken(chttpx_request_t* req);
+    int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, void* user_data);
 
     /**
      * Parse a JSON body and validate fields according to the provided definitions.
@@ -206,6 +266,9 @@ extern "C"
      */
     int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
+    struct chttpx_response;
+    int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
+
 /**
  * Macro to define a string field for JSON request validation.
  *
@@ -221,7 +284,10 @@ extern "C"
  * @return A chttpx_validation_t structure initialized for a string field.
  */
 #define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
-    (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0}
+    (chttpx_validation_t)                                                                                                                            \
+    {                                                                                                                                                \
+        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, CHTTPX_NORMALIZE_NONE, NULL                                         \
+    }
 
 /**
  * Macro to define an integer field for JSON request validation.
@@ -233,7 +299,11 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for an integer field.
  */
-#define chttpx_validation_integer(name, ptr, required) (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0}
+#define chttpx_validation_integer(name, ptr, required)                                                                                               \
+    (chttpx_validation_t)                                                                                                                            \
+    {                                                                                                                                                \
+        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                      \
+    }
 
 /**
  * Macro to define a boolean field for JSON request validation.
@@ -245,7 +315,17 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for a boolean field.
  */
-#define chttpx_validation_boolean(name, ptr, required) (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0}
+#define chttpx_validation_boolean(name, ptr, required)                                                                                               \
+    (chttpx_validation_t)                                                                                                                            \
+    {                                                                                                                                                \
+        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                        \
+    }
+
+#define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
+    (chttpx_validation_t)                                                                                                                            \
+    {                                                                                                                                                \
+        name, ptr, required, min_length, max_length, FIELD_STRING, VALIDATOR_NONE, 0, normalizers, validator                                         \
+    }
 
 #ifdef __cplusplus
     extern

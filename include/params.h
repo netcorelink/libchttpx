@@ -23,6 +23,9 @@ extern "C"
      * @return Pointer to the parameter value string if found, or NULL if the parameter does not exist.
      */
     const char* cHTTPX_Param(chttpx_request_t* req, const char* name);
+    int cHTTPX_ParamInt(chttpx_request_t* req, const char* name, int* value);
+    int cHTTPX_ParamU64(chttpx_request_t* req, const char* name, uint64_t* value);
+    int cHTTPX_ParamBool(chttpx_request_t* req, const char* name, bool* value);
 
 #ifdef __cplusplus
     extern

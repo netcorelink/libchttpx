@@ -24,6 +24,11 @@
 
 #include "crosspltm.h"
 
+#include <errno.h>
+#include <limits.h>
+
+#include "crosspltm.h"
+
 /**
  * Get a route parameter value by its name.
  * @param req  Pointer to the current HTTP request structure.
@@ -45,4 +50,54 @@ const char* cHTTPX_Param(chttpx_request_t* req, const char* name)
     }
 
     return NULL;
+}
+
+static int parse_i64(const char* text, long long min_value, long long max_value, long long* value)
+{
+    if (!text || !*text || !value)
+        return 0;
+    errno = 0;
+    char* end = NULL;
+    long long parsed = strtoll(text, &end, 10);
+    if (errno == ERANGE || !end || *end || parsed < min_value || parsed > max_value)
+        return 0;
+    *value = parsed;
+    return 1;
+}
+
+int cHTTPX_ParamInt(chttpx_request_t* req, const char* name, int* value)
+{
+    long long parsed;
+    if (!value || !parse_i64(cHTTPX_Param(req, name), INT_MIN, INT_MAX, &parsed))
+        return 0;
+    *value = (int)parsed;
+    return 1;
+}
+
+int cHTTPX_ParamU64(chttpx_request_t* req, const char* name, uint64_t* value)
+{
+    const char* text = cHTTPX_Param(req, name);
+    if (!text || !*text || *text == '-' || !value)
+        return 0;
+    errno = 0;
+    char* end = NULL;
+    unsigned long long parsed = strtoull(text, &end, 10);
+    if (errno == ERANGE || !end || *end)
+        return 0;
+    *value = (uint64_t)parsed;
+    return 1;
+}
+
+int cHTTPX_ParamBool(chttpx_request_t* req, const char* name, bool* value)
+{
+    const char* text = cHTTPX_Param(req, name);
+    if (!text || !value)
+        return 0;
+    if (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0)
+        *value = true;
+    else if (strcasecmp(text, "false") == 0 || strcmp(text, "0") == 0)
+        *value = false;
+    else
+        return 0;
+    return 1;
 }

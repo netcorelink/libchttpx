@@ -43,13 +43,18 @@
  */
 const char* cHTTPX_ClientInetIP(chttpx_socket_t client_fd)
 {
-    static char ip[INET6_ADDRSTRLEN];
+    static _Thread_local char ip[INET6_ADDRSTRLEN];
     struct sockaddr_storage addr;
     socklen_t len = sizeof(addr);
 
     if (getpeername(client_fd, (struct sockaddr*)&addr, &len) == -1)
         return "-";
 
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    DWORD ip_size = sizeof(ip);
+    if (WSAAddressToStringA((struct sockaddr*)&addr, len, NULL, ip, &ip_size) != 0)
+        return "-";
+#else
     if (addr.ss_family == AF_INET)
     {
         struct sockaddr_in* s = (struct sockaddr_in*)&addr;
@@ -70,6 +75,7 @@ const char* cHTTPX_ClientInetIP(chttpx_socket_t client_fd)
     {
         strncpy(ip, "-", sizeof(ip));
     }
+#endif
 
     return ip;
 }

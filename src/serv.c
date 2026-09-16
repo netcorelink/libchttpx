@@ -25,9 +25,19 @@
 #include "utils.h"
 #include "crosspltm.h"
 #include "middlewares.h"
+#include "http.h"
 
 /* Extern server struct data */
 chttpx_serv_t* serv = NULL;
+
+static void default_logger(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data)
+{
+    (void)user_data;
+    static const char* names[] = {"DEBUG", "INFO", "WARN", "ERROR", "OFF"};
+    if (level < CHTTPX_LOG_DEBUG || level > CHTTPX_LOG_OFF)
+        level = CHTTPX_LOG_ERROR;
+    fprintf(stderr, "[%s] request_id=%s %s\n", names[level], request_id && *request_id ? request_id : "-", message ? message : "");
+}
 
 /**
  * Initialize the HTTP server.
@@ -37,6 +47,34 @@ chttpx_serv_t* serv = NULL;
  */
 int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
 {
+    chttpx_config_t config = cHTTPX_DefaultConfig();
+    config.port = port;
+    if (max_clients)
+        config.max_clients = *(size_t*)max_clients;
+    return cHTTPX_InitWithConfig(serv_p, &config);
+}
+
+chttpx_config_t cHTTPX_DefaultConfig(void)
+{
+    return (chttpx_config_t){.port = 8080,
+                             .max_clients = MAX_CLIENTS_DEFAULT,
+                             .read_timeout_sec = 30,
+                             .write_timeout_sec = 30,
+                             .idle_timeout_sec = 60,
+                             .max_body_size = 10 * 1024 * 1024,
+                             .max_upload_size = 500ULL * 1024 * 1024,
+                             .max_header_size = BUFFER_SIZE - 1,
+                             .request_id_enabled = true,
+                             .default_language = "en",
+                             .log_level = CHTTPX_LOG_INFO};
+}
+
+int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
+{
+    if (!serv_p || !config || config->max_clients == 0)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    memset(serv_p, 0, sizeof(*serv_p));
     serv = serv_p;
 
     /* Recovery initial */
@@ -47,13 +85,14 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
     {
         perror("WSAStartup");
-        return -1;
+        serv = NULL;
+        return CHTTPX_ERR_SOCKET;
     }
 #endif
 
-    serv->port = port;
+    serv->port = config->port;
     serv->server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    serv->max_clients = max_clients ? *(size_t*)max_clients : MAX_CLIENTS_DEFAULT;
+    serv->max_clients = config->max_clients;
     serv->current_clients = 0;
 
 #ifdef _WIN32
@@ -62,8 +101,8 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
     if (serv->server_fd < 0)
 #endif
     {
-        perror("socket");
-        exit(1);
+        serv = NULL;
+        return CHTTPX_ERR_SOCKET;
     }
 
     int opt = 1;
@@ -77,43 +116,65 @@ int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
+    addr.sin_port = htons(config->port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(serv->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
     {
-        perror("bind");
-        exit(1);
+        chttpx_close(serv->server_fd);
+        serv = NULL;
+        return CHTTPX_ERR_BIND;
+    }
+
+    if (config->port == 0)
+    {
+        socklen_t address_size = sizeof(addr);
+        if (getsockname(serv->server_fd, (struct sockaddr*)&addr, &address_size) != 0)
+        {
+            chttpx_close(serv->server_fd);
+            serv = NULL;
+            return CHTTPX_ERR_SOCKET;
+        }
+        serv->port = ntohs(addr.sin_port);
     }
 
     if (listen(serv->server_fd, 128) < 0)
     {
-        perror("listen");
-        exit(1);
+        chttpx_close(serv->server_fd);
+        serv = NULL;
+        return CHTTPX_ERR_LISTEN;
     }
 
     /* Timeouts */
-    serv->read_timeout_sec = 300;
-    serv->write_timeout_sec = 300;
-    serv->idle_timeout_sec = 90;
+    serv->read_timeout_sec = config->read_timeout_sec;
+    serv->write_timeout_sec = config->write_timeout_sec;
+    serv->idle_timeout_sec = config->idle_timeout_sec;
+    serv->max_body_size = config->max_body_size;
+    serv->max_upload_size = config->max_upload_size;
+    serv->max_header_size = config->max_header_size;
+    serv->request_id_enabled = config->request_id_enabled;
+    serv->languages = config->languages;
+    serv->languages_count = config->languages_count;
+    serv->default_language = config->default_language ? config->default_language : "en";
+    serv->log_level = config->log_level;
+    serv->logger = config->logger ? config->logger : default_logger;
+    serv->logger_data = config->logger_data;
 
     /* Default values for routes */
     serv->routes = NULL;
     serv->routes_count = 0;
     serv->routes_capacity = 0;
 
-    printf("HTTP server started on port %d...\n", port);
-
-    return 0;
+    return CHTTPX_OK;
 }
 
 /* Register a route handler for a specific HTTP method and path. */
-static void route(const char* method, const char* path, chttpx_handler_t handler)
+static chttpx_route_t* route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
     if (!serv)
     {
         fprintf(stderr, "Error: server is not initialized\n");
-        return;
+        return NULL;
     }
 
     if (serv->routes_count == serv->routes_capacity)
@@ -123,33 +184,39 @@ static void route(const char* method, const char* path, chttpx_handler_t handler
 
         if (!new_routes)
         {
-            perror("realloc routes");
-            exit(1);
+            return NULL;
         }
 
         serv->routes = new_routes;
         serv->routes_capacity = new_capacity;
     }
 
-    serv->routes[serv->routes_count].method = strdup(method);
-    serv->routes[serv->routes_count].path = strdup(path);
-    serv->routes[serv->routes_count].handler = handler;
+    chttpx_route_t* registered = &serv->routes[serv->routes_count];
+    memset(registered, 0, sizeof(*registered));
+    registered->method = strdup(method);
+    registered->path = strdup(path);
+    if (!registered->method || !registered->path)
+    {
+        free((char*)registered->method);
+        free((char*)registered->path);
+        memset(registered, 0, sizeof(*registered));
+        return NULL;
+    }
+    registered->handler = handler;
+    registered->middleware_count = router->middleware_count;
+    memcpy(registered->middlewares, router->middlewares, sizeof(chttpx_middleware_t) * router->middleware_count);
+    registered->after_middleware_count = router->after_middleware_count;
+    memcpy(registered->after_middlewares, router->after_middlewares, sizeof(chttpx_middleware_t) * router->after_middleware_count);
     serv->routes_count++;
+    return registered;
 }
 
 chttpx_router_t cHTTPX_RoutePathPrefix(const char* prefix)
 {
     chttpx_router_t r;
+    memset(&r, 0, sizeof(r));
     r.serv = serv;
-
-    if (prefix && *prefix)
-    {
-        r.prefix = strdup(prefix);
-    }
-    else
-    {
-        r.prefix = strdup("");
-    }
+    snprintf(r.prefix, sizeof(r.prefix), "%s", prefix ? prefix : "");
 
     return r;
 }
@@ -159,12 +226,106 @@ void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* pa
     if (!r || !r->serv || !method || !path || !handler)
         return;
 
-    char fpath[MAX_PATH];
+    char fpath[CHTTPX_MAX_PATH];
 
     if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix, path) >= (int)sizeof(fpath))
         return;
 
-    route(method, fpath, handler);
+    route(r, method, fpath, handler);
+}
+
+static chttpx_route_t* register_route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
+{
+    if (!router || !router->serv || !method || !path || !handler)
+        return NULL;
+    char full_path[CHTTPX_MAX_PATH];
+    if (snprintf(full_path, sizeof(full_path), "%s%s", router->prefix, path) >= (int)sizeof(full_path))
+        return NULL;
+    return route(router, method, full_path, handler);
+}
+
+#define CHTTPX_ROUTE_HELPER(name, method)                                                                                                            \
+    chttpx_route_t* name(chttpx_router_t* router, const char* path, chttpx_handler_t handler)                                                        \
+    {                                                                                                                                                \
+        return register_route(router, method, path, handler);                                                                                        \
+    }
+
+CHTTPX_ROUTE_HELPER(cHTTPX_Get, cHTTPX_MethodGet)
+CHTTPX_ROUTE_HELPER(cHTTPX_Post, cHTTPX_MethodPost)
+CHTTPX_ROUTE_HELPER(cHTTPX_Put, cHTTPX_MethodPut)
+CHTTPX_ROUTE_HELPER(cHTTPX_Patch, cHTTPX_MethodPatch)
+CHTTPX_ROUTE_HELPER(cHTTPX_Delete, cHTTPX_MethodDelete)
+CHTTPX_ROUTE_HELPER(cHTTPX_Options, cHTTPX_MethodOptions)
+
+chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* prefix)
+{
+    chttpx_router_t group;
+    memset(&group, 0, sizeof(group));
+    if (!parent)
+        return group;
+    group.serv = parent->serv;
+    snprintf(group.prefix, sizeof(group.prefix), "%s%s", parent->prefix, prefix ? prefix : "");
+    group.middleware_count = parent->middleware_count;
+    memcpy(group.middlewares, parent->middlewares, sizeof(chttpx_middleware_t) * parent->middleware_count);
+    group.after_middleware_count = parent->after_middleware_count;
+    memcpy(group.after_middlewares, parent->after_middlewares, sizeof(chttpx_middleware_t) * parent->after_middleware_count);
+    return group;
+}
+
+int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware)
+{
+    if (!router || !middleware || router->middleware_count >= MAX_MIDDLEWARES)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    router->middlewares[router->middleware_count++] = middleware;
+    return CHTTPX_OK;
+}
+
+int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware)
+{
+    if (!router || !middleware || router->after_middleware_count >= MAX_MIDDLEWARES)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    router->after_middlewares[router->after_middleware_count++] = middleware;
+    return CHTTPX_OK;
+}
+
+int cHTTPX_RouteUse(chttpx_route_t* registered, chttpx_middleware_t middleware)
+{
+    if (!registered || !middleware || registered->middleware_count >= MAX_MIDDLEWARES)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    registered->middlewares[registered->middleware_count++] = middleware;
+    return CHTTPX_OK;
+}
+
+int cHTTPX_RouteUseAfter(chttpx_route_t* registered, chttpx_middleware_t middleware)
+{
+    if (!registered || !middleware || registered->after_middleware_count >= MAX_MIDDLEWARES)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    registered->after_middlewares[registered->after_middleware_count++] = middleware;
+    return CHTTPX_OK;
+}
+
+int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_policy_t* policy)
+{
+    if (!registered || !policy)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    registered->upload_policy = *policy;
+    registered->has_upload_policy = true;
+    return CHTTPX_OK;
+}
+
+void cHTTPX_RouterFree(chttpx_router_t* router)
+{
+    if (router)
+        memset(router, 0, sizeof(*router));
+}
+
+void cHTTPX_SetLogger(chttpx_logger_fn logger, void* user_data, chttpx_log_level_t level)
+{
+    if (!serv)
+        return;
+    serv->logger = logger;
+    serv->logger_data = user_data;
+    serv->log_level = level;
 }
 
 static void* handle_client_wrapper(void* arg)
@@ -174,7 +335,7 @@ static void* handle_client_wrapper(void* arg)
 
     chttpx_handle(arg);
 
-    serv->current_clients--;
+    __atomic_fetch_sub(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
     return NULL;
 }
 
@@ -191,30 +352,51 @@ void cHTTPX_Listen()
         return;
     }
 
-    while (1)
+    serv->listening = true;
+    while (!serv->shutdown_requested)
     {
-        if (serv->current_clients >= serv->max_clients)
-            continue;
-
         chttpx_socket_t client_fd = accept(serv->server_fd, NULL, NULL);
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        if (client_fd == INVALID_SOCKET)
+#else
         if (client_fd < 0)
+#endif
+        {
+            if (serv->shutdown_requested)
+                break;
             continue;
+        }
+
+        if (__atomic_load_n(&serv->current_clients, __ATOMIC_SEQ_CST) >= serv->max_clients)
+        {
+            static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
+            chttpx_close(client_fd);
+            continue;
+        }
 
         /* Inc. max clients */
-        serv->current_clients++;
+        __atomic_fetch_add(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
 
         /* Get client socket */
-        int* client_sock = malloc(sizeof(int));
+        chttpx_socket_t* client_sock = malloc(sizeof(*client_sock));
         if (!client_sock)
         {
             perror("malloc failed");
             chttpx_close(client_fd);
+            __atomic_fetch_sub(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
             continue;
         }
         *client_sock = client_fd;
 
         thread_t thread_id;
-        _thread_create(&thread_id, handle_client_wrapper, client_sock);
+        if (_thread_create(&thread_id, handle_client_wrapper, client_sock) != 0)
+        {
+            free(client_sock);
+            chttpx_close(client_fd);
+            __atomic_fetch_sub(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
+            continue;
+        }
 
 #if defined(_WIN32) || defined(_WIN64)
         CloseHandle(thread_id);
@@ -222,12 +404,40 @@ void cHTTPX_Listen()
         pthread_detach(thread_id);
 #endif
     }
+    serv->listening = false;
 }
 
 void cHTTPX_Shutdown()
 {
     if (!serv)
         return;
+
+    serv->shutdown_requested = true;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    shutdown(serv->server_fd, SD_BOTH);
+#else
+    shutdown(serv->server_fd, SHUT_RDWR);
+#endif
+    chttpx_close(serv->server_fd);
+    serv->server_fd = 0;
+
+    while (serv->listening)
+    {
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        Sleep(10);
+#else
+        usleep(10000);
+#endif
+    }
+
+    while (__atomic_load_n(&serv->current_clients, __ATOMIC_SEQ_CST) > 0)
+    {
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        Sleep(10);
+#else
+        usleep(10000);
+#endif
+    }
 
     for (size_t i = 0; i < serv->routes_count; i++)
     {
@@ -239,12 +449,14 @@ void cHTTPX_Shutdown()
     serv->routes = NULL;
     serv->routes_count = 0;
     serv->routes_capacity = 0;
-#ifdef _WIN32
-    chttpx_close(serv->server_fd);
-#else
-    chttpx_close(serv->server_fd);
+    for (size_t i = 0; i < serv->cors.origins_count; i++)
+        free((void*)serv->cors.origins[i]);
+    free((void*)serv->cors.origins);
+    free((void*)serv->cors.methods);
+    free((void*)serv->cors.headers);
+    memset(&serv->cors, 0, sizeof(serv->cors));
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    WSACleanup();
 #endif
-    serv->server_fd = 0;
-
     serv = NULL;
 }

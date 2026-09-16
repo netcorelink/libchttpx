@@ -1,229 +1,412 @@
-<p align="center">
-  <img alt="golangci-lint logo" src="https://avatars.githubusercontent.com/u/252895549?s=400&u=6c747c431c2844620af7772fcd716ef423a6ab1d&v=4" height="150" />
-  <h3 align="center">netcorelink/libchttpx</h3>
-  <p align="center">A powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers</p>
-</p>
+# libchttpx
 
----
+`libchttpx` is a small, cross-platform HTTP/1.1 server library for C. It keeps a direct C-style API while providing request-scoped memory, routing groups and middleware, JSON binding, safe JSON responses, typed request values, uploads, request IDs, i18n language selection, CORS, logging, limits, and graceful shutdown.
 
-`netcorelink/libchttpx` a powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers.
+The library owns the repetitive HTTP work. Application handlers should focus on business logic.
 
-## Linux
+## Features
 
-```bash
-curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+- Linux and Windows sockets and threads
+- Configurable connection, body, upload, and header limits
+- Exact and `{parameter}` routes with method helpers and groups
+- Global, group, and route middleware with before/after phases
+- Request-scoped allocation, deferred cleanup, and named contexts
+- JSON parsing, validation, normalization, custom validation, and binding
+- Escaping-safe JSON responses and object/array builder
+- Typed path parameters and query values
+- URL-decoded query and form values
+- Multipart forms, multiple files, upload policies, and automatic temporary-file cleanup
+- Fixed-length and chunked request bodies
+- Request IDs and weighted `Accept-Language` selection
+- CORS, cookies, rate limiting, and callback-based logging
+- Partial-write-safe response sending
+- Graceful listener shutdown and active-request draining
+
+Outbound file responses intentionally retain their current behavior: `cHTTPX_ResFile()` reads the complete file into RAM. Streaming, `sendfile()`, and zero-copy responses are not part of this release.
+
+## Installation
+
+### Linux
+
+```sh
+make lin-lib
+sudo make lib-install PREFIX=/usr/local DESTDIR=
 ```
 
-## Windows
+The Linux build expects cJSON development headers and library to be installed.
+
+### Windows
+
+Use MinGW/GCC:
 
 ```powershell
-iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
+make win-lib
 ```
 
----
+The Windows build uses the bundled `lib/cjson` source and links Winsock.
 
-<p align="center"><h1 align="center">Documentation</h1></p>
-
-### Initial http server
+## Quick start
 
 ```c
 #include <libchttpx/libchttpx.h>
 
-int main()
+static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
-  chttpx_serv_t serv = {0};
+    (void)req;
+    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
+}
 
-  if (cHTTPX_Init(&serv, 80) != 0) {
-    printf("Failed to start server\n");
-    return 1;
-  }
+int main(void)
+{
+    chttpx_serv_t server;
+    chttpx_config_t config = cHTTPX_DefaultConfig();
+    config.port = 8080;
+    config.max_clients = 256;
 
-  // cores
-  // middlewares
-  // routes
+    if (cHTTPX_InitWithConfig(&server, &config) != CHTTPX_OK)
+        return 1;
 
-  /* At the very end, to start listening to incoming requests from users. */
-  cHTTPX_Listen();
+    chttpx_router_t root = cHTTPX_RoutePathPrefix("");
+    cHTTPX_Get(&root, "/health", health);
+
+    cHTTPX_Listen();
+    cHTTPX_Shutdown();
+    return 0;
 }
 ```
 
-### Server timeouts settings
+The legacy initializer remains available:
 
 ```c
-/* Timeouts */
-serv.read_timeout_sec = 300;
-serv.write_timeout_sec = 300;
-serv.idle_timeout_sec = 90;
+size_t max_clients = 256;
+cHTTPX_Init(&server, 8080, &max_clients);
 ```
 
-### CORS Settings
+Prefer `cHTTPX_InitWithConfig()` in new code.
 
-`origins` – Array of allowed origin strings (e.g. "https://example.com"). Each origin must match exactly the value of the "Origin" header.
-
-`origins_count` – Number of elements in the origins array.
-
-`methods` – Comma-separated list of allowed HTTP methods. If NULL, defaults to: "GET, POST, PUT, DELETE, OPTIONS".
-
-`headers` – Comma-separated list of allowed request headers. If NULL, defaults to: "Content-Type".
+## Server configuration
 
 ```c
-/* Cors */
-const char *allowed_origins[] = {
-  "https://exmaple.ru",
-  "http://localhost:8080",
+chttpx_config_t config = cHTTPX_DefaultConfig();
+config.port = 8080;
+config.max_clients = 256;
+config.read_timeout_sec = 30;
+config.write_timeout_sec = 30;
+config.idle_timeout_sec = 60;
+config.max_header_size = 16 * 1024;
+config.max_body_size = 10 * 1024 * 1024;
+config.max_upload_size = 500ULL * 1024 * 1024;
+config.request_id_enabled = true;
+```
+
+`Content-Length` is validated before a request body is downloaded. Oversized regular bodies and uploads receive `413 Payload Too Large`; oversized headers receive `431 Request Header Fields Too Large`.
+
+Initialization returns `chttpx_error_t`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
+
+## Routes and groups
+
+```c
+chttpx_router_t api = cHTTPX_RoutePathPrefix("/api/v2");
+chttpx_router_t auth = cHTTPX_RouteGroup(&api, "/auth");
+
+cHTTPX_Post(&auth, "/login", login_handler);
+cHTTPX_Post(&auth, "/create", create_handler);
+cHTTPX_Get(&api, "/users/{user_id}", user_handler);
+```
+
+Helpers are available for GET, POST, PUT, PATCH, DELETE, and OPTIONS. `cHTTPX_RegisterRoute()` remains as a compatibility API. Router prefixes are stored inside the router value, so they do not leak; `cHTTPX_RouterFree()` clears a router when desired.
+
+## Middleware
+
+A middleware returns `next` to continue or `out` to short-circuit with its response.
+
+```c
+static chttpx_middleware_result_t authenticate(chttpx_request_t* req, chttpx_response_t* res)
+{
+    const char* token = cHTTPX_BearerToken(req);
+    if (!token)
+    {
+        *res = cHTTPX_ResError(cHTTPX_StatusUnauthorized, "authentication required");
+        return out;
+    }
+    return next;
+}
+
+chttpx_router_t private_api = cHTTPX_RouteGroup(&api, "");
+cHTTPX_RouterUse(&private_api, authenticate);
+cHTTPX_Get(&private_api, "/users/me", get_me);
+```
+
+Middleware copied from a router applies only to routes registered through that router. This removes path-based exception lists from authentication middleware.
+
+Route-specific and after middleware:
+
+```c
+chttpx_route_t* route = cHTTPX_Post(&private_api, "/admin/import", import_data);
+cHTTPX_RouteUse(route, require_admin);
+cHTTPX_RouteUseAfter(route, record_metrics);
+
+cHTTPX_MiddlewareUse(global_before);
+cHTTPX_MiddlewareUseAfter(global_after);
+cHTTPX_RouterUseAfter(&private_api, trace_private_route);
+```
+
+After middleware runs in reverse registration order after the handler or a short-circuiting route middleware and before the response is sent.
+
+`cHTTPX_MiddlewareRecovery()` is retained as a compatibility no-op. Catching `SIGSEGV` with `setjmp`/`longjmp` and continuing a potentially corrupted process was unsafe. Use process supervision and restart on fatal faults.
+
+## Request data
+
+Common metadata is parsed once:
+
+```c
+req->request_id;
+req->client_ip;
+req->method;
+req->path;
+req->protocol;
+req->user_agent;
+req->language;
+req->content_type;
+req->content_length;
+```
+
+Headers, cookies, parameters, and query values are borrowed pointers. Do not free them.
+
+```c
+const char* origin = cHTTPX_HeaderGet(req, "Origin");
+const chttpx_cookie_t* session = cHTTPX_CookieGet(req, "session");
+const char* raw_id = cHTTPX_Param(req, "user_id");
+const char* search = cHTTPX_Query(req, "search");
+```
+
+Queries decode `%20`, `%2F`, `%40`, and `+`. Invalid percent encoding makes the request invalid.
+
+## Typed parameters and queries
+
+```c
+uint64_t user_id;
+bool enabled;
+double score;
+
+if (!cHTTPX_ParamU64(req, "user_id", &user_id))
+    return;
+
+cHTTPX_QueryU64Default(req, "offset", &offset, 0);
+cHTTPX_QueryBool(req, "enabled", &enabled);
+cHTTPX_QueryDouble(req, "score", &score);
+```
+
+Typed helpers reject missing/empty input, trailing characters, overflow, and negative unsigned values.
+
+## JSON bind and validation
+
+```c
+typedef struct
+{
+    char* email;
+    char* username;
+} create_user_t;
+
+static bool validate_username(const void* value, char* error, size_t error_size)
+{
+    const char* username = value;
+    if (strlen(username) >= 3)
+        return true;
+    snprintf(error, error_size, "username is too short");
+    return false;
+}
+
+static void create_user(chttpx_request_t* req, chttpx_response_t* res)
+{
+    create_user_t payload = {0};
+    chttpx_validation_t fields[] = {
+        cHTTPX_StringField("email", &payload.email, true, 3, 254,
+                           CHTTPX_TRIM | CHTTPX_LOWERCASE, NULL),
+        cHTTPX_StringField("username", &payload.username, true, 3, 32,
+                           CHTTPX_TRIM, validate_username),
+    };
+
+    if (!cHTTPX_BindJSON(req, res, fields, CHTTPX_ARRAY_LEN(fields)))
+        return;
+
+    *res = cHTTPX_ResMessage(cHTTPX_StatusCreated, "user created");
+}
+```
+
+`cHTTPX_BindJSON()` combines parsing, normalization, validation, request-owned allocations, and a safe JSON `400 Bad Request` response. You do **not** free `payload.email` or `payload.username`; their memory belongs to the request and is released automatically.
+
+The legacy `cHTTPX_Parse()` and `cHTTPX_Validate()` functions remain available and now produce request-owned strings and arrays.
+
+## JSON responses and builder
+
+Use these helpers when inserting application strings:
+
+```c
+*res = cHTTPX_ResError(cHTTPX_StatusForbidden, reason);
+*res = cHTTPX_ResMessage(cHTTPX_StatusOK, message);
+*res = cHTTPX_ResNoContent();
+```
+
+They escape JSON correctly. For structured output:
+
+```c
+chttpx_json_t* json = cHTTPX_JsonObject(req);
+cHTTPX_JsonString(json, "message", text);
+cHTTPX_JsonNumber(json, "id", id);
+cHTTPX_JsonBool(json, "active", true);
+
+chttpx_json_t* tags = cHTTPX_JsonArray(req);
+cHTTPX_JsonArrayString(tags, "c");
+cHTTPX_JsonArrayString(tags, "http");
+cHTTPX_JsonChild(json, "tags", tags);
+
+*res = cHTTPX_ResJsonObject(cHTTPX_StatusOK, json);
+```
+
+Objects, arrays, strings, numbers, booleans, nulls, and nested values are supported. `cHTTPX_JsonEscape()` is available for legacy formatted JSON. Prefer the builder or response helpers over interpolating untrusted values into `cHTTPX_ResJson()`.
+
+## Request-scoped memory and contexts
+
+```c
+char* copy = cHTTPX_Strdup(req, source);
+void* buffer = cHTTPX_Alloc(req, 4096);
+
+FILE* file = fopen(path, "rb");
+cHTTPX_Defer(req, file, (chttpx_cleanup_fn)fclose);
+
+cHTTPX_ContextSet(req, "auth", auth, auth_free);
+auth_context_t* current = cHTTPX_ContextGet(req, "auth");
+```
+
+Everything registered this way is released after the request. `cHTTPX_Detach()` and `cHTTPX_ContextDetach()` transfer ownership to the application. The legacy `req->context` and `req->context_free` fields remain supported.
+
+## Ownership
+
+| Value | Ownership |
+|---|---|
+| Header, query, path parameter, cookie, form value | borrowed; do not free |
+| JSON bind strings and arrays | request-owned; do not free |
+| `cHTTPX_Alloc` / `cHTTPX_Strdup` | request-owned; do not free |
+| Named context with cleanup callback | request-owned |
+| `cHTTPX_ResJson`, `ResHtml`, `ResBinary`, JSON builder response | response-owned; library frees after sending |
+| Static response body with `CHTTPX_BODY_BORROWED` | application/static storage; library does not free |
+| Temporary upload | request-owned file; automatically removed |
+| Explicit detach/keep | ownership or file lifetime moves to the application |
+
+## File uploads and forms
+
+```c
+const chttpx_file_t* avatar = cHTTPX_FormFile(req, "avatar");
+const char* caption = cHTTPX_FormValue(req, "caption");
+
+if (!avatar)
+{
+    *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, "avatar is required");
+    return;
+}
+
+/* Read or copy avatar->path here. It is removed after the request. */
+```
+
+`multipart/form-data` parses boundaries, `Content-Disposition`, field names, original filenames, content types, and data. Multiple files are supported. `application/x-www-form-urlencoded` values are URL-decoded.
+
+To retain the first upload, call `cHTTPX_FileKeep(req)`. To detach a specific upload, call `cHTTPX_FileDetach(req, file)`. The application then owns its lifecycle.
+
+Route upload policy:
+
+```c
+const char* image_types[] = {"image/jpeg", "image/png", "image/gif"};
+chttpx_upload_policy_t policy = {
+    .max_size = 10 * 1024 * 1024,
+    .allowed_types = image_types,
+    .allowed_types_count = CHTTPX_ARRAY_LEN(image_types),
 };
 
-cHTTPX_Cors(allowed_origins, cHTTPX_ARRAY_LEN(allowed_origins), NULL, "Accept-Language, Auth");
+chttpx_route_t* upload = cHTTPX_Patch(&private_api, "/users/me/avatar", upload_avatar);
+cHTTPX_RouteUploadPolicy(upload, &policy);
 ```
 
-### Middlewares
+The handler is skipped with `413` or `415` when policy validation fails. MIME helpers include `cHTTPX_MimeMatch()`, `cHTTPX_MimeIsImage()`, `cHTTPX_MimeIsVideo()`, and `cHTTPX_MimeIsAudio()`.
 
-Example: Middleware for checking the authenticated user.
+Fixed-length and chunked request bodies are accepted. `cHTTPX_OnBodyChunk()` is the callback registration API for request-body consumers; in this release the core parser still buffers structured form/JSON bodies and stores raw uploads in temporary files.
+
+## Request ID and language
+
+With `request_id_enabled`, a valid incoming `X-Request-ID` is preserved; otherwise the library generates one. It is exposed as `req->request_id`, added to the response, and passed to the logger.
 
 ```c
-chttpx_middleware_result_t auth_middleware(chttpx_request_t *req, chttpx_response_t *res) {
-  const char *token = cHTTPX_Header(req, "Auth-Token");
+const char* languages[] = {"en", "ru"};
+config.languages = languages;
+config.languages_count = CHTTPX_ARRAY_LEN(languages);
+config.default_language = "en";
+```
 
-  if (!token) {
-    *res = cHTTPX_ResJson(cHTTPX_StatusUnauthorized, "{\"error\": \"unauthorized\"}");
-    return out;
-  }
+`Accept-Language` is parsed as a list with quality weights, regional suffixes are reduced (`ru-RU` to `ru`), only configured languages are selected, and the fallback is placed in `req->language`.
 
-  return next;
+## CORS and cookies
+
+```c
+const char* origins[] = {"https://example.com"};
+cHTTPX_Cors(origins, CHTTPX_ARRAY_LEN(origins),
+            "GET, POST, PATCH, OPTIONS",
+            "Content-Type, Authorization, X-Request-ID");
+```
+
+CORS configuration is copied by the server. Cookies use `cHTTPX_CookieGet()` and `cHTTPX_CookieSet()`.
+
+## Logging and rate limiting
+
+```c
+static void logger(chttpx_log_level_t level, const char* request_id,
+                   const char* message, void* user_data)
+{
+    (void)level;
+    (void)user_data;
+    fprintf(stderr, "request_id=%s %s\n", request_id, message);
 }
+
+cHTTPX_SetLogger(logger, NULL, CHTTPX_LOG_INFO);
+cHTTPX_MiddlewareLogging();
+cHTTPX_MiddlewareRateLimiter(100, 1);
 ```
 
-Middlewares are connected `before cHTTPX_Route`.
+The library no longer hardcodes a `./logs` directory. The built-in logger writes to stderr; an application callback can integrate any logging system. The rate limiter protects its shared table with a mutex.
 
-```c
-cHTTPX_MiddlewareUse(auth_middleware);
+## Graceful shutdown and thread safety
+
+Call `cHTTPX_Shutdown()` from a signal-control thread for SIGINT/SIGTERM handling. It stops accepting, closes the listener, waits for active request threads, frees routes and CORS state, and clears the server.
+
+`current_clients` updates are atomic and the accept loop no longer spins at 100% CPU when capacity is reached. Routes are expected to be configured before listening and are read-only while serving. A request and its request-scoped allocator must only be used by its handling thread. Application-owned shared state still requires application synchronization.
+
+## Error handling
+
+HTTP responses use the correct reason phrase. Socket and I/O helpers return errors. `cHTTPX_SendAll()` handles partial sends and interruptions. Server initialization returns `CHTTPX_ERR_*` codes instead of terminating the process.
+
+## Migration from the old API
+
+- `cHTTPX_Init(&server, port, &max_clients)` still works; prefer `cHTTPX_InitWithConfig()`.
+- `cHTTPX_RegisterRoute()` still works; prefer method helpers.
+- `req->context` still works; prefer named contexts.
+- `req->filename` remains populated for the first upload; prefer `cHTTPX_RequestFile()`/`cHTTPX_FormFile()`.
+- `cHTTPX_Parse()`/`cHTTPX_Validate()` remain available; prefer `cHTTPX_BindJSON()`.
+- Do not manually free response bodies or JSON-bound strings anymore.
+- Recovery middleware no longer catches fatal process signals.
+
+## Build and tests
+
+```sh
+make lin-lib
 ```
 
-### Routes
+On Windows:
 
-`method` – HTTP method string, e.g., "GET", "POST".
-
-`path` – URL path to match, e.g., "/users".
-
-`handler` – Function pointer to handle the request. The handler should return httpx_response_t. This allows the server to call the appropriate function when a matching request is received.
-
-```c
-cHTTPX_Route("GET", "/", home_index);
-cHTTPX_Route("GET", "/users/{uuid}/{org}", get_user); // ?org=netcorelink
-cHTTPX_Route("POST", "/users", create_user);
+```powershell
+make test-win
 ```
 
-### Handlers
+The core test suite covers request cleanup, contexts, JSON bind/normalization, typed params and queries, URL decoding, Bearer parsing, JSON escaping/builder, multipart parsing, temporary-file deletion, MIME helpers, status reasons, and routing middleware metadata.
 
-HTML page return.
+## License
 
-```c
-void home_index(chttpx_request_t *req, chttpx_response_t *res) {
-  *res = cHTTPX_ResHtml(cHTTPX_StatusOK, "<h1>This is home page!</h1>");
-}
-```
-
-### Http Response
-
-Return Json response
-
-```c
-return cHTTPX_ResJson(cHTTPX_StatusOK, "{\"message\": {\"uuid\": \"%s\", \"page\": \"%s\"}}", uuid, page);
-```
-
-Return Html response
-Return Media response
-
-<!-- ### Http Request -->
-
-### Parsing JSON fields
-
-```c
-typedef struct {
-  char *uuid;
-  char *password;
-  int is_admin;
-} user_t;
-
-chttpx_response_t create_user(chttpx_request_t *req) {
-  user_t user = {0};
-
-  chttpx_validation_t fields[] = {
-    chttpx_validation_str("uuid", &user.uuid, true, 0, 36, VALIDATOR_NONE),
-    chttpx_validation_str("password", &user.password, true, 6, 16, VALIDATOR_NONE),
-    chttpx_validation_bool("is_admin", &user.is_admin, false),
-  };
-
-  if (!cHTTPX_Parse(req, fields, cHTTPX_ARRAY_LEN(fields), "en")) {
-    *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
-    goto cleanup;
-  }
-
-  /* ... */
-}
-```
-
-> When working with cHTTPX_Parse, you need to refer to `req->error_msg`.
-
-### Validations fields
-
-Validates an array of `cHTTPX_FieldValidation` structures.
-
-This function ensures that `required` fields are present, `string lengths` are within `limits`,
-and basic validation for integers and boolean fields is performed.
-
-> When working with cHTTPX_Validate, you need to refer to `req->error_msg`.
-
-```c
-if (!cHTTPX_Validate(req, fields, cHTTPX_ARRAY_LEN(fields), "en")) {
-  *res = cHTTPX_ResJson(cHTTPX_StatusBadRequest, "{\"error\": \"%s\"}", req->error_msg);
-  goto cleanup;
-}
-```
-
-Example response by validation:
-
-- Field password is required.
-- Field password min length is 6.
-- Field password max length is 16.
-
-### Get Headers
-
-```c
-const char *origin = cHTTPX_Header(req, "Origin");
-```
-
-cHTTPX_Header - Get a request header by name.
-
-`Parameters`:
-
-- req – Pointer to the HTTP request.
-- name – Header name (case-insensitive).
-
-### Get Params
-
-> The path must contain the /{uuid} construct.
-
-```c
-const char *uuid = cHTTPX_Param(req, "uuid");
-```
-
-cHTTPX_Param - Get a route parameter value by its name.
-
-`Parameters`:
-
-- req – Pointer to the HTTP request.
-- name – Name of the route parameter (e.g., "uuid").
-
-### Get Query params
-
-```c
-const char *sizeParam = cHTTPX_Query(req, "size");
-```
-
-cHTTPX_Query - Get a query parameter value by name.
-
-`Parameters`:
-
-- req – Pointer to the HTTP request.
-- name – Name of the query parameter.
+MIT. See [LICENSE](LICENSE).

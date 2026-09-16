@@ -32,26 +32,12 @@
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
-#include <signal.h>
-#include <setjmp.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
-/* Logging prop. */
-#if defined(_WIN32) || defined(_WIN64)
-#include <direct.h>
-#define mkdir(path, mode) _mkdir(path)
-#endif
 
 static char logging_enabled = 0;
 
 /* Rate limiter */
 static rate_limiter_entry_t rate_limits[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE];
 static char rate_limit_ips[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE][64];
-
-/* Recovery */
-static __thread jmp_buf recovery_env;
-static __thread int recovery_active = 0;
 
 #if defined(_WIN32) || defined(_WIN64)
 static CRITICAL_SECTION rate_limit_mu;
@@ -67,8 +53,8 @@ static pthread_mutex_t rate_limit_mu = PTHREAD_MUTEX_INITIALIZER;
 #define UNLOCK_RLIMIT_MUTEX() pthread_mutex_unlock(&rate_limit_mu)
 #endif
 
-static uint8_t rl_max_requests = 5;
-static uint16_t rl_window_sec = 1;
+static uint32_t rl_max_requests = 5;
+static uint32_t rl_window_sec = 1;
 
 /**
  * Register a global middleware function.
@@ -99,6 +85,13 @@ void cHTTPX_MiddlewareUse(chttpx_middleware_t mw)
     }
 
     serv->middleware.middlewares[serv->middleware.middleware_count++] = mw;
+}
+
+void cHTTPX_MiddlewareUseAfter(chttpx_middleware_t mw)
+{
+    if (!serv || !mw || serv->middleware.after_middleware_count >= MAX_MIDDLEWARES)
+        return;
+    serv->middleware.after_middlewares[serv->middleware.after_middleware_count++] = mw;
 }
 
 static uint32_t rate_limiter_hash(const char* ip)
@@ -168,82 +161,22 @@ void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec)
     cHTTPX_MiddlewareUse(rate_limiter_middleware);
 }
 
-static void recovery_signal_handler(int sig)
-{
-    if (recovery_active)
-    {
-        longjmp(recovery_env, sig);
-    }
-
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
-
 /**
- * Initialize global recovery signal handlers.
- *
- * This function installs signal handlers for critical runtime errors
- * such as segmentation faults, abort signals, and floating-point exceptions.
- *
- * When a registered signal is raised during request processing,
- * the handler will transfer control back to the recovery middleware
- * using setjmp/longjmp instead of terminating the process.
+ * Compatibility hook. Fatal signal recovery is deliberately disabled.
  */
-#if defined(_WIN32) || defined(_WIN64)
 void _recovery_init(void)
 {
-    signal(SIGSEGV, recovery_signal_handler);
-    signal(SIGABRT, recovery_signal_handler);
-    signal(SIGFPE, recovery_signal_handler);
 }
-#else
-void _recovery_init(void)
-{
-    struct sigaction sa = {0};
-    sa.sa_handler = recovery_signal_handler;
-    sigemptyset(&sa.sa_mask);
-
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGABRT, &sa, NULL);
-    sigaction(SIGFPE, &sa, NULL);
-}
-#endif
 
 static chttpx_middleware_result_t recovery_middleware(chttpx_request_t* req, chttpx_response_t* res)
 {
-    recovery_active = 1;
-
-    int sig = setjmp(recovery_env);
-    if (sig != 0)
-    {
-        fprintf(stderr, "[RECOVERY] signal %d caught\n", sig);
-
-        *res = cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"oops, something went wrong\"}");
-
-        recovery_active = 0;
-        return out;
-    }
-
+    (void)req;
+    (void)res;
     return next;
 }
 
 /**
- * Recovery middleware.
- *
- * This middleware protects the request processing pipeline from fatal
- * runtime errors such as segmentation faults.
- *
- * Internally, it uses setjmp/longjmp together with POSIX signal handlers
- * to recover control flow if a critical signal occurs while handling
- * the request.
- *
- * If a signal is caught:
- *  - The error is logged to stderr
- *  - A 500 Internal Server Error JSON response is returned
- *  - Further middleware and handlers are skipped
- *
- * @param req Pointer to the HTTP request structure.
- * @param res Pointer to the HTTP response structure.
+ * Compatibility no-op. Use a process supervisor for fatal faults.
  */
 void cHTTPX_MiddlewareRecovery()
 {
@@ -271,35 +204,12 @@ void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res)
     if (!logging_enabled)
         return;
 
-    time_t now = time(NULL);
-    struct tm tm_now = {0};
-    localtime_r(&now, &tm_now);
-
-    char log_dir[256];
-    snprintf(log_dir, sizeof(log_dir), "./logs/log_%02d%02d%d", tm_now.tm_mday, tm_now.tm_mon + 1, tm_now.tm_year + 1900);
-
-    mkdir("./logs", 0755);
-    mkdir(log_dir, 0755);
-
-    char log_file[512];
-    snprintf(log_file, sizeof(log_file), "%s/server.log", log_dir);
-
-    char timebuf[64];
-    strftime(timebuf, sizeof(timebuf), "%d/%b/%Y:%H:%M:%S %z", &tm_now);
-
     double ms = diff_ms(res->start_ts, res->end_ts);
-
-    FILE* f = fopen(log_file, "a");
-
-    if (f)
-    {
-        fprintf(f,
-                "%s - - [%s] "
-                "\"%s %s %s\" %d %zu \"%s\" %.4fms\n",
-                req->client_ip, timebuf, req->method, req->path, req->protocol, res->status, res->body_size, req->user_agent, ms);
-
-        fclose(f);
-    }
+    char message[2048];
+    snprintf(message, sizeof(message), "%s \"%s %s %s\" %d %zu \"%s\" %.4fms", req->client_ip, req->method, req->path, req->protocol, res->status,
+             res->body_size, req->user_agent, ms);
+    if (serv && serv->logger && serv->log_level <= CHTTPX_LOG_INFO)
+        serv->logger(CHTTPX_LOG_INFO, req->request_id, message, serv->logger_data);
 }
 
 /**

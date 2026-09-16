@@ -92,6 +92,8 @@ extern "C"
      */
     const char* cHTTPX_i18n_t(const char* key, const char* lang);
 
+    int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback);
+
 #ifdef __cplusplus
 }
 #endif

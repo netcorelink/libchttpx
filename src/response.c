@@ -34,6 +34,186 @@
 
 #include <errno.h>
 #include <stdarg.h>
+#include <ctype.h>
+
+int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
+{
+    const unsigned char* cursor = data;
+    size_t sent = 0;
+    while (sent < size)
+    {
+        ssize_t result = send(fd, (const char*)cursor + sent, size - sent, 0);
+        if (result < 0)
+        {
+#ifdef CHTTPX_PLATFORM_POSIX
+            if (errno == EINTR)
+                continue;
+#endif
+            return -1;
+        }
+        if (result == 0)
+            return -1;
+        sent += (size_t)result;
+    }
+    return 0;
+}
+
+const char* cHTTPX_StatusReason(uint16_t status)
+{
+    switch (status)
+    {
+    case 100:
+        return "Continue";
+    case 101:
+        return "Switching Protocols";
+    case 102:
+        return "Processing";
+    case 103:
+        return "Early Hints";
+    case 200:
+        return "OK";
+    case 201:
+        return "Created";
+    case 202:
+        return "Accepted";
+    case 203:
+        return "Non-Authoritative Information";
+    case 204:
+        return "No Content";
+    case 205:
+        return "Reset Content";
+    case 206:
+        return "Partial Content";
+    case 207:
+        return "Multi-Status";
+    case 208:
+        return "Already Reported";
+    case 226:
+        return "IM Used";
+    case 300:
+        return "Multiple Choices";
+    case 301:
+        return "Moved Permanently";
+    case 302:
+        return "Found";
+    case 303:
+        return "See Other";
+    case 304:
+        return "Not Modified";
+    case 305:
+        return "Use Proxy";
+    case 306:
+        return "Unused";
+    case 307:
+        return "Temporary Redirect";
+    case 308:
+        return "Permanent Redirect";
+    case 400:
+        return "Bad Request";
+    case 401:
+        return "Unauthorized";
+    case 402:
+        return "Payment Required";
+    case 403:
+        return "Forbidden";
+    case 404:
+        return "Not Found";
+    case 405:
+        return "Method Not Allowed";
+    case 406:
+        return "Not Acceptable";
+    case 407:
+        return "Proxy Authentication Required";
+    case 408:
+        return "Request Timeout";
+    case 409:
+        return "Conflict";
+    case 410:
+        return "Gone";
+    case 411:
+        return "Length Required";
+    case 412:
+        return "Precondition Failed";
+    case 413:
+        return "Payload Too Large";
+    case 414:
+        return "URI Too Long";
+    case 415:
+        return "Unsupported Media Type";
+    case 416:
+        return "Range Not Satisfiable";
+    case 417:
+        return "Expectation Failed";
+    case 418:
+        return "I'm a Teapot";
+    case 419:
+        return "Authentication Timeout";
+    case 421:
+        return "Misdirected Request";
+    case 422:
+        return "Unprocessable Entity";
+    case 423:
+        return "Locked";
+    case 424:
+        return "Failed Dependency";
+    case 425:
+        return "Too Early";
+    case 426:
+        return "Upgrade Required";
+    case 428:
+        return "Precondition Required";
+    case 429:
+        return "Too Many Requests";
+    case 431:
+        return "Request Header Fields Too Large";
+    case 449:
+        return "Retry With";
+    case 451:
+        return "Unavailable For Legal Reasons";
+    case 499:
+        return "Client Closed Request";
+    case 500:
+        return "Internal Server Error";
+    case 501:
+        return "Not Implemented";
+    case 502:
+        return "Bad Gateway";
+    case 503:
+        return "Service Unavailable";
+    case 504:
+        return "Gateway Timeout";
+    case 505:
+        return "HTTP Version Not Supported";
+    case 506:
+        return "Variant Also Negotiates";
+    case 507:
+        return "Insufficient Storage";
+    case 508:
+        return "Loop Detected";
+    case 509:
+        return "Bandwidth Limit Exceeded";
+    case 510:
+        return "Not Extended";
+    case 511:
+        return "Network Authentication Required";
+    case 520:
+        return "Unknown Error";
+    case 521:
+        return "Web Server Is Down";
+    case 522:
+        return "Connection Timed Out";
+    case 523:
+        return "Origin Is Unreachable";
+    case 524:
+        return "A Timeout Occurred";
+    case 525:
+        return "SSL Handshake Failed";
+    case 526:
+        return "Invalid SSL Certificate";
+    default:
+        return "Unknown Status";
+    }
+}
 
 chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...);
 
@@ -55,6 +235,8 @@ static int match_route(const char* template, const char* path, chttpx_param_t* p
                 return 0;
 
             size_t name_len = t_end - t - 1;
+            if (name_len == 0 || name_len >= MAX_PARAM_NAME)
+                return 0;
             strncpy(params[count].name, t + 1, name_len);
             params[count].name[name_len] = 0;
 
@@ -122,14 +304,18 @@ static ssize_t read_req(int fd, char* buffer, size_t buffer_size)
 
     while (1)
     {
-        if (total >= buffer_size - 1)
-            break;
+        size_t limit = serv && serv->max_header_size && serv->max_header_size < buffer_size ? serv->max_header_size : buffer_size - 1;
+        if (total >= limit)
+            return -2;
 
         ssize_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
         if (n <= 0)
             return -1;
 
         total += n;
+
+        if (total > limit)
+            return -2;
 
         if (total < buffer_size)
             buffer[total] = '\0';
@@ -196,6 +382,20 @@ static const char* allowed_origin_cors(const char* req_origin)
 /* Etag for response cache */
 static const char* generate_etag(const unsigned char* body, size_t body_size);
 
+static int append_response_header(char* buffer, size_t capacity, size_t* length, const char* format, ...)
+{
+    if (*length >= capacity)
+        return 0;
+    va_list args;
+    va_start(args, format);
+    int written = vsnprintf(buffer + *length, capacity - *length, format, args);
+    va_end(args);
+    if (written < 0 || (size_t)written >= capacity - *length)
+        return 0;
+    *length += (size_t)written;
+    return 1;
+}
+
 /**
  * Send an HTTP response to a connected client socket.
  * @param req Pointer to the HTTP request.
@@ -206,93 +406,171 @@ static const char* generate_etag(const unsigned char* body, size_t body_size);
  */
 static void send_response(chttpx_request_t* req, chttpx_response_t res)
 {
-    char buffer[BUFFER_SIZE];
+    size_t capacity = 1024;
+    for (size_t i = 0; i < res.headers_count; i++)
+        capacity += strlen(res.headers[i].name) + strlen(res.headers[i].value) + 4;
+    if (serv && serv->cors.enabled)
+        capacity += strlen(serv->cors.methods) + strlen(serv->cors.headers) + MAX_HEADER_VALUE + 512;
+    char* buffer = malloc(capacity);
+    if (!buffer)
+        return;
+    size_t length = 0;
 
     /* Cors */
     const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
-    int n = snprintf(buffer, sizeof(buffer),
-                     "HTTP/1.1 %d OK\r\n"
-                     "Content-Type: %s\r\n"
-                     "Content-Length: %zu\r\n",
-                     res.status, res.content_type, res.body_size);
+    if (!append_response_header(buffer, capacity, &length,
+                                "HTTP/1.1 %d %s\r\n"
+                                "Content-Type: %s\r\n"
+                                "Content-Length: %zu\r\n",
+                                res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET,
+                                res.body_size))
+        goto done;
 
     /* Etag */
     const char* etag = generate_etag(res.body, res.body_size);
     if (etag)
     {
-        n += snprintf(buffer + n, sizeof(buffer) - n, "Etag: %s\r\n", etag);
+        append_response_header(buffer, capacity, &length, "Etag: %s\r\n", etag);
         free((void*)etag);
     }
 
     if (allowed_origin)
     {
-        n += snprintf(buffer + n, sizeof(buffer) - n,
-                      "Access-Control-Allow-Origin: %s\r\n"
-                      "Access-Control-Allow-Methods: %s\r\n"
-                      "Access-Control-Allow-Headers: %s\r\n"
-                      "Access-Control-Allow-Credentials: true\r\n",
-                      allowed_origin, serv->cors.methods, serv->cors.headers);
+        if (!append_response_header(buffer, capacity, &length,
+                                    "Access-Control-Allow-Origin: %s\r\n"
+                                    "Access-Control-Allow-Methods: %s\r\n"
+                                    "Access-Control-Allow-Headers: %s\r\n"
+                                    "Access-Control-Allow-Credentials: true\r\n",
+                                    allowed_origin, serv->cors.methods, serv->cors.headers))
+            goto done;
     }
+
+    if (req && req->request_id[0])
+        if (!append_response_header(buffer, capacity, &length, "X-Request-ID: %s\r\n", req->request_id))
+            goto done;
 
     /* Add all request headers */
     for (size_t i = 0; i < res.headers_count; i++)
     {
-        n += snprintf(buffer + n, sizeof(buffer) - n, "%s: %s\r\n", res.headers[i].name, res.headers[i].value);
+        if (!append_response_header(buffer, capacity, &length, "%s: %s\r\n", res.headers[i].name, res.headers[i].value))
+            goto done;
     }
 
-    n += snprintf(buffer + n, sizeof(buffer) - n, "\r\n");
+    if (!append_response_header(buffer, capacity, &length, "\r\n"))
+        goto done;
 
-    /* LOG */
-    /* --- */
-    time_t rawtime;
-    struct tm* timeinfo;
-    char time_str[64];
-
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
-    strftime(time_str, sizeof(time_str), "%d/%b/%Y:%H:%M:%S %z", timeinfo);
-
-    printf("[%s] - - [%s] \"%s %s %s\" %d %zu \"%s\"\n", req->client_ip, time_str, req->protocol[0] ? req->protocol : "HTTP/1.1",
-           req->method ? req->method : "-", req->path ? req->path : "-", res.status, res.body_size,
-           req->user_agent[0] ? (const char*)req->user_agent : "-");
-    /* --- */
-    /* LOG */
-
-    send(req->client_fd, buffer, strlen(buffer), 0);
+    if (cHTTPX_SendAll(req->client_fd, buffer, length) != 0)
+        goto done;
 
     if (res.body && res.body_size > 0)
-        send(req->client_fd, res.body, res.body_size, 0);
-}
+        cHTTPX_SendAll(req->client_fd, res.body, res.body_size);
 
-static void send_sse_event(chttpx_request_t* req, const char* data)
-{
-    char buffer[1024];
-    snprintf(buffer, sizeof(buffer), "data: %s\n\n", data);
-
-    send(req->client_fd, buffer, strlen(buffer), 0);
+done:
+    free(buffer);
 }
 
 /* For OPTIONS method */
-static void is_method_options(chttpx_request_t* req)
+static int is_method_options(chttpx_request_t* req)
 {
     if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
     {
         chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
         send_response(req, res);
-        chttpx_close(req->client_fd);
+        return 1;
     }
+    return 0;
 }
 
-static void chttpx_context_free(chttpx_request_t* req)
+static int valid_request_id(const char* value)
 {
-    if (req->context)
+    if (!value || !*value || strlen(value) > 64)
+        return 0;
+    for (const unsigned char* p = (const unsigned char*)value; *p; p++)
     {
-        if (req->context_free)
-            req->context_free(req->context);
+        if (!isalnum(*p) && *p != '-' && *p != '_' && *p != '.' && *p != ':')
+            return 0;
+    }
+    return 1;
+}
 
-        req->context = NULL;
-        req->context_free = NULL;
+static void set_request_id(chttpx_request_t* req)
+{
+    if (!serv || !serv->request_id_enabled)
+        return;
+    const char* supplied = cHTTPX_HeaderGet(req, "X-Request-ID");
+    if (valid_request_id(supplied))
+    {
+        snprintf(req->request_id, sizeof(req->request_id), "%s", supplied);
+        return;
+    }
+    static unsigned long long counter = 0;
+    unsigned long long sequence = __atomic_add_fetch(&counter, 1, __ATOMIC_SEQ_CST);
+    struct timespec now = {0};
+    clock_gettime(CLOCK_REALTIME, &now);
+    snprintf(req->request_id, sizeof(req->request_id), "%08llx-%08llx-%08llx", (unsigned long long)now.tv_sec, (unsigned long long)now.tv_nsec,
+             sequence);
+}
+
+static int language_allowed(const char* language)
+{
+    if (!serv || !language || !*language)
+        return 0;
+    if (serv->languages_count == 0)
+        return serv->default_language && strcasecmp(language, serv->default_language) == 0;
+    for (size_t i = 0; i < serv->languages_count; i++)
+    {
+        if (serv->languages[i] && strcasecmp(language, serv->languages[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void set_request_language(chttpx_request_t* req)
+{
+    snprintf(req->language, sizeof(req->language), "%s", serv && serv->default_language ? serv->default_language : "en");
+    const char* header = cHTTPX_HeaderGet(req, "Accept-Language");
+    if (!header)
+        return;
+
+    double best_quality = -1.0;
+    const char* cursor = header;
+    while (*cursor)
+    {
+        while (*cursor == ' ' || *cursor == ',')
+            cursor++;
+        const char* end = strchr(cursor, ',');
+        size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
+        char item[128];
+        if (length >= sizeof(item))
+            length = sizeof(item) - 1;
+        memcpy(item, cursor, length);
+        item[length] = '\0';
+
+        double quality = 1.0;
+        char* semicolon = strchr(item, ';');
+        if (semicolon)
+        {
+            *semicolon++ = '\0';
+            while (*semicolon == ' ')
+                semicolon++;
+            if (strncmp(semicolon, "q=", 2) == 0)
+                quality = strtod(semicolon + 2, NULL);
+        }
+        char* tail = item + strlen(item);
+        while (tail > item && isspace((unsigned char)tail[-1]))
+            *--tail = '\0';
+        char* dash = strchr(item, '-');
+        if (dash)
+            *dash = '\0';
+        if (quality > best_quality && language_allowed(item))
+        {
+            snprintf(req->language, sizeof(req->language), "%s", item);
+            best_quality = quality;
+        }
+        if (!end)
+            break;
+        cursor = end + 1;
     }
 }
 
@@ -310,9 +588,9 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
 
     buffer[received] = '\0';
 
-    char method[16], path[MAX_PATH];
+    char method[16], path[CHTTPX_MAX_PATH], protocol[16];
 
-    if (sscanf(buffer, "%15s %4095s", method, path) != 2)
+    if (sscanf(buffer, "%15s %4095s %15s", method, path, protocol) != 3)
     {
         free(req);
         return NULL;
@@ -320,6 +598,14 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
 
     req->method = strdup(method);
     req->path = strdup(path);
+    if (!req->method || !req->path)
+    {
+        free(req->method);
+        free(req->path);
+        free(req);
+        return NULL;
+    }
+    req->client_fd = client_fd;
 
     /* Client IP */
     const char* client_ip = cHTTPX_ClientInetIP(client_fd);
@@ -330,6 +616,8 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
 
     /* Parse headers */
     _parse_req_headers(req, buffer, received);
+    if (req->_parse_status)
+        return req;
 
     /* Parse cookies */
     _parse_req_cookies(req);
@@ -345,7 +633,10 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
         snprintf(req->user_agent, sizeof(req->user_agent), "%s", user_agent);
 
     /* Protocol */
-    strncpy(req->protocol, "HTTP/1.1", sizeof(req->protocol) - 1);
+    snprintf(req->protocol, sizeof(req->protocol), "%s", protocol);
+
+    set_request_id(req);
+    set_request_language(req);
 
     /* Parse query request */
     char* query = strchr(req->path, '?');
@@ -372,7 +663,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
  */
 void* chttpx_handle(void* arg)
 {
-    int client_sock = *(int*)arg;
+    chttpx_socket_t client_sock = *(chttpx_socket_t*)arg;
     free(arg);
 
     if (!serv)
@@ -386,6 +677,13 @@ void* chttpx_handle(void* arg)
 
     char buf[BUFFER_SIZE];
     ssize_t received = read_req(client_sock, buf, BUFFER_SIZE);
+    if (received == -2)
+    {
+        static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        cHTTPX_SendAll(client_sock, too_large, sizeof(too_large) - 1);
+        chttpx_close(client_sock);
+        return NULL;
+    }
     if (received <= 0)
     {
         chttpx_close(client_sock);
@@ -400,8 +698,18 @@ void* chttpx_handle(void* arg)
         return NULL;
     }
 
+    if (req->_parse_status)
+    {
+        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status,
+                                                        req->_parse_status == cHTTPX_StatusPayloadTooLarge ? "payload too large" : "invalid request");
+        send_response(req, parse_error);
+        cHTTPX_ResponseCleanup(&parse_error);
+        goto cleanup_request;
+    }
+
     /* ALLOWED OPTIONS METHOD */
-    is_method_options(req);
+    if (is_method_options(req))
+        goto cleanup_request;
 
     chttpx_route_t* r = find_route(req);
     chttpx_response_t res = {0};
@@ -415,24 +723,60 @@ void* chttpx_handle(void* arg)
         for (size_t i = 0; i < serv->middleware.middleware_count; i++)
         {
             if (!serv->middleware.middlewares[i](req, &res))
+                goto after_middlewares;
+        }
+
+        if (r->has_upload_policy && req->files_count > 0)
+        {
+            for (size_t file_index = 0; file_index < req->files_count; file_index++)
             {
-                /* End time for logging */
-                clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
-
-                send_response(req, res);
-                postmiddleware_logging_write(req, &res);
-
-                goto cleanup;
+                const chttpx_file_t* file = &req->files[file_index];
+                if (r->upload_policy.max_size && file->size > r->upload_policy.max_size)
+                {
+                    res = cHTTPX_ResError(cHTTPX_StatusPayloadTooLarge, "upload is too large");
+                    goto after_middlewares;
+                }
+                if (r->upload_policy.allowed_types_count > 0)
+                {
+                    bool allowed = false;
+                    for (size_t type_index = 0; type_index < r->upload_policy.allowed_types_count; type_index++)
+                    {
+                        if (cHTTPX_MimeMatch(file->content_type, r->upload_policy.allowed_types[type_index]))
+                        {
+                            allowed = true;
+                            break;
+                        }
+                    }
+                    if (!allowed)
+                    {
+                        res = cHTTPX_ResError(cHTTPX_StatusUnsupportedMediaType, "unsupported upload media type");
+                        goto after_middlewares;
+                    }
+                }
             }
+        }
+
+        for (size_t i = 0; i < r->middleware_count; i++)
+        {
+            if (!r->middlewares[i](req, &res))
+                goto after_middlewares;
         }
 
         /* Handler */
         r->handler(req, &res);
+
+    after_middlewares:
+        for (size_t i = r->after_middleware_count; i > 0; i--)
+            r->after_middlewares[i - 1](req, &res);
     }
+
     else
     {
         res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
     }
+
+    for (size_t i = serv->middleware.after_middleware_count; i > 0; i--)
+        serv->middleware.after_middlewares[i - 1](req, &res);
 
     /* End time for logging */
     clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
@@ -442,9 +786,10 @@ void* chttpx_handle(void* arg)
     /* Logging response */
     postmiddleware_logging_write(req, &res);
 
-cleanup:
-    /* Free REQuest context */
-    chttpx_context_free(req);
+    cHTTPX_ResponseCleanup(&res);
+
+cleanup_request:
+    cHTTPX_RequestCleanup(req);
 
     /* Free REQuest cookie */
     chttpx_free_req_cookie(req);
@@ -493,32 +838,39 @@ static const char* generate_etag(const unsigned char* body, size_t body_size)
  * @param fmt    printf-style format string for the JSON body.
  * @param ...    Format arguments.
  */
-chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
+static chttpx_response_t response_format(uint16_t status, const char* content_type, const char* fallback, const char* fmt, va_list args)
 {
-    char buffer[BUFFER_SIZE];
-
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-
-    size_t len = strlen(buffer);
+    if (!fmt)
+        return (chttpx_response_t){.status = status, .content_type = content_type};
+    va_list measured;
+    va_copy(measured, args);
+    int required = vsnprintf(NULL, 0, fmt, measured);
+    va_end(measured);
+    if (required < 0)
+        return (chttpx_response_t){.status = cHTTPX_StatusInternalServerError,
+                                   .content_type = content_type,
+                                   .body = (const unsigned char*)fallback,
+                                   .body_size = strlen(fallback)};
+    size_t len = (size_t)required;
     unsigned char* body = malloc(len + 1);
     if (!body)
     {
-        perror("malloc failed");
         return (chttpx_response_t){.status = cHTTPX_StatusInternalServerError,
-                                   .content_type = cHTTPX_CTYPE_JSON,
-                                   .body = (unsigned char*)"{\"error\": \"internal server error\"}",
-                                   .body_size = 34,
-                                   .start_ts = {0},
-                                   .end_ts = {0}};
+                                   .content_type = content_type,
+                                   .body = (const unsigned char*)fallback,
+                                   .body_size = strlen(fallback)};
     }
+    vsnprintf((char*)body, len + 1, fmt, args);
+    return (chttpx_response_t){.status = status, .content_type = content_type, .body = body, .body_size = len, .body_ownership = CHTTPX_BODY_OWNED};
+}
 
-    memcpy(body, buffer, len);
-    body[len] = '\0';
-
-    return (chttpx_response_t){.status = status, .content_type = cHTTPX_CTYPE_JSON, .body = body, .body_size = len, .start_ts = {0}, .end_ts = {0}};
+chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    chttpx_response_t response = response_format(status, cHTTPX_CTYPE_JSON, "{\"error\":\"internal server error\"}", fmt, args);
+    va_end(args);
+    return response;
 }
 
 /**
@@ -535,30 +887,11 @@ chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
  */
 chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...)
 {
-    char buffer[BUFFER_SIZE];
-
     va_list args;
     va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    chttpx_response_t response = response_format(status, cHTTPX_CTYPE_HTML, "<h1>Internal Server Error</h1>", fmt, args);
     va_end(args);
-
-    size_t len = strlen(buffer);
-    unsigned char* body = malloc(len + 1);
-    if (!body)
-    {
-        perror("malloc failed");
-        return (chttpx_response_t){.status = cHTTPX_StatusInternalServerError,
-                                   .content_type = cHTTPX_CTYPE_HTML,
-                                   .body = (unsigned char*)"<h1>Internal Server Error</h1>",
-                                   .body_size = strlen("<h1>Internal Server Error</h1>"),
-                                   .start_ts = {0},
-                                   .end_ts = {0}};
-    }
-
-    memcpy(body, buffer, len);
-    body[len] = '\0';
-
-    return (chttpx_response_t){.status = status, .content_type = cHTTPX_CTYPE_HTML, .body = body, .body_size = len, .start_ts = {0}, .end_ts = {0}};
+    return response;
 }
 
 /**
@@ -575,6 +908,10 @@ chttpx_response_t cHTTPX_ResHtml(uint16_t status, const char* fmt, ...)
  */
 chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type, const unsigned char* body, size_t body_size)
 {
+    if (body_size == 0)
+        return (chttpx_response_t){.status = status, .content_type = content_type, .body = NULL, .body_size = 0};
+    if (!body)
+        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "invalid response body");
     unsigned char* buffer = malloc(body_size);
     if (!buffer)
     {
@@ -584,8 +921,13 @@ chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type, co
 
     memcpy(buffer, body, body_size);
 
-    return (chttpx_response_t){
-        .status = status, .content_type = content_type, .body = buffer, .body_size = body_size, .start_ts = {0}, .end_ts = {0}};
+    return (chttpx_response_t){.status = status,
+                               .content_type = content_type,
+                               .body = buffer,
+                               .body_size = body_size,
+                               .body_ownership = CHTTPX_BODY_OWNED,
+                               .start_ts = {0},
+                               .end_ts = {0}};
 }
 
 /**
@@ -604,9 +946,23 @@ chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, cons
         return cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"file not found\"}");
     }
 
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0)
+    {
+        fclose(f);
+        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to read file");
+    }
     long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (size < 0 || fseek(f, 0, SEEK_SET) != 0)
+    {
+        fclose(f);
+        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to read file");
+    }
+
+    if (size == 0)
+    {
+        fclose(f);
+        return cHTTPX_ResBinary(status, content_type, NULL, 0);
+    }
 
     unsigned char* data = malloc(size);
     if (!data)
@@ -615,8 +971,35 @@ chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, cons
         return cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"internal server error\"}");
     }
 
-    fread(data, 1, size, f);
+    if (fread(data, 1, (size_t)size, f) != (size_t)size)
+    {
+        free(data);
+        fclose(f);
+        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to read file");
+    }
     fclose(f);
 
-    return (chttpx_response_t){.status = status, .content_type = content_type, .body = data, .body_size = size, .start_ts = {0}, .end_ts = {0}};
+    return (chttpx_response_t){.status = status,
+                               .content_type = content_type,
+                               .body = data,
+                               .body_size = size,
+                               .body_ownership = CHTTPX_BODY_OWNED,
+                               .start_ts = {0},
+                               .end_ts = {0}};
+}
+
+void cHTTPX_ResponseCleanup(chttpx_response_t* res)
+{
+    if (!res)
+        return;
+    if (res->body_ownership == CHTTPX_BODY_OWNED)
+        free((void*)res->body);
+    res->body = NULL;
+    res->body_size = 0;
+    res->body_ownership = CHTTPX_BODY_BORROWED;
+}
+
+chttpx_response_t cHTTPX_ResNoContent(void)
+{
+    return (chttpx_response_t){.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT};
 }

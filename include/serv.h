@@ -19,9 +19,59 @@ extern "C"
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 
-#define MAX_PATH 4096
+#define CHTTPX_MAX_PATH 4096
 #define MAX_CLIENTS_DEFAULT 255
+
+    typedef enum
+    {
+        CHTTPX_OK = 0,
+        CHTTPX_ERR_MEMORY = -1,
+        CHTTPX_ERR_SOCKET = -2,
+        CHTTPX_ERR_BIND = -3,
+        CHTTPX_ERR_LISTEN = -4,
+        CHTTPX_ERR_INVALID_ARGUMENT = -5,
+        CHTTPX_ERR_LIMIT = -6,
+        CHTTPX_ERR_IO = -7
+    } chttpx_error_t;
+
+    typedef enum
+    {
+        CHTTPX_LOG_DEBUG,
+        CHTTPX_LOG_INFO,
+        CHTTPX_LOG_WARN,
+        CHTTPX_LOG_ERROR,
+        CHTTPX_LOG_OFF
+    } chttpx_log_level_t;
+
+    typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
+
+    typedef struct
+    {
+        uint16_t port;
+        size_t max_clients;
+        uint16_t read_timeout_sec;
+        uint16_t write_timeout_sec;
+        uint16_t idle_timeout_sec;
+        size_t max_body_size;
+        size_t max_upload_size;
+        size_t max_header_size;
+        bool request_id_enabled;
+        const char** languages;
+        size_t languages_count;
+        const char* default_language;
+        chttpx_log_level_t log_level;
+        chttpx_logger_fn logger;
+        void* logger_data;
+    } chttpx_config_t;
+
+    typedef struct
+    {
+        size_t max_size;
+        const char** allowed_types;
+        size_t allowed_types_count;
+    } chttpx_upload_policy_t;
 
     /* Base struct route for library */
     typedef struct
@@ -29,21 +79,41 @@ extern "C"
         const char* method;
         const char* path;
         chttpx_handler_t handler;
+        chttpx_middleware_t middlewares[MAX_MIDDLEWARES];
+        size_t middleware_count;
+        chttpx_middleware_t after_middlewares[MAX_MIDDLEWARES];
+        size_t after_middleware_count;
+        chttpx_upload_policy_t upload_policy;
+        bool has_upload_policy;
     } chttpx_route_t;
 
     typedef struct
     {
         uint16_t port;
 
-        size_t server_fd;
+        chttpx_socket_t server_fd;
 
         size_t max_clients;
         size_t current_clients;
+        volatile bool shutdown_requested;
+        volatile bool listening;
 
         /* Server timeout params */
         uint16_t read_timeout_sec;  // 2b
         uint16_t write_timeout_sec; // 2b
         uint16_t idle_timeout_sec;  // 2b
+        size_t max_body_size;
+        size_t max_upload_size;
+        size_t max_header_size;
+
+        bool request_id_enabled;
+        const char** languages;
+        size_t languages_count;
+        const char* default_language;
+
+        chttpx_log_level_t log_level;
+        chttpx_logger_fn logger;
+        void* logger_data;
 
         /* Routes params */
         chttpx_route_t* routes;
@@ -61,7 +131,11 @@ extern "C"
     typedef struct
     {
         chttpx_serv_t* serv;
-        char* prefix;
+        char prefix[CHTTPX_MAX_PATH];
+        chttpx_middleware_t middlewares[MAX_MIDDLEWARES];
+        size_t middleware_count;
+        chttpx_middleware_t after_middlewares[MAX_MIDDLEWARES];
+        size_t after_middleware_count;
     } chttpx_router_t;
 
     extern chttpx_serv_t* serv;
@@ -73,6 +147,8 @@ extern "C"
      * This function must be called before registering routes or starting the server.
      */
     int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients);
+    chttpx_config_t cHTTPX_DefaultConfig(void);
+    int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config);
 
     /**
      * Create a router bound to the server with a fixed path prefix.
@@ -99,6 +175,22 @@ extern "C"
      * This allows the server to call the appropriate function when a matching request is received.
      */
     void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler);
+    chttpx_route_t* cHTTPX_Get(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    chttpx_route_t* cHTTPX_Post(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    chttpx_route_t* cHTTPX_Put(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    chttpx_route_t* cHTTPX_Patch(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    chttpx_route_t* cHTTPX_Delete(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    chttpx_route_t* cHTTPX_Options(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+
+    chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* prefix);
+    int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware);
+    int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware);
+    int cHTTPX_RouteUse(chttpx_route_t* route, chttpx_middleware_t middleware);
+    int cHTTPX_RouteUseAfter(chttpx_route_t* route, chttpx_middleware_t middleware);
+    int cHTTPX_RouteUploadPolicy(chttpx_route_t* route, const chttpx_upload_policy_t* policy);
+    void cHTTPX_RouterFree(chttpx_router_t* router);
+
+    void cHTTPX_SetLogger(chttpx_logger_fn logger, void* user_data, chttpx_log_level_t level);
 
     /**
      * Start the server loop to listen for incoming connections.

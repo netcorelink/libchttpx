@@ -26,6 +26,12 @@ extern "C"
      * @return Pointer to the parameter value string if found, or NULL if not present.
      */
     const char* cHTTPX_Query(chttpx_request_t* req, const char* name);
+    int cHTTPX_QueryInt(chttpx_request_t* req, const char* name, int* value);
+    int cHTTPX_QueryU64(chttpx_request_t* req, const char* name, uint64_t* value);
+    int cHTTPX_QueryBool(chttpx_request_t* req, const char* name, bool* value);
+    int cHTTPX_QueryDouble(chttpx_request_t* req, const char* name, double* value);
+    int cHTTPX_QueryU64Default(chttpx_request_t* req, const char* name, uint64_t* value, uint64_t default_value);
+    int cHTTPX_UrlDecode(char* destination, size_t destination_size, const char* source, bool plus_as_space);
 
     /* Parse queries in request */
     void _parse_req_query(chttpx_request_t* req, char* query);

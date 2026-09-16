@@ -19,9 +19,11 @@ WIN_LIB_DIR = tools
 
 LIN_LDFLAGS = -lcjson
 WIN_LDFLAGS = -lws2_32
+TEST_TARGET = $(BINDIR)/test_core
+TEST_SERVER_TARGET = $(BINDIR)/test_server
 
-LIN_SRCS = $(filter-out ./lib/cjson/cJSON.c, $(shell find . -name '*.c'))
-WIN_SRCS = $(wildcard *.c) $(wildcard */*.c) $(wildcard */*/*.c)
+LIN_SRCS = $(wildcard src/*.c)
+WIN_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
 
 LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
 WIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(WIN_SRCS))
@@ -31,9 +33,9 @@ WIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(WIN_SRCS))
 
 lin: $(BINDIR)/$(TARGET)
 
-$(BINDIR)/$(TARGET): $(LIN_OBJS)
+$(BINDIR)/$(TARGET): $(LIN_OBJS) $(OBJDIR)/exmaples.o
 	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $(LIN_OBJS) $(LIN_LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(LIN_OBJS) $(OBJDIR)/exmaples.o $(LIN_LDFLAGS)
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -44,7 +46,7 @@ $(OBJDIR)/%.o: %.c
 
 win:
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
+	$(CC) $(CFLAGS) -D_WIN32 -mconsole exmaples.c $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
 
 # LINux shared library
 # -
@@ -67,20 +69,26 @@ lib-install: libchttpx.so
 # WINdows lib compile
 # -
 
-win-lib: $(WIN_OBJS)
+win-lib:
 	@echo "Building Windows DLL..."
-	$(CC) -shared -o $(TARGET_DLL) $(WIN_OBJS) -Wl,--out-implib,libchttpx.a -lws2_32
+	if not exist $(BINDIR) mkdir $(BINDIR)
+	$(CC) $(CFLAGS) -std=c11 -D_WIN32 -shared -o $(BINDIR)/$(TARGET_DLL) $(WIN_SRCS) -Wl,--out-implib,$(BINDIR)/libchttpx.a -lws2_32
 
 	@echo "Copying files to $(WIN_LIB_DIR)..."
-	@mkdir -p $(WIN_LIB_DIR)
-	@cp $(TARGET_DLL) $(WIN_LIB_DIR)/
-	@cp libchttpx.a $(WIN_LIB_DIR)/
-	@mkdir -p $(WIN_LIB_DIR)/include
-	@cp -r include/* $(WIN_LIB_DIR)/include/
-
-	@rm $(TARGET_DLL) libchttpx.a
+	if not exist $(WIN_LIB_DIR) mkdir $(WIN_LIB_DIR)
+	copy /Y $(BINDIR)\$(TARGET_DLL) $(WIN_LIB_DIR)\$(TARGET_DLL)
+	copy /Y $(BINDIR)\libchttpx.a $(WIN_LIB_DIR)\libchttpx.a
+	if not exist $(WIN_LIB_DIR)\include mkdir $(WIN_LIB_DIR)\include
+	xcopy /E /I /Y include $(WIN_LIB_DIR)\include
 
 	@echo "Files copied to $(WIN_LIB_DIR) successfully!"
+
+test-win:
+	if not exist $(BINDIR) mkdir $(BINDIR)
+	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_core.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_TARGET).exe $(WIN_LDFLAGS)
+	$(TEST_TARGET).exe
+	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_server.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_SERVER_TARGET).exe $(WIN_LDFLAGS)
+	$(TEST_SERVER_TARGET).exe
 
 # LINux lib compile
 # -

@@ -37,6 +37,10 @@ extern "C"
 
 #include "i18n.h"
 
+#include "media.h"
+
+#include "json.h"
+
 #ifdef __cplusplus
 }
 #endif

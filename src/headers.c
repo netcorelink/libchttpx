@@ -135,10 +135,10 @@ const char* cHTTPX_ClientIP(chttpx_request_t* req)
     return ip;
 }
 
-static void add_header(chttpx_request_t* req, const char* name, const char* value)
+static int add_header(chttpx_request_t* req, const char* name, const char* value)
 {
     if (req->headers_count >= MAX_HEADERS)
-        return;
+        return 0;
 
     chttpx_header_t* h = &req->headers[req->headers_count++];
 
@@ -153,6 +153,7 @@ static void add_header(chttpx_request_t* req, const char* name, const char* valu
         len_value = MAX_HEADER_VALUE - 1;
     memcpy(h->value, value, len_value);
     h->value[len_value] = '\0';
+    return 1;
 }
 
 /* Parse headers in request */
@@ -183,6 +184,12 @@ void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len)
             size_t name_len = colon - line_start;
             size_t value_len = line_len - name_len - 1;
 
+            if (name_len == 0 || name_len >= MAX_HEADER_NAME || value_len >= MAX_HEADER_VALUE)
+            {
+                req->_parse_status = 431;
+                return;
+            }
+
             char* value_start = colon + 1;
             while (value_len > 0 && *value_start == ' ')
             {
@@ -202,7 +209,11 @@ void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len)
             memcpy(value_buf, value_start, copy_value);
             value_buf[copy_value] = '\0';
 
-            add_header(req, name_buf, value_buf);
+            if (!add_header(req, name_buf, value_buf))
+            {
+                req->_parse_status = 431;
+                return;
+            }
         }
 
         line_start = newline + 1;

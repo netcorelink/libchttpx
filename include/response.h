@@ -18,7 +18,13 @@ extern "C"
 #include <time.h>
 
     // RESponse
-    typedef struct
+    typedef enum
+    {
+        CHTTPX_BODY_BORROWED = 0,
+        CHTTPX_BODY_OWNED = 1
+    } chttpx_body_ownership_t;
+
+    typedef struct chttpx_response
     {
         /* Response status code */
         int status;
@@ -34,6 +40,8 @@ extern "C"
         const unsigned char* body;
         /* Response body size */
         size_t body_size;
+
+        chttpx_body_ownership_t body_ownership;
 
         /* Times for logging */
         struct timespec start_ts;
@@ -101,6 +109,13 @@ extern "C"
      * @return Initialized chttpx_response_t
      */
     chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, const char* path);
+
+    chttpx_response_t cHTTPX_ResError(uint16_t status, const char* message);
+    chttpx_response_t cHTTPX_ResMessage(uint16_t status, const char* message);
+    chttpx_response_t cHTTPX_ResNoContent(void);
+    void cHTTPX_ResponseCleanup(chttpx_response_t* res);
+    const char* cHTTPX_StatusReason(uint16_t status);
+    int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 
 #ifdef __cplusplus
     extern

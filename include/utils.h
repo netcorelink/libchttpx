@@ -1,6 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <stdlib.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -12,13 +14,36 @@ extern "C"
 
     typedef HANDLE thread_t;
 
-    inline int _thread_create(thread_t* thread, void* (*func)(void*), void* arg)
+    typedef struct
     {
-        *thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL);
+        void* (*function)(void*);
+        void* argument;
+    } chttpx_thread_start_t;
+
+    static DWORD WINAPI _thread_start(LPVOID value)
+    {
+        chttpx_thread_start_t* start = value;
+        void* (*function)(void*) = start->function;
+        void* argument = start->argument;
+        free(start);
+        function(argument);
+        return 0;
+    }
+
+    static inline int _thread_create(thread_t* thread, void* (*func)(void*), void* arg)
+    {
+        chttpx_thread_start_t* start = malloc(sizeof(*start));
+        if (!start)
+            return -1;
+        start->function = func;
+        start->argument = arg;
+        *thread = CreateThread(NULL, 0, _thread_start, start, 0, NULL);
+        if (!*thread)
+            free(start);
         return *thread ? 0 : -1;
     }
 
-    inline int _thread_join(thread_t thread)
+    static inline int _thread_join(thread_t thread)
     {
         WaitForSingleObject(thread, INFINITE);
         CloseHandle(thread);
@@ -29,12 +54,12 @@ extern "C"
 
 typedef pthread_t thread_t;
 
-inline int _thread_create(thread_t* thread, void* (*func)(void*), void* arg)
+static inline int _thread_create(thread_t* thread, void* (*func)(void*), void* arg)
 {
     return pthread_create(thread, NULL, func, arg);
 }
 
-inline int _thread_join(thread_t thread)
+static inline int _thread_join(thread_t thread)
 {
     return pthread_join(thread, NULL);
 }

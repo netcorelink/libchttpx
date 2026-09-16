@@ -40,19 +40,46 @@ typedef int chttpx_socket_t;
 #endif
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    static struct tm* localtime_r(const time_t* timep, struct tm* result)
+    static inline struct tm* localtime_r(const time_t* timep, struct tm* result)
     {
         memset(result, 0, sizeof(*result));
         localtime_s(result, timep);
         return result;
     }
 
-    static struct tm* gmtime_r(const time_t* timep, struct tm* result)
+    static inline struct tm* gmtime_r(const time_t* timep, struct tm* result)
     {
         memset(result, 0, sizeof(*result));
         gmtime_s(result, timep);
         return result;
     }
+
+    static inline int chttpx_clock_gettime(int clock_id, struct timespec* value)
+    {
+        if (!value)
+            return -1;
+        if (clock_id == CLOCK_MONOTONIC)
+        {
+            LARGE_INTEGER frequency;
+            LARGE_INTEGER counter;
+            QueryPerformanceFrequency(&frequency);
+            QueryPerformanceCounter(&counter);
+            value->tv_sec = (time_t)(counter.QuadPart / frequency.QuadPart);
+            value->tv_nsec = (long)(((counter.QuadPart % frequency.QuadPart) * 1000000000LL) / frequency.QuadPart);
+            return 0;
+        }
+        FILETIME file_time;
+        ULARGE_INTEGER ticks;
+        GetSystemTimeAsFileTime(&file_time);
+        ticks.LowPart = file_time.dwLowDateTime;
+        ticks.HighPart = file_time.dwHighDateTime;
+        unsigned long long unix_ticks = ticks.QuadPart - 116444736000000000ULL;
+        value->tv_sec = (time_t)(unix_ticks / 10000000ULL);
+        value->tv_nsec = (long)((unix_ticks % 10000000ULL) * 100ULL);
+        return 0;
+    }
+
+#define clock_gettime chttpx_clock_gettime
 #endif
 
 #ifdef CHTTPX_PLATFORM_POSIX
@@ -67,7 +94,7 @@ typedef int chttpx_socket_t;
 #endif
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    static void* memmem_win(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
+    static inline void* memmem_win(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
     {
         if (!needlelen)
             return (void*)haystack;

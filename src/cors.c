@@ -55,9 +55,37 @@ void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods
         return;
     }
 
+    const char* selected_methods = methods ? methods : "GET, POST, PUT, DELETE, OPTIONS";
+    const char* selected_headers = headers ? headers : "Content-Type";
+    const char** owned_origins = calloc(origins_count, sizeof(*owned_origins));
+    char* owned_methods = strdup(selected_methods);
+    char* owned_headers = strdup(selected_headers);
+    if ((origins_count && !owned_origins) || !owned_methods || !owned_headers)
+        goto memory_error;
+    for (size_t i = 0; i < origins_count; i++)
+    {
+        owned_origins[i] = origins && origins[i] ? strdup(origins[i]) : NULL;
+        if (!owned_origins[i])
+        {
+            for (size_t j = 0; j < i; j++)
+                free((void*)owned_origins[j]);
+            goto memory_error;
+        }
+    }
+    for (size_t i = 0; i < serv->cors.origins_count; i++)
+        free((void*)serv->cors.origins[i]);
+    free((void*)serv->cors.origins);
+    free((void*)serv->cors.methods);
+    free((void*)serv->cors.headers);
     serv->cors.enabled = 1;
-    serv->cors.origins = origins;
+    serv->cors.origins = owned_origins;
     serv->cors.origins_count = origins_count;
-    serv->cors.methods = methods ? methods : "GET, POST, PUT, DELETE, OPTIONS";
-    serv->cors.headers = headers ? headers : "Content-Type";
+    serv->cors.methods = owned_methods;
+    serv->cors.headers = owned_headers;
+    return;
+
+memory_error:
+    free(owned_origins);
+    free(owned_methods);
+    free(owned_headers);
 }
