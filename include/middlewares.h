@@ -35,6 +35,8 @@ extern "C"
     {
         chttpx_middleware_t middlewares[MAX_MIDDLEWARES];
         size_t middleware_count;
+        chttpx_middleware_t after_middlewares[MAX_MIDDLEWARES];
+        size_t after_middleware_count;
     } chttpx_middleware_stack_t;
 
     /**
@@ -52,6 +54,9 @@ extern "C"
      * @param mw Middleware function pointer.
      */
     void cHTTPX_MiddlewareUse(chttpx_middleware_t mw);
+
+    /** Register a global middleware that runs after the route handler. */
+    void cHTTPX_MiddlewareUseAfter(chttpx_middleware_t mw);
 
 #define MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE 4096
 
@@ -76,34 +81,14 @@ extern "C"
     void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec);
 
     /**
-     * Initialize global recovery signal handlers.
-     *
-     * This function installs signal handlers for critical runtime errors
-     * such as segmentation faults, abort signals, and floating-point exceptions.
-     *
-     * When a registered signal is raised during request processing,
-     * the handler will transfer control back to the recovery middleware
-     * using setjmp/longjmp instead of terminating the process.
+     * Compatibility hook. Fatal signal recovery is deliberately disabled:
+     * continuing after memory-corrupting faults is not safe.
      */
     void _recovery_init(void);
 
     /**
-     * Recovery middleware.
-     *
-     * This middleware protects the request processing pipeline from fatal
-     * runtime errors such as segmentation faults.
-     *
-     * Internally, it uses setjmp/longjmp together with POSIX signal handlers
-     * to recover control flow if a critical signal occurs while handling
-     * the request.
-     *
-     * If a signal is caught:
-     *  - The error is logged to stderr
-     *  - A 500 Internal Server Error JSON response is returned
-     *  - Further middleware and handlers are skipped
-     *
-     * @param req Pointer to the HTTP request structure.
-     * @param res Pointer to the HTTP response structure.
+     * Register the compatibility recovery middleware. It is a no-op; use a
+     * process supervisor to restart after fatal signals.
      */
     void cHTTPX_MiddlewareRecovery();
 

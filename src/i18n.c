@@ -23,6 +23,7 @@
 #include "i18n.h"
 
 #include "crosspltm.h"
+#include "serv.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,9 +46,17 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
     if (!f)
         return loc;
 
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0)
+    {
+        fclose(f);
+        return loc;
+    }
     long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (size < 0 || fseek(f, 0, SEEK_SET) != 0)
+    {
+        fclose(f);
+        return loc;
+    }
 
     char* data = malloc(size + 1);
     if (!data)
@@ -71,10 +80,19 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
     cJSON* root = cJSON_Parse(data);
     free(data);
     if (!root || !cJSON_IsObject(root))
+    {
+        cJSON_Delete(root);
         return loc;
+    }
 
     loc.count = cJSON_GetArraySize(root);
     loc.entries = calloc(loc.count, sizeof(i18n_entry_t));
+    if (loc.count && !loc.entries)
+    {
+        loc.count = 0;
+        cJSON_Delete(root);
+        return loc;
+    }
 
     int indx = 0;
     cJSON* child = NULL;
@@ -87,9 +105,26 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
         {
             loc.entries[indx].key = strdup(key);
             loc.entries[indx].value = strdup(value);
+            if (!loc.entries[indx].key || !loc.entries[indx].value)
+            {
+                free(loc.entries[indx].key);
+                free(loc.entries[indx].value);
+                for (int i = 0; i < indx; i++)
+                {
+                    free(loc.entries[i].key);
+                    free(loc.entries[i].value);
+                }
+                free(loc.entries);
+                loc.entries = NULL;
+                loc.count = 0;
+                cJSON_Delete(root);
+                return loc;
+            }
             indx++;
         }
     }
+
+    loc.count = (size_t)indx;
 
     cJSON_Delete(root);
     return loc;
@@ -135,6 +170,9 @@ static void i18n_shutdown(void)
  */
 void cHTTPX_i18n(const char* directory)
 {
+    if (!directory)
+        return;
+    i18n_shutdown();
     i18n_manager = calloc(1, sizeof(i18n_manager_t));
     if (!i18n_manager)
         return;
@@ -157,7 +195,11 @@ void cHTTPX_i18n(const char* directory)
             break;
 
         char locale[8] = {0};
-        strncpy(locale, ent->d_name, strchr(ent->d_name, '.') - ent->d_name);
+        size_t locale_size = (size_t)(strchr(ent->d_name, '.') - ent->d_name);
+        if (locale_size >= sizeof(locale))
+            locale_size = sizeof(locale) - 1;
+        memcpy(locale, ent->d_name, locale_size);
+        locale[locale_size] = '\0';
 
         char path[512];
         snprintf(path, sizeof(path), "%s/%s", directory, ent->d_name);
@@ -223,6 +265,16 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
     }
 
     return key;
+}
+
+int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback)
+{
+    if (!serv || !fallback || (count && !languages))
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    serv->languages = languages;
+    serv->languages_count = count;
+    serv->default_language = fallback;
+    return CHTTPX_OK;
 }
 
 const char* LANGUAGE_CODES[LANG_COUNT] = {

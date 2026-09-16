@@ -24,6 +24,15 @@ extern "C"
      */
     const char* cHTTPX_Param(chttpx_request_t* req, const char* name);
 
+    /** Parse a route parameter as an integer. Returns 1 on success, otherwise 0. */
+    int cHTTPX_ParamInt(chttpx_request_t* req, const char* name, int* value);
+
+    /** Parse a route parameter as an unsigned 64-bit integer. Returns 1 on success, otherwise 0. */
+    int cHTTPX_ParamU64(chttpx_request_t* req, const char* name, uint64_t* value);
+
+    /** Parse a route parameter as a boolean. Returns 1 on success, otherwise 0. */
+    int cHTTPX_ParamBool(chttpx_request_t* req, const char* name, bool* value);
+
 #ifdef __cplusplus
     extern
 }

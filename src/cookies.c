@@ -1,3 +1,25 @@
+/*
+ * Copyright (c) 2026 netcorelink
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+
 #include "cookies.h"
 
 #include "headers.h"
@@ -7,11 +29,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #define CHTTPX_SAMESITE_NONE 0
 #define CHTTPX_SAMESITE_LAX 1
 #define CHTTPX_SAMESITE_STRICT 2
 #define CHTTPX_SAMESITE_NONE_MODE 3
+
+static int cookie_append(char* buffer, size_t capacity, size_t* offset, const char* format, ...)
+{
+    if (*offset >= capacity)
+        return 0;
+    va_list args;
+    va_start(args, format);
+    int written = vsnprintf(buffer + *offset, capacity - *offset, format, args);
+    va_end(args);
+    if (written < 0 || (size_t)written >= capacity - *offset)
+        return 0;
+    *offset += (size_t)written;
+    return 1;
+}
 
 /* Parse cookie in request */
 void _parse_req_cookies(chttpx_request_t* req)
@@ -23,10 +60,12 @@ void _parse_req_cookies(chttpx_request_t* req)
     char buffer[strlen(cookie_header) + 1];
     strcpy(buffer, cookie_header);
 
-    char* pair = strtok(buffer, ";");
-
-    while (pair && req->cookies_count < MAX_COOKIES)
+    char* pair = buffer;
+    while (pair && *pair && req->cookies_count < MAX_COOKIES)
     {
+        char* next_pair = strchr(pair, ';');
+        if (next_pair)
+            *next_pair++ = '\0';
         while (*pair == ' ')
             pair++;
 
@@ -41,6 +80,16 @@ void _parse_req_cookies(chttpx_request_t* req)
             req->cookies[req->cookies_count].path = strdup("/");
             req->cookies[req->cookies_count].domain = NULL;
 
+            if (!req->cookies[req->cookies_count].name || !req->cookies[req->cookies_count].value || !req->cookies[req->cookies_count].path)
+            {
+                free(req->cookies[req->cookies_count].name);
+                free(req->cookies[req->cookies_count].value);
+                free(req->cookies[req->cookies_count].path);
+                memset(&req->cookies[req->cookies_count], 0, sizeof(req->cookies[req->cookies_count]));
+                req->_parse_status = 500;
+                return;
+            }
+
             req->cookies[req->cookies_count].expires = 0;
             req->cookies[req->cookies_count].http_only = false;
             req->cookies[req->cookies_count].secure = false;
@@ -49,7 +98,7 @@ void _parse_req_cookies(chttpx_request_t* req)
             req->cookies_count++;
         }
 
-        pair = strtok(NULL, ";");
+        pair = next_pair;
     }
 }
 
@@ -115,22 +164,25 @@ const chttpx_cookie_t* cHTTPX_CookieGet(chttpx_request_t* req, const char* name)
  */
 int cHTTPX_CookieSet(chttpx_response_t* res, const chttpx_cookie_t* cookie)
 {
-    if (!res || !cookie)
+    if (!res || !cookie || !cookie->name || !cookie->value)
         return -1;
 
     char buffer[1024];
     size_t offset = 0;
 
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "%s=%s", cookie->name, cookie->value);
+    if (!cookie_append(buffer, sizeof(buffer), &offset, "%s=%s", cookie->name, cookie->value))
+        return -1;
 
-    if (cookie->path[0])
+    if (cookie->path && cookie->path[0])
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; Path=%s", cookie->path);
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; Path=%s", cookie->path))
+            return -1;
     }
 
-    if (cookie->domain[0])
+    if (cookie->domain && cookie->domain[0])
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; Domain=%s", cookie->domain);
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; Domain=%s", cookie->domain))
+            return -1;
     }
 
     if (cookie->expires > 0)
@@ -141,30 +193,36 @@ int cHTTPX_CookieSet(chttpx_response_t* res, const chttpx_cookie_t* cookie)
         char timebuf[128];
         strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S GMT", &gm);
 
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; Expires=%s", timebuf);
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; Expires=%s", timebuf))
+            return -1;
     }
 
     if (cookie->same_site == CHTTPX_SAMESITE_LAX)
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; SameSite=Lax");
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; SameSite=Lax"))
+            return -1;
     }
     else if (cookie->same_site == CHTTPX_SAMESITE_STRICT)
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; SameSite=Strict");
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; SameSite=Strict"))
+            return -1;
     }
     else if (cookie->same_site == CHTTPX_SAMESITE_NONE_MODE)
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; SameSite=None");
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; SameSite=None"))
+            return -1;
     }
 
     if (cookie->secure)
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; Secure");
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; Secure"))
+            return -1;
     }
 
     if (cookie->http_only)
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "; HttpOnly");
+        if (!cookie_append(buffer, sizeof(buffer), &offset, "; HttpOnly"))
+            return -1;
     }
 
     return cHTTPX_HeaderAdd(res, "Set-Cookie", buffer);
