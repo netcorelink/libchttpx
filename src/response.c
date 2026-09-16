@@ -320,7 +320,7 @@ static ssize_t read_req(int fd, char* buffer, size_t buffer_size)
         if (total < buffer_size)
             buffer[total] = '\0';
 
-        if (memmem(buffer, total, "\r\n\r\n", 4))
+        if (chttpx_memmem(buffer, total, "\r\n\r\n", 4))
             break;
     }
 

@@ -92,6 +92,16 @@ extern "C"
      */
     const char* cHTTPX_i18n_t(const char* key, const char* lang);
 
+    /**
+     * Configure the language preference list used for request negotiation.
+     *
+     * @param languages Ordered array of supported language
+     * codes.
+     * @param count     Number of elements in languages.
+     * @param fallback  Fallback language code.
+     * @return CHTTPX_OK on
+     * success, otherwise a negative error code.
+     */
     int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback);
 
 #ifdef __cplusplus

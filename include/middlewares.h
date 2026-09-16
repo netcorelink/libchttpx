@@ -54,6 +54,8 @@ extern "C"
      * @param mw Middleware function pointer.
      */
     void cHTTPX_MiddlewareUse(chttpx_middleware_t mw);
+
+    /** Register a global middleware that runs after the route handler. */
     void cHTTPX_MiddlewareUseAfter(chttpx_middleware_t mw);
 
 #define MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE 4096

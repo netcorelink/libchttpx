@@ -73,20 +73,15 @@ static FILE* create_temporary_file(char* path, size_t path_size)
 static int track_file(chttpx_request_t* req, const char* path, const char* field_name, const char* original_name, const char* content_type,
                       size_t size)
 {
-    chttpx_file_t* old_files = req->files;
-    chttpx_file_t* files = realloc(req->files, sizeof(*files) * (req->files_count + 1));
+    chttpx_file_t* files = cHTTPX_Alloc(req, sizeof(*files) * (req->files_count + 1));
     if (!files)
         return 0;
-    if (old_files)
-        cHTTPX_Detach(req, old_files);
-    req->files = files;
-    if (cHTTPX_Defer(req, files, free) != 0)
+    if (req->files)
     {
-        free(files);
-        req->files = NULL;
-        req->files_count = 0;
-        return 0;
+        memcpy(files, req->files, sizeof(*files) * req->files_count);
+        free(cHTTPX_Detach(req, req->files));
     }
+    req->files = files;
 
     char* owned_path = strdup(path);
     if (!owned_path || cHTTPX_Defer(req, owned_path, remove_temporary_file) != 0)
@@ -110,20 +105,15 @@ static int track_file(chttpx_request_t* req, const char* path, const char* field
 
 static int add_form_value(chttpx_request_t* req, const char* name, size_t name_size, const char* value, size_t value_size, bool decode)
 {
-    chttpx_query_t* old_values = req->form_values;
-    chttpx_query_t* values = realloc(req->form_values, sizeof(*values) * (req->form_values_count + 1));
+    chttpx_query_t* values = cHTTPX_Alloc(req, sizeof(*values) * (req->form_values_count + 1));
     if (!values)
         return 0;
-    if (old_values)
-        cHTTPX_Detach(req, old_values);
-    req->form_values = values;
-    if (cHTTPX_Defer(req, values, free) != 0)
+    if (req->form_values)
     {
-        free(values);
-        req->form_values = NULL;
-        req->form_values_count = 0;
-        return 0;
+        memcpy(values, req->form_values, sizeof(*values) * req->form_values_count);
+        free(cHTTPX_Detach(req, req->form_values));
     }
+    req->form_values = values;
 
     char* owned_name = cHTTPX_Alloc(req, name_size + 1);
     char* owned_value = cHTTPX_Alloc(req, value_size + 1);
@@ -169,7 +159,7 @@ static void parse_urlencoded(chttpx_request_t* req)
 
 static int header_attribute(const char* headers, size_t headers_size, const char* attribute, char* output, size_t output_size)
 {
-    const char* found = memmem(headers, headers_size, attribute, strlen(attribute));
+    const char* found = chttpx_memmem(headers, headers_size, attribute, strlen(attribute));
     if (!found)
         return 0;
     found += strlen(attribute);
@@ -206,7 +196,7 @@ static void parse_multipart(chttpx_request_t* req)
 
     const unsigned char* body = req->body;
     const unsigned char* end = body + req->body_size;
-    const unsigned char* part = memmem(body, req->body_size, boundary, boundary_size);
+    const unsigned char* part = chttpx_memmem(body, req->body_size, boundary, boundary_size);
     while (part)
     {
         part += boundary_size;
@@ -218,7 +208,7 @@ static void parse_multipart(chttpx_request_t* req)
             return;
         }
         part += 2;
-        const unsigned char* headers_end = memmem(part, (size_t)(end - part), "\r\n\r\n", 4);
+        const unsigned char* headers_end = chttpx_memmem(part, (size_t)(end - part), "\r\n\r\n", 4);
         if (!headers_end)
         {
             req->_parse_status = cHTTPX_StatusBadRequest;
@@ -226,7 +216,7 @@ static void parse_multipart(chttpx_request_t* req)
         }
         size_t headers_size = (size_t)(headers_end - part);
         const unsigned char* data = headers_end + 4;
-        const unsigned char* next = memmem(data, (size_t)(end - data), boundary, boundary_size);
+        const unsigned char* next = chttpx_memmem(data, (size_t)(end - data), boundary, boundary_size);
         if (!next || next < data + 2 || next[-2] != '\r' || next[-1] != '\n')
         {
             req->_parse_status = cHTTPX_StatusBadRequest;
@@ -244,7 +234,7 @@ static void parse_multipart(chttpx_request_t* req)
             type += 13;
             while (*type == ' ')
                 type++;
-            const char* type_end = memmem(type, (size_t)((const char*)headers_end - type), "\r\n", 2);
+            const char* type_end = chttpx_memmem(type, (size_t)((const char*)headers_end - type), "\r\n", 2);
             size_t type_size = type_end ? (size_t)(type_end - type) : (size_t)((const char*)headers_end - type);
             if (type_size >= sizeof(content_type))
                 type_size = sizeof(content_type) - 1;
@@ -289,7 +279,7 @@ static void save_raw_upload(chttpx_request_t* req, char* initial_buffer, size_t 
         req->_parse_status = cHTTPX_StatusInternalServerError;
         return;
     }
-    const char* body = memmem(initial_buffer, initial_len, "\r\n\r\n", 4);
+    const char* body = chttpx_memmem(initial_buffer, initial_len, "\r\n\r\n", 4);
     if (!body)
         goto bad_request;
     body += 4;

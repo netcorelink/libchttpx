@@ -88,14 +88,14 @@ static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, cons
 
     for (;;)
     {
-        unsigned char* line_end = memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
+        unsigned char* line_end = chttpx_memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
         while (!line_end)
         {
             unsigned char incoming[BUFFER_SIZE];
             int received = recv(client_fd, (char*)incoming, sizeof(incoming), 0);
             if (received <= 0 || !append_bytes(&wire, &wire_size, &wire_capacity, incoming, (size_t)received, limit + BUFFER_SIZE))
                 goto fail;
-            line_end = memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
+            line_end = chttpx_memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
         }
 
         size_t line_size = (size_t)(line_end - (wire + cursor));
@@ -161,10 +161,10 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     }
     req->content_length = content_length;
 
-    int memory_body = req->content_type && (strstr(req->content_type, cHTTPX_CTYPE_JSON) || strstr(req->content_type, "text/") ||
-                                            strstr(req->content_type, cHTTPX_CTYPE_FORM) || strstr(req->content_type, cHTTPX_CTYPE_MULTI));
+    int memory_body = strstr(req->content_type, cHTTPX_CTYPE_JSON) || strstr(req->content_type, "text/") ||
+                      strstr(req->content_type, cHTTPX_CTYPE_FORM) || strstr(req->content_type, cHTTPX_CTYPE_MULTI);
 
-    const char* body_start = memmem(buffer, buffer_len, "\r\n\r\n", 4);
+    const char* body_start = chttpx_memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start)
     {
         req->body = NULL;

@@ -21,6 +21,8 @@ LIN_LDFLAGS = -lcjson
 WIN_LDFLAGS = -lws2_32
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
+EXAMPLE_SRC = examples.c
+EXAMPLE_OBJ = $(OBJDIR)/examples.o
 
 LIN_SRCS = $(wildcard src/*.c)
 WIN_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
@@ -33,9 +35,9 @@ WIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(WIN_SRCS))
 
 lin: $(BINDIR)/$(TARGET)
 
-$(BINDIR)/$(TARGET): $(LIN_OBJS) $(OBJDIR)/exmaples.o
+$(BINDIR)/$(TARGET): $(LIN_OBJS) $(EXAMPLE_OBJ)
 	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) -o $@ $(LIN_OBJS) $(OBJDIR)/exmaples.o $(LIN_LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(LIN_OBJS) $(EXAMPLE_OBJ) $(LIN_LDFLAGS)
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -46,7 +48,7 @@ $(OBJDIR)/%.o: %.c
 
 win:
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -D_WIN32 -mconsole exmaples.c $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
+	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(EXAMPLE_SRC) $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
 
 # LINux shared library
 # -

@@ -110,11 +110,30 @@ extern "C"
      */
     chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, const char* path);
 
+    /** Create an error response with the given HTTP status and message. */
     chttpx_response_t cHTTPX_ResError(uint16_t status, const char* message);
+
+    /** Create a plain-text response with the given HTTP status and message. */
     chttpx_response_t cHTTPX_ResMessage(uint16_t status, const char* message);
+
+    /** Create an HTTP 204 No Content response. */
     chttpx_response_t cHTTPX_ResNoContent(void);
+
+    /** Release all resources owned by a response. The pointer may be NULL. */
     void cHTTPX_ResponseCleanup(chttpx_response_t* res);
+
+    /** Return the standard reason phrase for an HTTP status code. */
     const char* cHTTPX_StatusReason(uint16_t status);
+
+    /**
+     * Send an entire buffer, retrying partial socket writes.
+     *
+     * @param fd   Connected socket descriptor.
+     * @param data Buffer
+     * to send.
+     * @param size Buffer size in bytes.
+     * @return CHTTPX_OK on success, otherwise a negative error code.
+     */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 
 #ifdef __cplusplus

@@ -93,8 +93,7 @@ typedef int chttpx_socket_t;
 #define strcasecmp _stricmp
 #endif
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    static inline void* memmem_win(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
+    static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
     {
         if (!needlelen)
             return (void*)haystack;
@@ -112,9 +111,6 @@ typedef int chttpx_socket_t;
 
         return NULL;
     }
-
-#define memmem(haystack, haystacklen, needle, needlelen) memmem_win(haystack, haystacklen, needle, needlelen)
-#endif
 
 #ifdef __cplusplus
 }

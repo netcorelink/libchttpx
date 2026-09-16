@@ -30,14 +30,18 @@ static void* listen_thread(void* value)
 static void exchange(const char* request, char* response, size_t response_size)
 {
     chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    assert(socket_fd != INVALID_SOCKET);
+    assert(socket_fd != (chttpx_socket_t)-1);
     struct sockaddr_in address = {0};
     address.sin_family = AF_INET;
     address.sin_port = htons(test_port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
     assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == 0);
+#ifdef CHTTPX_PLATFORM_WINDOWS
     shutdown(socket_fd, SD_SEND);
+#else
+    shutdown(socket_fd, SHUT_WR);
+#endif
 
     size_t total = 0;
     while (total + 1 < response_size)
@@ -70,7 +74,11 @@ int main(void)
     thread_t thread;
     assert(_thread_create(&thread, listen_thread, NULL) == 0);
     while (!server.listening)
+#ifdef CHTTPX_PLATFORM_WINDOWS
         Sleep(1);
+#else
+        usleep(1000);
+#endif
 
     char response[4096];
     exchange("OPTIONS /body HTTP/1.1\r\nHost: localhost\r\nOrigin: https://example.com\r\n\r\n", response, sizeof(response));

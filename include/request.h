@@ -236,17 +236,124 @@ extern "C"
         int _parse_status;
     } chttpx_request_t;
 
+    /**
+     * Allocate zero-initialized memory owned by the current request.
+     *
+     * The library automatically releases the allocation after
+     * the request.
+     *
+     * @param req Current HTTP request.
+     * @param size Number of bytes to allocate.
+     * @return Allocated memory, or
+     * NULL on invalid input or allocation failure.
+     */
     void* cHTTPX_Alloc(chttpx_request_t* req, size_t size);
+
+    /**
+     * Duplicate a string into request-owned memory.
+     *
+     * @param req Current HTTP request.
+     * @param str Null-terminated string
+     * to duplicate.
+     * @return Request-owned string, or NULL on failure. The caller must not free it.
+     */
     char* cHTTPX_Strdup(chttpx_request_t* req, const char* str);
+
+    /**
+     * Register an arbitrary resource for cleanup after the request.
+     *
+     * @param req Current HTTP request.
+     * @param resource
+     * Resource passed to cleanup_fn during cleanup.
+     * @param cleanup_fn Function that releases the resource.
+     * @return 0 on success, -1 on
+     * invalid input or allocation failure.
+     */
     int cHTTPX_Defer(chttpx_request_t* req, void* resource, chttpx_cleanup_fn cleanup_fn);
+
+    /**
+     * Remove a resource from automatic request cleanup.
+     *
+     * Ownership is transferred to the caller after a successful detach.
+ *
+
+     * * @param req Current HTTP request.
+     * @param resource Previously registered resource.
+     * @return The detached resource, or NULL when it
+     * was not registered.
+     */
     void* cHTTPX_Detach(chttpx_request_t* req, void* resource);
+
+    /**
+     * Run all registered request cleanup callbacks.
+     *
+     * This is an internal lifecycle function normally called by the server.
+ *
+
+     * * @param req Request whose resources must be released.
+     */
     void cHTTPX_RequestCleanup(chttpx_request_t* req);
 
+    /**
+     * Store or replace a named request context.
+     *
+     * The cleanup callback is invoked automatically after the request. Replacing
+
+     * * an existing value also cleans up the previous value.
+     *
+     * @param req Current HTTP request.
+     * @param name Context name.
+     *
+     * @param value Application value; may be NULL.
+     * @param cleanup_fn Optional value cleanup callback.
+     * @return 0 on success, -1 on
+     * invalid input or allocation failure.
+     */
     int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chttpx_context_free_fn cleanup_fn);
+
+    /**
+     * Get a named request context.
+     *
+     * @param req Current HTTP request.
+     * @param name Context name.
+     * @return Borrowed
+     * context value, or NULL when it does not exist.
+     */
     void* cHTTPX_ContextGet(chttpx_request_t* req, const char* name);
+
+    /**
+     * Detach a named context from automatic cleanup.
+     *
+     * @param req Current HTTP request.
+     * @param name Context name.
+     *
+     * @return Detached value owned by the caller, or NULL when not found.
+     */
     void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name);
 
+    /**
+     * Extract a Bearer token from the Authorization header.
+     *
+     * The Bearer prefix is matched case-insensitively.
+     *
+     *
+     * @param req Current HTTP request.
+     * @return Borrowed token pointer, or NULL for a missing or invalid header.
+     */
     const char* cHTTPX_BearerToken(chttpx_request_t* req);
+
+    /**
+     * Consume the request body through a chunk callback.
+     *
+     * Buffered bodies and temporary uploads are replayed in bounded chunks.
+
+     * *
+     * @param req Current HTTP request.
+     * @param callback Function invoked for each body chunk.
+     * @param user_data Application
+     * value passed to callback.
+     * @return 0 on success, -1 on invalid input, I/O error, or callback failure.
+     */
     int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, void* user_data);
 
     /**
@@ -267,6 +374,21 @@ extern "C"
     int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
     struct chttpx_response;
+    /**
+     * Parse and validate a JSON request body.
+     *
+     * Parsed strings and arrays are request-owned. On failure this function
+     *
+     * creates a safe JSON 400 response in res.
+     *
+     * @param req Current HTTP request.
+     * @param res Response populated when binding
+     * fails.
+     * @param fields Field definitions and output targets.
+     * @param field_count Number of field definitions.
+     * @return 1 on
+     * success, 0 on parsing or validation failure.
+     */
     int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
 
 /**

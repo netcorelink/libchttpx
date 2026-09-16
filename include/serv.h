@@ -147,7 +147,15 @@ extern "C"
      * This function must be called before registering routes or starting the server.
      */
     int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients);
+
+    /** Return a server configuration initialized with library defaults. */
     chttpx_config_t cHTTPX_DefaultConfig(void);
+
+    /**
+     * Initialize a server with an explicit configuration.
+     *
+     * @return CHTTPX_OK on success, otherwise a negative error code.
+ */
     int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config);
 
     /**
@@ -175,21 +183,47 @@ extern "C"
      * This allows the server to call the appropriate function when a matching request is received.
      */
     void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler);
+
+    /** Register a GET route and return its configurable route descriptor. */
     chttpx_route_t* cHTTPX_Get(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+
+    /** Register a POST route and return its configurable route descriptor. */
     chttpx_route_t* cHTTPX_Post(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+
+    /** Register a PUT route and return its configurable route descriptor. */
     chttpx_route_t* cHTTPX_Put(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+
+    /** Register a PATCH route and return its configurable route descriptor. */
     chttpx_route_t* cHTTPX_Patch(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+
+    /** Register a DELETE route and return its configurable route descriptor. */
     chttpx_route_t* cHTTPX_Delete(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+
+    /** Register an OPTIONS route and return its configurable route descriptor. */
     chttpx_route_t* cHTTPX_Options(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
 
+    /** Create a child router by extending the parent prefix and middleware stack. */
     chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* prefix);
+
+    /** Add middleware that runs before handlers registered through this router. */
     int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware);
+
+    /** Add middleware that runs after handlers registered through this router. */
     int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware);
+
+    /** Add middleware that runs before one route handler. */
     int cHTTPX_RouteUse(chttpx_route_t* route, chttpx_middleware_t middleware);
+
+    /** Add middleware that runs after one route handler. */
     int cHTTPX_RouteUseAfter(chttpx_route_t* route, chttpx_middleware_t middleware);
+
+    /** Configure upload size and MIME restrictions for one route. */
     int cHTTPX_RouteUploadPolicy(chttpx_route_t* route, const chttpx_upload_policy_t* policy);
+
+    /** Release resources owned by a router and reset it to an empty state. */
     void cHTTPX_RouterFree(chttpx_router_t* router);
 
+    /** Configure the process-wide logging callback, context, and minimum level. */
     void cHTTPX_SetLogger(chttpx_logger_fn logger, void* user_data, chttpx_log_level_t level);
 
     /**
