@@ -19,7 +19,9 @@ extern "C"
 #include <stdio.h>
 #include <pthread.h>
 
-#define MAX_MIDDLEWARES 128\n\n    struct chttpx_serv;
+#define MAX_MIDDLEWARES 128
+
+    struct chttpx_serv;
 
     /* Enum for result all middlewares */
     typedef enum
