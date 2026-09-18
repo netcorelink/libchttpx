@@ -299,33 +299,47 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
     return NULL;
 }
 
-static ssize_t read_req(int fd, char* buffer, size_t buffer_size)
+static ssize_t read_req(chttpx_socket_t fd, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
+    size_t limit = serv && serv->max_header_size && serv->max_header_size < buffer_size ? serv->max_header_size : buffer_size - 1;
 
     while (1)
     {
-        size_t limit = serv && serv->max_header_size && serv->max_header_size < buffer_size ? serv->max_header_size : buffer_size - 1;
-        if (total >= limit)
+        if (total >= buffer_size - 1)
             return -2;
 
         ssize_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
-        if (n <= 0)
+        if (n < 0)
+        {
+#ifdef CHTTPX_PLATFORM_POSIX
+            if (errno == EINTR)
+                continue;
+#endif
+            return -1;
+        }
+        if (n == 0)
             return -1;
 
-        total += n;
+        total += (size_t)n;
+        buffer[total] = '\0';
 
-        if (total > limit)
+        char* delimiter = chttpx_memmem(buffer, total, "\r\n\r\n", 4);
+        if (delimiter)
+        {
+            size_t header_size = (size_t)(delimiter - buffer) + 4;
+            return header_size > limit ? -2 : (ssize_t)total;
+        }
+
+        /*
+         * If the complete header delimiter is not present by the configured
+         * limit, the header block itself is already too large. Body bytes
+         * received together with a valid small header are intentionally not
+         * counted against max_header_size.
+         */
+        if (total >= limit)
             return -2;
-
-        if (total < buffer_size)
-            buffer[total] = '\0';
-
-        if (chttpx_memmem(buffer, total, "\r\n\r\n", 4))
-            break;
     }
-
-    return total;
 }
 
 static void set_client_timeout(chttpx_socket_t client_fd)
@@ -336,21 +350,23 @@ static void set_client_timeout(chttpx_socket_t client_fd)
         return;
     }
 
-    /* Read timeout params */
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    /*
+     * Winsock expects SO_RCVTIMEO/SO_SNDTIMEO as millisecond DWORD values,
+     * unlike POSIX where these options use struct timeval.
+     */
+    DWORD read_timeout_ms = (DWORD)serv->read_timeout_sec * 1000U;
+    DWORD write_timeout_ms = (DWORD)serv->write_timeout_sec * 1000U;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms));
+    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms));
+#else
     struct timeval tv;
-    tv.tv_sec = serv->read_timeout_sec;
     tv.tv_usec = 0;
-#ifdef _WIN32
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
-#else
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
 
-    /* Write timeout params */
+    tv.tv_sec = serv->read_timeout_sec;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     tv.tv_sec = serv->write_timeout_sec;
-#ifdef _WIN32
-    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
-#else
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 }
@@ -423,7 +439,8 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     if (!append_response_header(buffer, capacity, &length,
                                 "HTTP/1.1 %d %s\r\n"
                                 "Content-Type: %s\r\n"
-                                "Content-Length: %zu\r\n",
+                                "Content-Length: %zu\r\n"
+                                "Connection: close\r\n",
                                 res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET,
                                 res.body_size))
         goto done;
@@ -471,16 +488,18 @@ done:
     free(buffer);
 }
 
-/* For OPTIONS method */
-static int is_method_options(chttpx_request_t* req)
+/* Handle browser CORS preflight without hijacking ordinary OPTIONS routes. */
+static int is_cors_preflight(chttpx_request_t* req)
 {
-    if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
-    {
-        chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
-        send_response(req, res);
-        return 1;
-    }
-    return 0;
+    if (!req || !serv || !serv->cors.enabled || strcasecmp(req->method, cHTTPX_MethodOptions) != 0)
+        return 0;
+
+    if (!cHTTPX_HeaderGet(req, "Origin") || !cHTTPX_HeaderGet(req, "Access-Control-Request-Method"))
+        return 0;
+
+    chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
+    send_response(req, res);
+    return 1;
 }
 
 static int valid_request_id(const char* value)
@@ -622,6 +641,8 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
 
     /* Parse cookies */
     _parse_req_cookies(req);
+    if (req->_parse_status)
+        return req;
 
     /* Content-Type */
     const char* content_type = cHTTPX_HeaderGet(req, "Content-Type");
@@ -645,10 +666,14 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     {
         *query = '\0';
         _parse_req_query(req, query + 1);
+        if (req->_parse_status)
+            return req;
     }
 
     /* Parse body request */
     _parse_req_body(req, client_fd, buffer, received);
+    if (req->_parse_status)
+        return req;
 
     /* Parse media request */
     _parse_media(req, buffer, received);
@@ -701,15 +726,17 @@ void* chttpx_handle(void* arg)
 
     if (req->_parse_status)
     {
-        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status,
-                                                        req->_parse_status == cHTTPX_StatusPayloadTooLarge ? "payload too large" : "invalid request");
+        const char* parse_message = req->_parse_status == cHTTPX_StatusPayloadTooLarge
+                                        ? "payload too large"
+                                        : (req->_parse_status == cHTTPX_StatusInternalServerError ? "internal server error" : "invalid request");
+        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status, parse_message);
         send_response(req, parse_error);
         cHTTPX_ResponseCleanup(&parse_error);
         goto cleanup_request;
     }
 
-    /* ALLOWED OPTIONS METHOD */
-    if (is_method_options(req))
+    /* Automatic handling is limited to actual CORS preflight requests. */
+    if (is_cors_preflight(req))
         goto cleanup_request;
 
     chttpx_route_t* r = find_route(req);
@@ -778,6 +805,12 @@ void* chttpx_handle(void* arg)
 
     for (size_t i = serv->middleware.after_middleware_count; i > 0; i--)
         serv->middleware.after_middlewares[i - 1](req, &res);
+
+    if (res.status < 100 || res.status > 599)
+    {
+        cHTTPX_ResponseCleanup(&res);
+        res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "handler did not produce a valid response");
+    }
 
     /* End time for logging */
     clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
