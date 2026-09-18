@@ -123,7 +123,7 @@ int main(void)
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 0;
-    config.max_body_size = 16;
+    config.max_body_size = 32;
     config.languages = languages;
     config.languages_count = CHTTPX_ARRAY_LEN(languages);
     config.default_language = fallback;
