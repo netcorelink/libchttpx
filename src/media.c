@@ -37,6 +37,7 @@
 
 #define MULTIPART_LINE_LIMIT 4096
 #define MULTIPART_FORM_VALUE_LIMIT (1024 * 1024)
+#define MULTIPART_MAX_PARTS 256
 
 static int append_part_value(unsigned char** data, size_t* size, size_t* capacity, const unsigned char* bytes, size_t count, size_t limit)
 {
@@ -483,8 +484,16 @@ static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
     if (snprintf(expected, sizeof(expected), "%s\r\n", boundary) >= (int)sizeof(expected) || strcmp(line, expected) != 0)
         goto bad_request;
 
+    size_t part_count = 0;
+    size_t form_bytes = 0;
+
     for (;;)
     {
+        if (++part_count > MULTIPART_MAX_PARTS)
+        {
+            req->_parse_status = cHTTPX_StatusPayloadTooLarge;
+            return;
+        }
         char headers[MULTIPART_LINE_LIMIT];
         size_t headers_size = 0;
         if (!read_stream_headers(stream, headers, sizeof(headers), &headers_size))
@@ -532,6 +541,12 @@ static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
             size_t value_limit = MULTIPART_FORM_VALUE_LIMIT;
             if (serv && serv->max_body_size < value_limit)
                 value_limit = serv->max_body_size;
+            if (form_bytes >= value_limit)
+            {
+                req->_parse_status = cHTTPX_StatusPayloadTooLarge;
+                return;
+            }
+            value_limit -= form_bytes;
 
             unsigned char* value = NULL;
             size_t value_size = 0;
@@ -541,6 +556,7 @@ static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
             free(value);
             if (!added)
                 goto internal_error;
+            form_bytes += value_size;
         }
 
         if (final_boundary)
