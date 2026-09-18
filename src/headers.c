@@ -24,6 +24,8 @@
 
 #include "crosspltm.h"
 
+#include <ctype.h>
+
 /**
  * Get a request header by name.
  * @param req Pointer to the HTTP request.
