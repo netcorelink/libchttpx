@@ -189,14 +189,14 @@ int main(void)
              "X-Request-ID: local-call\r\n\r\n{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
-    assert(strstr(response, "\\"service\\":\\"payments\\"") != NULL);
+    assert(strstr(response, "\"service\":\"payments\"") != NULL);
     assert(strcmp(payment_observed_body, "{\"plan\":\"premium\"}") == 0);
 
     exchange("POST /buy-remote HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n"
              "X-Request-ID: remote-call\r\n\r\n{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
-    assert(strstr(response, "\\"service\\":\\"payments\\"") != NULL);
+    assert(strstr(response, "\"service\":\"payments\"") != NULL);
 
     exchange("POST /body HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n", response,
              sizeof(response));
