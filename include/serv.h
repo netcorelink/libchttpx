@@ -38,7 +38,9 @@ extern "C"
         CHTTPX_ERR_IO = -7,
         CHTTPX_ERR_NOT_FOUND = -8,
         CHTTPX_ERR_PROTOCOL = -9,
-        CHTTPX_ERR_STATE = -10
+        CHTTPX_ERR_STATE = -10,
+        CHTTPX_ERR_UNAVAILABLE = -11,
+        CHTTPX_ERR_TIMEOUT = -12
     } chttpx_error_t;
 
     typedef enum
