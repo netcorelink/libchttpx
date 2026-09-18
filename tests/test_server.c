@@ -8,7 +8,7 @@ static int handler_calls;
 static int options_handler_calls;
 static char observed_body[64];
 static char observed_language[16];
-static char observed_request_id[65];
+static char observed_request_id[65];\nstatic char payment_observed_body[64];
 static uint16_t test_port;
 
 static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
@@ -35,8 +35,9 @@ static void empty_handler(chttpx_request_t* req, chttpx_response_t* res)
 
 static void payment_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"service\":\"payments\",\"body\":\"%.*s\"}", (int)req->body_size,
-                          req->body ? (const char*)req->body : "");
+    snprintf(payment_observed_body, sizeof(payment_observed_body), "%.*s", (int)req->body_size,
+             req->body ? (const char*)req->body : "");
+    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"service\":\"payments\",\"accepted\":true}");
 }
 
 static void local_buy_handler(chttpx_request_t* req, chttpx_response_t* res)
@@ -189,7 +190,7 @@ int main(void)
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\\"service\\":\\"payments\\"") != NULL);
-    assert(strstr(response, "\\\"plan\\\":\\\"premium\\\"") != NULL);
+    assert(strcmp(payment_observed_body, "{\"plan\":\"premium\"}") == 0);
 
     exchange("POST /buy-remote HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n"
              "X-Request-ID: remote-call\r\n\r\n{\"plan\":\"premium\"}",
