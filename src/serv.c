@@ -57,6 +57,81 @@ static void server_sleep_ms(unsigned int milliseconds)
 #endif
 }
 
+
+static void free_server_languages(chttpx_serv_t* server)
+{
+    if (!server)
+        return;
+
+    for (size_t i = 0; i < server->languages_count; i++)
+        free(server->_owned_languages ? server->_owned_languages[i] : NULL);
+    free(server->_owned_languages);
+    free(server->_owned_default_language);
+
+    server->_owned_languages = NULL;
+    server->_owned_default_language = NULL;
+    server->languages = NULL;
+    server->languages_count = 0;
+    server->default_language = NULL;
+}
+
+int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
+{
+    if (!server || !fallback || (count > 0 && !languages))
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    char** owned_languages = count ? calloc(count, sizeof(*owned_languages)) : NULL;
+    char* owned_fallback = strdup(fallback);
+    if ((count && !owned_languages) || !owned_fallback)
+    {
+        free(owned_languages);
+        free(owned_fallback);
+        return CHTTPX_ERR_MEMORY;
+    }
+
+    for (size_t i = 0; i < count; i++)
+    {
+        if (!languages[i])
+        {
+            for (size_t j = 0; j < i; j++)
+                free(owned_languages[j]);
+            free(owned_languages);
+            free(owned_fallback);
+            return CHTTPX_ERR_INVALID_ARGUMENT;
+        }
+
+        owned_languages[i] = strdup(languages[i]);
+        if (!owned_languages[i])
+        {
+            for (size_t j = 0; j < i; j++)
+                free(owned_languages[j]);
+            free(owned_languages);
+            free(owned_fallback);
+            return CHTTPX_ERR_MEMORY;
+        }
+    }
+
+    free_server_languages(server);
+    server->_owned_languages = owned_languages;
+    server->_owned_default_language = owned_fallback;
+    server->languages = (const char**)owned_languages;
+    server->languages_count = count;
+    server->default_language = owned_fallback;
+    return CHTTPX_OK;
+}
+
+static void free_route_upload_policy(chttpx_route_t* registered)
+{
+    if (!registered || !registered->has_upload_policy)
+        return;
+
+    for (size_t i = 0; i < registered->upload_policy.allowed_types_count; i++)
+        free((void*)registered->upload_policy.allowed_types[i]);
+    free((void*)registered->upload_policy.allowed_types);
+    memset(&registered->upload_policy, 0, sizeof(registered->upload_policy));
+    registered->has_upload_policy = false;
+}
+
 /**
  * Initialize the HTTP server.
  * @param serv_p The basic structure for working with a server.
@@ -89,7 +164,7 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
 
 int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
 {
-    if (!serv_p || !config || config->max_clients == 0 || serv)
+    if (!serv_p || !config || config->max_clients == 0 || (config->languages_count > 0 && !config->languages) || serv)
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
     memset(serv_p, 0, sizeof(*serv_p));
@@ -175,9 +250,15 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
     serv->max_upload_size = config->max_upload_size;
     serv->max_header_size = config->max_header_size;
     serv->request_id_enabled = config->request_id_enabled;
-    serv->languages = config->languages;
-    serv->languages_count = config->languages_count;
-    serv->default_language = config->default_language ? config->default_language : "en";
+    int languages_result =
+        _chttpx_server_set_languages(serv, config->languages, config->languages_count, config->default_language ? config->default_language : "en");
+    if (languages_result != CHTTPX_OK)
+    {
+        chttpx_close(serv->server_fd);
+        network_runtime_cleanup();
+        serv = NULL;
+        return languages_result;
+    }
     serv->log_level = config->log_level;
     serv->logger = config->logger ? config->logger : default_logger;
     serv->logger_data = config->logger_data;
@@ -223,6 +304,7 @@ static chttpx_route_t* route(chttpx_router_t* router, const char* method, const 
     {
         free((char*)registered->method);
         free((char*)registered->path);
+        free_route_upload_policy(registered);
         free(registered);
         return NULL;
     }
@@ -330,9 +412,36 @@ int cHTTPX_RouteUseAfter(chttpx_route_t* registered, chttpx_middleware_t middlew
 
 int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_policy_t* policy)
 {
-    if (!registered || !policy)
+    if (!registered || !policy || (policy->allowed_types_count > 0 && !policy->allowed_types))
         return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    char** owned_types = policy->allowed_types_count ? calloc(policy->allowed_types_count, sizeof(*owned_types)) : NULL;
+    if (policy->allowed_types_count && !owned_types)
+        return CHTTPX_ERR_MEMORY;
+
+    for (size_t i = 0; i < policy->allowed_types_count; i++)
+    {
+        if (!policy->allowed_types[i])
+        {
+            for (size_t j = 0; j < i; j++)
+                free(owned_types[j]);
+            free(owned_types);
+            return CHTTPX_ERR_INVALID_ARGUMENT;
+        }
+
+        owned_types[i] = strdup(policy->allowed_types[i]);
+        if (!owned_types[i])
+        {
+            for (size_t j = 0; j < i; j++)
+                free(owned_types[j]);
+            free(owned_types);
+            return CHTTPX_ERR_MEMORY;
+        }
+    }
+
+    free_route_upload_policy(registered);
     registered->upload_policy = *policy;
+    registered->upload_policy.allowed_types = (const char**)owned_types;
     registered->has_upload_policy = true;
     return CHTTPX_OK;
 }
@@ -497,6 +606,7 @@ void cHTTPX_Shutdown()
     free((void*)server->cors.headers);
     memset(&server->cors, 0, sizeof(server->cors));
 
+    free_server_languages(server);
     network_runtime_cleanup();
     if (serv == server)
         serv = NULL;
