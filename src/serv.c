@@ -5,19 +5,7 @@
  * of this software and associated documentation files (the "Software"), to
  * deal in the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * sell copies of the Software.
  */
 
 #include "serv.h"
@@ -29,9 +17,6 @@
 
 #include <errno.h>
 
-/* Extern server struct data */
-chttpx_serv_t* serv = NULL;
-
 static void default_logger(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data)
 {
     (void)user_data;
@@ -39,13 +24,6 @@ static void default_logger(chttpx_log_level_t level, const char* request_id, con
     if (level < CHTTPX_LOG_DEBUG || level > CHTTPX_LOG_OFF)
         level = CHTTPX_LOG_ERROR;
     fprintf(stderr, "[%s] request_id=%s %s\n", names[level], request_id && *request_id ? request_id : "-", message ? message : "");
-}
-
-static void network_runtime_cleanup(void)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WSACleanup();
-#endif
 }
 
 static void server_sleep_ms(unsigned int milliseconds)
@@ -57,6 +35,23 @@ static void server_sleep_ms(unsigned int milliseconds)
 #endif
 }
 
+static bool socket_valid(chttpx_socket_t fd)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    return fd != INVALID_SOCKET;
+#else
+    return fd >= 0;
+#endif
+}
+
+static void invalidate_socket(chttpx_serv_t* server)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    server->server_fd = INVALID_SOCKET;
+#else
+    server->server_fd = -1;
+#endif
+}
 
 static void free_server_languages(chttpx_serv_t* server)
 {
@@ -128,21 +123,6 @@ static void free_route_upload_policy(chttpx_route_t* registered)
     registered->has_upload_policy = false;
 }
 
-/**
- * Initialize the HTTP server.
- * @param serv_p The basic structure for working with a server.
- * @param port The TCP port on which the server will listen (e.g., 80, 8080).
- * This function must be called before registering routes or starting the server.
- */
-int cHTTPX_Init(chttpx_serv_t* serv_p, uint16_t port, void* max_clients)
-{
-    chttpx_config_t config = cHTTPX_DefaultConfig();
-    config.port = port;
-    if (max_clients)
-        config.max_clients = *(size_t*)max_clients;
-    return cHTTPX_InitWithConfig(serv_p, &config);
-}
-
 chttpx_config_t cHTTPX_DefaultConfig(void)
 {
     return (chttpx_config_t){.port = 8080,
@@ -158,46 +138,60 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
                              .log_level = CHTTPX_LOG_INFO};
 }
 
-int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
+int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config,
+                        chttpx_component_kind_t kind, bool network_enabled)
 {
-    if (!serv_p || !config || config->max_clients == 0 || (config->languages_count > 0 && !config->languages) || serv)
+    if (!server || !app || !name || !*name || !config || config->max_clients == 0 ||
+        (config->languages_count > 0 && !config->languages))
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
-    memset(serv_p, 0, sizeof(*serv_p));
-    serv = serv_p;
+    memset(server, 0, sizeof(*server));
+    invalidate_socket(server);
 
-    /* Recovery initial */
+    server->app = app;
+    server->name = strdup(name);
+    if (!server->name)
+        return CHTTPX_ERR_MEMORY;
+
+    server->kind = kind;
+    server->network_enabled = network_enabled;
+    server->port = config->port;
+    server->max_clients = config->max_clients;
+    server->read_timeout_sec = config->read_timeout_sec;
+    server->write_timeout_sec = config->write_timeout_sec;
+    server->idle_timeout_sec = config->idle_timeout_sec;
+    server->max_body_size = config->max_body_size;
+    server->max_upload_size = config->max_upload_size;
+    server->max_header_size = config->max_header_size;
+    server->request_id_enabled = config->request_id_enabled;
+    server->log_level = config->log_level;
+    server->logger = config->logger ? config->logger : default_logger;
+    server->logger_data = config->logger_data;
+
+    int languages_result =
+        _chttpx_server_set_languages(server, config->languages, config->languages_count, config->default_language ? config->default_language : "en");
+    if (languages_result != CHTTPX_OK)
+    {
+        free(server->name);
+        server->name = NULL;
+        return languages_result;
+    }
+
     _recovery_init();
 
-#ifdef _WIN32
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+    if (!network_enabled)
     {
-        perror("WSAStartup");
-        serv = NULL;
-        return CHTTPX_ERR_SOCKET;
+        server->initialized = true;
+        return CHTTPX_OK;
     }
-#endif
 
-    serv->port = config->port;
-    serv->server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    serv->max_clients = config->max_clients;
-    serv->current_clients = 0;
-
-#ifdef _WIN32
-    if (serv->server_fd == INVALID_SOCKET)
-#else
-    if (serv->server_fd < 0)
-#endif
-    {
-        network_runtime_cleanup();
-        serv = NULL;
-        return CHTTPX_ERR_SOCKET;
-    }
+    server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (!socket_valid(server->server_fd))
+        goto socket_error;
 
     int opt = 1;
-    setsockopt(serv->server_fd, SOL_SOCKET, SO_REUSEADDR,
-#ifdef _WIN32
+    setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR,
+#ifdef CHTTPX_PLATFORM_WINDOWS
                (const char*)&opt,
 #else
                &opt,
@@ -209,77 +203,60 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
     addr.sin_port = htons(config->port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(serv->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+    if (bind(server->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
     {
-        chttpx_close(serv->server_fd);
-        network_runtime_cleanup();
-        serv = NULL;
+        chttpx_close(server->server_fd);
+        invalidate_socket(server);
+        free_server_languages(server);
+        free(server->name);
+        server->name = NULL;
         return CHTTPX_ERR_BIND;
     }
 
     if (config->port == 0)
     {
         socklen_t address_size = sizeof(addr);
-        if (getsockname(serv->server_fd, (struct sockaddr*)&addr, &address_size) != 0)
+        if (getsockname(server->server_fd, (struct sockaddr*)&addr, &address_size) != 0)
         {
-            chttpx_close(serv->server_fd);
-            network_runtime_cleanup();
-            serv = NULL;
+            chttpx_close(server->server_fd);
+            invalidate_socket(server);
+            free_server_languages(server);
+            free(server->name);
+            server->name = NULL;
             return CHTTPX_ERR_SOCKET;
         }
-        serv->port = ntohs(addr.sin_port);
+        server->port = ntohs(addr.sin_port);
     }
 
-    if (listen(serv->server_fd, 128) < 0)
+    if (listen(server->server_fd, 128) < 0)
     {
-        chttpx_close(serv->server_fd);
-        network_runtime_cleanup();
-        serv = NULL;
+        chttpx_close(server->server_fd);
+        invalidate_socket(server);
+        free_server_languages(server);
+        free(server->name);
+        server->name = NULL;
         return CHTTPX_ERR_LISTEN;
     }
 
-    /* Timeouts */
-    serv->read_timeout_sec = config->read_timeout_sec;
-    serv->write_timeout_sec = config->write_timeout_sec;
-    serv->idle_timeout_sec = config->idle_timeout_sec;
-    serv->max_body_size = config->max_body_size;
-    serv->max_upload_size = config->max_upload_size;
-    serv->max_header_size = config->max_header_size;
-    serv->request_id_enabled = config->request_id_enabled;
-    int languages_result =
-        _chttpx_server_set_languages(serv, config->languages, config->languages_count, config->default_language ? config->default_language : "en");
-    if (languages_result != CHTTPX_OK)
-    {
-        chttpx_close(serv->server_fd);
-        network_runtime_cleanup();
-        serv = NULL;
-        return languages_result;
-    }
-    serv->log_level = config->log_level;
-    serv->logger = config->logger ? config->logger : default_logger;
-    serv->logger_data = config->logger_data;
-
-    /* Default values for routes */
-    serv->routes = NULL;
-    serv->routes_count = 0;
-    serv->routes_capacity = 0;
-
+    server->initialized = true;
     return CHTTPX_OK;
+
+socket_error:
+    free_server_languages(server);
+    free(server->name);
+    server->name = NULL;
+    return CHTTPX_ERR_SOCKET;
 }
 
-/* Register a route handler for a specific HTTP method and path. */
 static chttpx_route_t* route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
     chttpx_serv_t* server = router ? router->serv : NULL;
-    if (!server || server != serv)
-    {
-        fprintf(stderr, "Error: server is not initialized or router is stale\n");
+    if (!server || !server->initialized)
         return NULL;
-    }
 
     if (server->routes_count == server->routes_capacity)
     {
-        size_t new_capacity = (server->routes_capacity == 0) ? 4 : server->routes_capacity * 2;
+        size_t new_capacity = server->routes_capacity == 0 ? 4 : server->routes_capacity * 2;
         if (new_capacity < server->routes_capacity || new_capacity > SIZE_MAX / sizeof(*server->routes))
             return NULL;
 
@@ -314,36 +291,39 @@ static chttpx_route_t* route(chttpx_router_t* router, const char* method, const 
     return registered;
 }
 
-chttpx_router_t cHTTPX_RoutePathPrefix(const char* prefix)
+chttpx_router_t cHTTPX_RoutePathPrefix(chttpx_serv_t* server, const char* prefix)
 {
-    chttpx_router_t r;
-    memset(&r, 0, sizeof(r));
-    r.serv = serv;
-    snprintf(r.prefix, sizeof(r.prefix), "%s", prefix ? prefix : "");
+    chttpx_router_t router;
+    memset(&router, 0, sizeof(router));
+    if (!server || !server->initialized)
+        return router;
 
-    return r;
+    router.serv = server;
+    snprintf(router.prefix, sizeof(router.prefix), "%s", prefix ? prefix : "");
+    return router;
 }
 
-void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler)
+void cHTTPX_RegisterRoute(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
-    if (!r || !r->serv || !method || !path || !handler)
+    if (!router || !router->serv || !method || !path || !handler)
         return;
 
-    char fpath[CHTTPX_MAX_PATH];
-
-    if (snprintf(fpath, sizeof(fpath), "%s%s", r->prefix, path) >= (int)sizeof(fpath))
+    char full_path[CHTTPX_MAX_PATH];
+    if (snprintf(full_path, sizeof(full_path), "%s%s", router->prefix, path) >= (int)sizeof(full_path))
         return;
 
-    route(r, method, fpath, handler);
+    route(router, method, full_path, handler);
 }
 
 static chttpx_route_t* register_route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
     if (!router || !router->serv || !method || !path || !handler)
         return NULL;
+
     char full_path[CHTTPX_MAX_PATH];
     if (snprintf(full_path, sizeof(full_path), "%s%s", router->prefix, path) >= (int)sizeof(full_path))
         return NULL;
+
     return route(router, method, full_path, handler);
 }
 
@@ -366,6 +346,7 @@ chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* pre
     memset(&group, 0, sizeof(group));
     if (!parent)
         return group;
+
     group.serv = parent->serv;
     snprintf(group.prefix, sizeof(group.prefix), "%s%s", parent->prefix, prefix ? prefix : "");
     group.middleware_count = parent->middleware_count;
@@ -449,44 +430,35 @@ void cHTTPX_RouterFree(chttpx_router_t* router)
         memset(router, 0, sizeof(*router));
 }
 
-void cHTTPX_SetLogger(chttpx_logger_fn logger, void* user_data, chttpx_log_level_t level)
+void cHTTPX_SetLogger(chttpx_serv_t* server, chttpx_logger_fn logger, void* user_data, chttpx_log_level_t level)
 {
-    if (!serv)
+    if (!server || !server->initialized)
         return;
-    serv->logger = logger;
-    serv->logger_data = user_data;
-    serv->log_level = level;
+
+    server->logger = logger ? logger : default_logger;
+    server->logger_data = user_data;
+    server->log_level = level;
 }
 
 static void* handle_client_wrapper(void* arg)
 {
-    chttpx_serv_t* server = serv;
-    if (!server)
+    chttpx_client_ctx_t* context = arg;
+    chttpx_serv_t* server = context ? context->server : NULL;
+    if (!context || !server)
     {
-        chttpx_socket_t client_fd = *(chttpx_socket_t*)arg;
-        free(arg);
-        chttpx_close(client_fd);
+        free(context);
         return NULL;
     }
 
-    chttpx_handle(arg);
+    chttpx_handle(context);
     __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
     return NULL;
 }
 
-/**
- * Start the server loop to listen for incoming connections.
- * This function blocks indefinitely, accepting new client connections
- * and dispatching them to cHTTPX_Handle.
- */
-void cHTTPX_Listen()
+void _chttpx_server_listen(chttpx_serv_t* server)
 {
-    chttpx_serv_t* server = serv;
-    if (!server)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    if (!server || !server->initialized || !server->network_enabled || !socket_valid(server->server_fd))
         return;
-    }
 
     bool expected = false;
     if (!__atomic_compare_exchange_n(&server->listening, &expected, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
@@ -495,11 +467,7 @@ void cHTTPX_Listen()
     while (!__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
     {
         chttpx_socket_t client_fd = accept(server->server_fd, NULL, NULL);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        if (client_fd == INVALID_SOCKET)
-#else
-        if (client_fd < 0)
-#endif
+        if (!socket_valid(client_fd))
         {
             if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
                 break;
@@ -507,7 +475,6 @@ void cHTTPX_Listen()
             if (errno == EINTR)
                 continue;
 #endif
-            /* Avoid a tight loop on persistent descriptor/resource errors. */
             server_sleep_ms(10);
             continue;
         }
@@ -526,28 +493,27 @@ void cHTTPX_Listen()
             continue;
         }
 
+        chttpx_client_ctx_t* context = malloc(sizeof(*context));
+        if (!context)
+        {
+            chttpx_close(client_fd);
+            continue;
+        }
+
+        context->server = server;
+        context->client_fd = client_fd;
         __atomic_fetch_add(&server->current_clients, 1, __ATOMIC_SEQ_CST);
 
-        chttpx_socket_t* client_sock = malloc(sizeof(*client_sock));
-        if (!client_sock)
-        {
-            perror("malloc failed");
-            chttpx_close(client_fd);
-            __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-            continue;
-        }
-        *client_sock = client_fd;
-
         thread_t thread_id;
-        if (_thread_create(&thread_id, handle_client_wrapper, client_sock) != 0)
+        if (_thread_create(&thread_id, handle_client_wrapper, context) != 0)
         {
-            free(client_sock);
+            free(context);
             chttpx_close(client_fd);
             __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
             continue;
         }
 
-#if defined(_WIN32) || defined(_WIN64)
+#ifdef CHTTPX_PLATFORM_WINDOWS
         CloseHandle(thread_id);
 #else
         pthread_detach(thread_id);
@@ -556,24 +522,24 @@ void cHTTPX_Listen()
 
     __atomic_store_n(&server->listening, false, __ATOMIC_RELEASE);
 }
-void cHTTPX_Shutdown()
+
+void _chttpx_server_shutdown(chttpx_serv_t* server)
 {
-    chttpx_serv_t* server = serv;
-    if (!server)
+    if (!server || !server->initialized)
         return;
 
     __atomic_store_n(&server->shutdown_requested, true, __ATOMIC_RELEASE);
+
+    if (server->network_enabled && socket_valid(server->server_fd))
+    {
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    shutdown(server->server_fd, SD_BOTH);
+        shutdown(server->server_fd, SD_BOTH);
 #else
-    shutdown(server->server_fd, SHUT_RDWR);
+        shutdown(server->server_fd, SHUT_RDWR);
 #endif
-    chttpx_close(server->server_fd);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    server->server_fd = INVALID_SOCKET;
-#else
-    server->server_fd = -1;
-#endif
+        chttpx_close(server->server_fd);
+        invalidate_socket(server);
+    }
 
     while (__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE))
         server_sleep_ms(10);
@@ -586,6 +552,7 @@ void cHTTPX_Shutdown()
         chttpx_route_t* registered = server->routes[i];
         if (!registered)
             continue;
+
         free((char*)registered->method);
         free((char*)registered->path);
         free_route_upload_policy(registered);
@@ -605,7 +572,8 @@ void cHTTPX_Shutdown()
     memset(&server->cors, 0, sizeof(server->cors));
 
     free_server_languages(server);
-    network_runtime_cleanup();
-    if (serv == server)
-        serv = NULL;
+    free(server->name);
+    server->name = NULL;
+    server->app = NULL;
+    server->initialized = false;
 }
