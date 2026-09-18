@@ -18,8 +18,11 @@
 #include <string.h>
 
 #ifdef CHTTPX_PLATFORM_POSIX
+#include <fcntl.h>
 #include <netdb.h>
 #endif
+
+#define CHTTPX_CALL_TIMEOUT_SEC 30
 
 typedef struct
 {
@@ -477,8 +480,126 @@ static int parse_remote_url(const char* url, chttpx_remote_url_t* parsed)
     return 1;
 }
 
-static chttpx_socket_t connect_remote(const chttpx_remote_url_t* remote)
+static int socket_last_error(void)
 {
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    return WSAGetLastError();
+#else
+    return errno;
+#endif
+}
+
+static bool socket_error_is_timeout(int error)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    return error == WSAETIMEDOUT || error == WSAEWOULDBLOCK;
+#else
+    return error == ETIMEDOUT || error == EAGAIN || error == EWOULDBLOCK;
+#endif
+}
+
+static bool socket_error_is_in_progress(int error)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    return error == WSAEWOULDBLOCK || error == WSAEINPROGRESS;
+#else
+    return error == EINPROGRESS || error == EWOULDBLOCK;
+#endif
+}
+
+static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    u_long mode = enabled ? 1UL : 0UL;
+    return ioctlsocket(socket_fd, FIONBIO, &mode) == 0 ? CHTTPX_OK : CHTTPX_ERR_UNAVAILABLE;
+#else
+    int flags = fcntl(socket_fd, F_GETFL, 0);
+    if (flags < 0)
+        return CHTTPX_ERR_UNAVAILABLE;
+
+    if (enabled)
+        flags |= O_NONBLOCK;
+    else
+        flags &= ~O_NONBLOCK;
+
+    return fcntl(socket_fd, F_SETFL, flags) == 0 ? CHTTPX_OK : CHTTPX_ERR_UNAVAILABLE;
+#endif
+}
+
+static int socket_set_call_timeouts(chttpx_socket_t socket_fd)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    DWORD timeout_ms = CHTTPX_CALL_TIMEOUT_SEC * 1000U;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
+        return CHTTPX_ERR_UNAVAILABLE;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
+        return CHTTPX_ERR_UNAVAILABLE;
+#else
+    struct timeval timeout = {.tv_sec = CHTTPX_CALL_TIMEOUT_SEC, .tv_usec = 0};
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0)
+        return CHTTPX_ERR_UNAVAILABLE;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
+        return CHTTPX_ERR_UNAVAILABLE;
+#endif
+    return CHTTPX_OK;
+}
+
+static int wait_for_connect(chttpx_socket_t socket_fd)
+{
+    fd_set write_set;
+    fd_set error_set;
+    FD_ZERO(&write_set);
+    FD_ZERO(&error_set);
+    FD_SET(socket_fd, &write_set);
+    FD_SET(socket_fd, &error_set);
+
+    struct timeval timeout = {.tv_sec = CHTTPX_CALL_TIMEOUT_SEC, .tv_usec = 0};
+
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    int ready = select(0, NULL, &write_set, &error_set, &timeout);
+#else
+    int ready = select(socket_fd + 1, NULL, &write_set, &error_set, &timeout);
+#endif
+
+    if (ready == 0)
+        return CHTTPX_ERR_TIMEOUT;
+
+    if (ready < 0)
+        return socket_error_is_timeout(socket_last_error()) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
+
+    int socket_error = 0;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    int error_size = sizeof(socket_error);
+#else
+    socklen_t error_size = sizeof(socket_error);
+#endif
+
+    if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR,
+#ifdef CHTTPX_PLATFORM_WINDOWS
+                   (char*)&socket_error,
+#else
+                   &socket_error,
+#endif
+                   &error_size) != 0)
+        return CHTTPX_ERR_UNAVAILABLE;
+
+    if (socket_error == 0)
+        return CHTTPX_OK;
+
+    return socket_error_is_timeout(socket_error) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
+}
+
+static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* connected)
+{
+    if (!remote || !connected)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    *connected = INVALID_SOCKET;
+#else
+    *connected = -1;
+#endif
+
     struct addrinfo hints;
     struct addrinfo* result = NULL;
 
@@ -487,19 +608,9 @@ static chttpx_socket_t connect_remote(const chttpx_remote_url_t* remote)
     hints.ai_socktype = SOCK_STREAM;
 
     if (getaddrinfo(remote->host, remote->port, &hints, &result) != 0)
-    {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        return INVALID_SOCKET;
-#else
-        return -1;
-#endif
-    }
+        return CHTTPX_ERR_UNAVAILABLE;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    chttpx_socket_t connected = INVALID_SOCKET;
-#else
-    chttpx_socket_t connected = -1;
-#endif
+    int final_result = CHTTPX_ERR_UNAVAILABLE;
 
     for (struct addrinfo* current = result; current; current = current->ai_next)
     {
@@ -511,17 +622,47 @@ static chttpx_socket_t connect_remote(const chttpx_remote_url_t* remote)
 #endif
             continue;
 
-        if (connect(socket_fd, current->ai_addr, (int)current->ai_addrlen) == 0)
+        if (socket_set_nonblocking(socket_fd, true) != CHTTPX_OK)
         {
-            connected = socket_fd;
-            break;
+            chttpx_close(socket_fd);
+            continue;
         }
 
-        chttpx_close(socket_fd);
+        int connect_result = connect(socket_fd, current->ai_addr, (int)current->ai_addrlen);
+        if (connect_result != 0)
+        {
+            int error = socket_last_error();
+            if (!socket_error_is_in_progress(error))
+            {
+                chttpx_close(socket_fd);
+                continue;
+            }
+
+            int wait_result = wait_for_connect(socket_fd);
+            if (wait_result != CHTTPX_OK)
+            {
+                chttpx_close(socket_fd);
+                final_result = wait_result;
+                if (wait_result == CHTTPX_ERR_TIMEOUT)
+                    break;
+                continue;
+            }
+        }
+
+        if (socket_set_nonblocking(socket_fd, false) != CHTTPX_OK ||
+            socket_set_call_timeouts(socket_fd) != CHTTPX_OK)
+        {
+            chttpx_close(socket_fd);
+            continue;
+        }
+
+        *connected = socket_fd;
+        final_result = CHTTPX_OK;
+        break;
     }
 
     freeaddrinfo(result);
-    return connected;
+    return final_result;
 }
 
 static const char* remote_response_content_type(const char* value)
@@ -573,13 +714,15 @@ static int remote_call(chttpx_request_t* source, const char* base_url, const cha
     if (!parse_remote_url(base_url, &remote))
         return CHTTPX_ERR_PROTOCOL;
 
-    chttpx_socket_t socket_fd = connect_remote(&remote);
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    if (socket_fd == INVALID_SOCKET)
+    chttpx_socket_t socket_fd = INVALID_SOCKET;
 #else
-    if (socket_fd < 0)
+    chttpx_socket_t socket_fd = -1;
 #endif
-        return CHTTPX_ERR_SOCKET;
+
+    int connect_result = connect_remote(&remote, &socket_fd);
+    if (connect_result != CHTTPX_OK)
+        return connect_result;
 
     char full_path[CHTTPX_MAX_PATH];
     if (snprintf(full_path, sizeof(full_path), "%s%s", remote.base_path, path) >= (int)sizeof(full_path))
@@ -635,8 +778,9 @@ static int remote_call(chttpx_request_t* source, const char* base_url, const cha
     if (cHTTPX_SendAll(socket_fd, header, used) != CHTTPX_OK ||
         (body_size && cHTTPX_SendAll(socket_fd, body, body_size) != CHTTPX_OK))
     {
+        int error = socket_last_error();
         chttpx_close(socket_fd);
-        return CHTTPX_ERR_IO;
+        return socket_error_is_timeout(error) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
     }
 
     size_t limit = source->_server->max_body_size ? source->_server->max_body_size + 64 * 1024 : 10 * 1024 * 1024;
@@ -686,13 +830,22 @@ static int remote_call(chttpx_request_t* source, const char* base_url, const cha
             if (errno == EINTR)
                 continue;
 #endif
+            int error = socket_last_error();
             free(response);
             chttpx_close(socket_fd);
-            return CHTTPX_ERR_IO;
+            return socket_error_is_timeout(error) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
         }
 
         if (received == 0)
+        {
+            if (total == 0)
+            {
+                free(response);
+                chttpx_close(socket_fd);
+                return CHTTPX_ERR_UNAVAILABLE;
+            }
             break;
+        }
 
         total += (size_t)received;
     }
