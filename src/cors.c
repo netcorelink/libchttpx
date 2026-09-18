@@ -47,9 +47,9 @@
  *                       If NULL, defaults to:
  *                       "Content-Type"
  */
-void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods, const char* headers)
+void cHTTPX_Cors(chttpx_serv_t* server, const char** origins, size_t origins_count, const char* methods, const char* headers)
 {
-    if (!serv)
+    if (!server || !server->initialized)
     {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
