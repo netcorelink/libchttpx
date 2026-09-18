@@ -14,7 +14,7 @@ extern "C"
 #endif
 
 #include <stdio.h>
-#include <stdint.h>
+#include <stdint.h>\n\n    struct chttpx_serv;
 
     typedef struct
     {
@@ -48,7 +48,7 @@ extern "C"
      *                       If NULL, defaults to:
      *                       "Content-Type"
      */
-    void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods, const char* headers);
+    void cHTTPX_Cors(struct chttpx_serv* server, const char** origins, size_t origins_count, const char* methods, const char* headers);
 
 #ifdef __cplusplus
     extern
