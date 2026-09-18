@@ -14,7 +14,10 @@ int main(void)
     if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
-    chttpx_serv_t* server = cHTTPX_AppServer(&app, "main", 8080);
+    chttpx_config_t config = cHTTPX_DefaultConfig();
+    config.port = 8080;
+
+    chttpx_serv_t* server = cHTTPX_AppServer(&app, "main", &config);
     if (!server)
     {
         cHTTPX_AppShutdown(&app);
