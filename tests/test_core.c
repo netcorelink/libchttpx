@@ -1,6 +1,6 @@
 #include "libchttpx.h"
-#include "body.h"
-#include "headers.h"
+#include "cHTTPX_body.h"
+#include "cHTTPX_headers.h"
 
 #include <assert.h>
 #include <stdio.h>
