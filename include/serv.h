@@ -134,6 +134,9 @@ extern "C"
         size_t routes_capacity;
 
         chttpx_middleware_stack_t middleware;
+        bool logging_enabled;
+        void* rate_limiter_state;
+
         chttpx_cors_t cors;
     } chttpx_serv_t;
 
