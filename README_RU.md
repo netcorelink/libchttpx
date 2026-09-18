@@ -44,7 +44,7 @@ make win-lib
 
 ## Быстрый старт
 
-Серверы создаются только через `cHTTPX_App`. Приложение владеет lifecycle, local microservers, local microservices и registry удалённых сервисов.
+Все HTTP-серверы создаются через один `cHTTPX_App`. Каждый `cHTTPX_AppServer()` — обычный независимый `chttpx_serv_t` со своими routes, middleware, CORS, logger и портом.
 
 ```c
 #include <libchttpx/libchttpx.h>
@@ -61,70 +61,50 @@ int main(void)
     if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
-    chttpx_serv_t* server =
-        cHTTPX_AppMicroserver(&app, "main", 8080);
-    if (!server)
+    chttpx_serv_t* public_api =
+        cHTTPX_AppServer(&app, "public", 8080);
+
+    chttpx_serv_t* internal_api =
+        cHTTPX_AppServer(&app, "internal", 9090);
+
+    if (!public_api || !internal_api)
     {
         cHTTPX_AppShutdown(&app);
         return 1;
     }
 
-    chttpx_router_t root =
-        cHTTPX_RoutePathPrefix(server, "");
+    chttpx_router_t public_router =
+        cHTTPX_RoutePathPrefix(public_api, "");
 
-    cHTTPX_Get(&root, "/health", health);
+    cHTTPX_Get(&public_router, "/health", health);
 
-    int result = cHTTPX_AppRun(&app);
+    if (cHTTPX_AppStart(&app) != CHTTPX_OK)
+    {
+        cHTTPX_AppShutdown(&app);
+        return 1;
+    }
+
+    cHTTPX_AppWait(&app);
     cHTTPX_AppShutdown(&app);
-    return result == CHTTPX_OK ? 0 : 1;
+    return 0;
 }
 ```
 
-### Microserver и Microservice
+`cHTTPX_AppStart(&app)` запускает каждый добавленный server в отдельном listener thread.
 
-**Microserver** — полноценный network server со своим listener, routes, middleware, CORS, logger и лимитами.
-
-**Microservice** — изолированный server-like модуль внутри того же `App`. У него свои routes и middleware, но отдельный TCP listener не создаётся.
+Если один server должен вызвать route другого server из того же `App`, можно использовать `cHTTPX_Call()`. В этом случае новый TCP connection не создаётся — запрос передаётся напрямую в route pipeline целевого server.
 
 ```c
-chttpx_serv_t* main_server =
-    cHTTPX_AppMicroserver(&app, "main", 8080);
-
-chttpx_serv_t* payments =
-    cHTTPX_AppMicroservice(&app, "payments");
-```
-
-Локальный microservice вызывается без TCP через тот же route/handler pipeline:
-
-```c
-if (cHTTPX_Call(
-        req,
-        "payments",
-        cHTTPX_MethodPost,
-        "/payments/create",
-        res
-    ) != CHTTPX_OK)
-{
-    *res = cHTTPX_ResError(
-        cHTTPX_StatusInternalServerError,
-        "payment service unavailable"
-    );
-}
-```
-
-`cHTTPX_Call()` автоматически передаёт текущий body, content type, request ID, language и нужные request headers. Если нужен другой body, используется `cHTTPX_CallWithBody()`.
-
-Сервис в другом процессе или Docker-контейнере регистрируется по URL:
-
-```c
-cHTTPX_AppRemote(
-    &app,
-    "payments",
-    "http://payment-server:8090"
+cHTTPX_Call(
+    req,
+    "internal",
+    cHTTPX_MethodPost,
+    "/process",
+    res
 );
 ```
 
-Код вызова остаётся тем же `cHTTPX_Call(req, "payments", ...)`: local target вызывается напрямую, remote target — по HTTP.
+Текущий body, content type, request ID, language и request headers наследуются автоматически. Для другого body есть `cHTTPX_CallWithBody()`.
 
 ## Конфигурация сервера
 
@@ -141,7 +121,7 @@ config.max_upload_size = 500ULL * 1024 * 1024;
 config.request_id_enabled = true;
 ```
 
-`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppInit()` возвращает `chttpx_error_t`, а `cHTTPX_AppMicroserverWithConfig()` возвращает указатель на созданный server или `NULL`; библиотека не завершает приложение через `exit()`.
+`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppInit()` возвращает `chttpx_error_t`, а `cHTTPX_AppServerWithConfig()` возвращает указатель на созданный server или `NULL`; библиотека не завершает приложение через `exit()`.
 
 ## Routes и groups
 
