@@ -8,6 +8,7 @@
 
 #include "cookies.h"
 #include "headers.h"
+#include "http.h"
 #include "queries.h"
 #include "utils.h"
 
