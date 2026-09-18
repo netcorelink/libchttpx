@@ -150,9 +150,9 @@ static void test_request_framing(void)
     chttpx_serv_t server = {0};
     server.max_body_size = 1024;
     server.max_upload_size = 1024;
-    serv = &server;
 
     chttpx_request_t req = {0};
+    req._server = &server;
     strcpy(req.content_type, "text/plain");
     strcpy(req.headers[0].name, "Content-Length");
     strcpy(req.headers[0].value, "5");
@@ -164,6 +164,7 @@ static void test_request_framing(void)
     assert(req._parse_status == cHTTPX_StatusBadRequest);
 
     memset(&req, 0, sizeof(req));
+    req._server = &server;
     strcpy(req.content_type, "text/plain");
     strcpy(req.headers[0].name, "Transfer-Encoding");
     strcpy(req.headers[0].value, "gzip");
@@ -171,7 +172,6 @@ static void test_request_framing(void)
     _parse_req_body(&req, 0, request, strlen(request));
     assert(req._parse_status == cHTTPX_StatusBadRequest);
 
-    serv = NULL;
 }
 
 static void test_streamed_raw_chunked_upload(void)
@@ -179,9 +179,9 @@ static void test_streamed_raw_chunked_upload(void)
     chttpx_serv_t server = {0};
     server.max_body_size = 1024;
     server.max_upload_size = 1024 * 1024;
-    serv = &server;
 
     chttpx_request_t req = {0};
+    req._server = &server;
     strcpy(req.content_type, "application/octet-stream");
     strcpy(req.headers[0].name, "Content-Type");
     strcpy(req.headers[0].value, req.content_type);
@@ -216,7 +216,6 @@ static void test_streamed_raw_chunked_upload(void)
 
     cHTTPX_RequestCleanup(&req);
     assert(fopen(path, "rb") == NULL);
-    serv = NULL;
 }
 
 static void test_streamed_multipart(void)
@@ -224,9 +223,9 @@ static void test_streamed_multipart(void)
     chttpx_serv_t server = {0};
     server.max_body_size = 1024 * 1024;
     server.max_upload_size = 8 * 1024 * 1024;
-    serv = &server;
 
     chttpx_request_t req = {0};
+    req._server = &server;
     const char body[] = "--StreamBoundary\r\n"
                         "Content-Disposition: form-data; name=\"title\"\r\n\r\nhello\r\n"
                         "--StreamBoundary\r\n"
@@ -263,6 +262,7 @@ static void test_streamed_multipart(void)
     cHTTPX_RequestCleanup(&req);
 
     memset(&req, 0, sizeof(req));
+    req._server = &server;
     char chunked_body[4096];
     int chunked_body_size = snprintf(chunked_body, sizeof(chunked_body), "%zx\r\n%s\r\n0\r\n\r\n", strlen(body), body);
     assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
@@ -293,7 +293,6 @@ static void test_streamed_multipart(void)
     assert(file && file->size == 8);
 
     cHTTPX_RequestCleanup(&req);
-    serv = NULL;
 }
 
 static void free_test_routes(chttpx_serv_t* server)
@@ -322,8 +321,8 @@ static void free_test_routes(chttpx_serv_t* server)
 static void test_routing_api(void)
 {
     chttpx_serv_t server = {0};
-    serv = &server;
-    chttpx_router_t api = cHTTPX_RoutePathPrefix("/api/v2");
+    server.initialized = true;
+    chttpx_router_t api = cHTTPX_RoutePathPrefix(&server, "/api/v2");
     chttpx_router_t private_routes = cHTTPX_RouteGroup(&api, "");
     assert(cHTTPX_RouterUse(&private_routes, middleware) == CHTTPX_OK);
 
@@ -351,7 +350,6 @@ static void test_routing_api(void)
     assert(strcmp(route->upload_policy.allowed_types[0], "image/*") == 0);
 
     free_test_routes(&server);
-    serv = NULL;
 }
 static void test_helpers(void)
 {

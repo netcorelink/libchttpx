@@ -21,6 +21,8 @@ extern "C"
 
 #define CHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+    struct chttpx_serv;
+
 #define MAX_BUFFER_BODY (1024ULL * 1024 * 1024) // 1GB
 #define BUFFER_SIZE 16384
 
@@ -227,6 +229,9 @@ extern "C"
         /* Context REQuest */
         void* context;
         chttpx_context_free_fn context_free;
+
+        /* App-managed server/microservice handling this request. */
+        struct chttpx_serv* _server;
 
         /* Internal request lifecycle state. */
         void* _cleanup_entries;

@@ -16,6 +16,8 @@ extern "C"
 #include <stdio.h>
 #include <stdint.h>
 
+    struct chttpx_serv;
+
     typedef struct
     {
         uint8_t enabled;
@@ -48,7 +50,7 @@ extern "C"
      *                       If NULL, defaults to:
      *                       "Content-Type"
      */
-    void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods, const char* headers);
+    void cHTTPX_Cors(struct chttpx_serv* server, const char** origins, size_t origins_count, const char* methods, const char* headers);
 
 #ifdef __cplusplus
     extern

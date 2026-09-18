@@ -27,6 +27,8 @@ extern "C"
 
 #include "serv.h"
 
+#include "app.h"
+
 #include "params.h"
 
 #include "queries.h"

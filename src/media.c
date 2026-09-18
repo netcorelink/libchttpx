@@ -500,6 +500,7 @@ done:
 
 static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
 {
+    chttpx_serv_t* server = req ? req->_server : NULL;
     char boundary[204];
     if (!multipart_boundary(req, boundary, sizeof(boundary)) || fseek(stream, 0, SEEK_SET) != 0)
         goto bad_request;
@@ -567,8 +568,8 @@ static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
         else
         {
             size_t value_limit = MULTIPART_FORM_VALUE_LIMIT;
-            if (serv && serv->max_body_size < value_limit)
-                value_limit = serv->max_body_size;
+            if (server && server->max_body_size < value_limit)
+                value_limit = server->max_body_size;
             if (form_bytes >= value_limit)
             {
                 req->_parse_status = cHTTPX_StatusPayloadTooLarge;

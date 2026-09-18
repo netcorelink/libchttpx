@@ -268,11 +268,11 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
     return key;
 }
 
-int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback)
+int cHTTPX_i18n_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
 {
-    if (!serv)
+    if (!server || !server->initialized)
         return CHTTPX_ERR_INVALID_ARGUMENT;
-    return _chttpx_server_set_languages(serv, languages, count, fallback);
+    return _chttpx_server_set_languages(server, languages, count, fallback);
 }
 
 const char* LANGUAGE_CODES[LANG_COUNT] = {
