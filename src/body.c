@@ -119,7 +119,7 @@ static int content_type_matches(const char* value, const char* expected)
 
 static int append_bytes(unsigned char** data, size_t* size, size_t* capacity, const unsigned char* bytes, size_t count, size_t limit)
 {
-    if (*size > limit || count > limit - *size)
+    if (*size > limit || count > limit - *size || *size == SIZE_MAX || count > SIZE_MAX - *size - 1)
         return 0;
     if (*size + count + 1 > *capacity)
     {
@@ -505,20 +505,16 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
 
     while (remaining > 0)
     {
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(client_fd, &fds);
-
-        struct timeval tv;
-        tv.tv_sec = 5;
-        tv.tv_usec = 0;
-
-        int r = select(client_fd + 1, &fds, NULL, NULL, &tv);
-        if (r <= 0)
-            break;
-
         ssize_t n = recv(client_fd, (char*)req->body + total_read, remaining, 0);
-        if (n <= 0)
+        if (n < 0)
+        {
+#ifdef CHTTPX_PLATFORM_POSIX
+            if (errno == EINTR)
+                continue;
+#endif
+            break;
+        }
+        if (n == 0)
             break;
 
         total_read += (size_t)n;
