@@ -292,15 +292,13 @@ static int match_route(const char* template, const char* path, chttpx_param_t* p
  */
 static chttpx_route_t* find_route(chttpx_request_t* req)
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!server || !server->initialized)
         return NULL;
-    }
 
-    for (size_t i = 0; i < serv->routes_count; i++)
+    for (size_t i = 0; i < server->routes_count; i++)
     {
-        chttpx_route_t* registered = serv->routes[i];
+        chttpx_route_t* registered = server->routes[i];
         if (!registered || strcmp(registered->method, req->method) != 0)
             continue;
 
@@ -315,10 +313,10 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
     return NULL;
 }
 
-static ssize_t read_req(chttpx_socket_t fd, char* buffer, size_t buffer_size)
+static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
-    size_t limit = serv && serv->max_header_size && serv->max_header_size < buffer_size ? serv->max_header_size : buffer_size - 1;
+    size_t limit = server && server->max_header_size && server->max_header_size < buffer_size ? server->max_header_size : buffer_size - 1;
 
     while (1)
     {
@@ -358,55 +356,38 @@ static ssize_t read_req(chttpx_socket_t fd, char* buffer, size_t buffer_size)
     }
 }
 
-static void set_client_timeout(chttpx_socket_t client_fd)
+static void set_client_timeout(chttpx_serv_t* server, chttpx_socket_t client_fd)
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    if (!server)
         return;
-    }
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    /*
-     * Winsock expects SO_RCVTIMEO/SO_SNDTIMEO as millisecond DWORD values,
-     * unlike POSIX where these options use struct timeval.
-     */
-    DWORD read_timeout_ms = (DWORD)serv->read_timeout_sec * 1000U;
-    DWORD write_timeout_ms = (DWORD)serv->write_timeout_sec * 1000U;
+    DWORD read_timeout_ms = (DWORD)server->read_timeout_sec * 1000U;
+    DWORD write_timeout_ms = (DWORD)server->write_timeout_sec * 1000U;
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms));
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms));
 #else
     struct timeval tv;
     tv.tv_usec = 0;
 
-    tv.tv_sec = serv->read_timeout_sec;
+    tv.tv_sec = server->read_timeout_sec;
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    tv.tv_sec = serv->write_timeout_sec;
+    tv.tv_sec = server->write_timeout_sec;
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 }
 
 /* Cors */
-static const char* allowed_origin_cors(const char* req_origin)
+static const char* allowed_origin_cors(chttpx_serv_t* server, const char* req_origin)
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    if (!server || !server->cors.enabled || !req_origin)
         return NULL;
-    }
 
-    if (!serv->cors.enabled || !req_origin)
+    for (size_t i = 0; i < server->cors.origins_count; i++)
     {
-        return NULL;
-    }
-
-    for (size_t i = 0; i < serv->cors.origins_count; i++)
-    {
-        if (strcmp(serv->cors.origins[i], req_origin) == 0)
-        {
-            return serv->cors.origins[i];
-        }
+        if (strcmp(server->cors.origins[i], req_origin) == 0)
+            return server->cors.origins[i];
     }
 
     return NULL;
@@ -442,15 +423,15 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     size_t capacity = 1024;
     for (size_t i = 0; i < res.headers_count; i++)
         capacity += strlen(res.headers[i].name) + strlen(res.headers[i].value) + 4;
-    if (serv && serv->cors.enabled)
-        capacity += strlen(serv->cors.methods) + strlen(serv->cors.headers) + MAX_HEADER_VALUE + 512;
+    if (server && server->cors.enabled)
+        capacity += strlen(server->cors.methods) + strlen(server->cors.headers) + MAX_HEADER_VALUE + 512;
     char* buffer = malloc(capacity);
     if (!buffer)
         return;
     size_t length = 0;
 
     /* Cors */
-    const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_HeaderGet(req, "Origin")) : NULL;
+    const char* allowed_origin = req ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
     if (!append_response_header(buffer, capacity, &length,
                                 "HTTP/1.1 %d %s\r\n"
@@ -476,7 +457,7 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
                                     "Access-Control-Allow-Methods: %s\r\n"
                                     "Access-Control-Allow-Headers: %s\r\n"
                                     "Access-Control-Allow-Credentials: true\r\n",
-                                    allowed_origin, serv->cors.methods, serv->cors.headers))
+                                    allowed_origin, server->cors.methods, server->cors.headers))
             goto done;
     }
 
@@ -507,7 +488,8 @@ done:
 /* Handle browser CORS preflight without hijacking ordinary OPTIONS routes. */
 static int is_cors_preflight(chttpx_request_t* req)
 {
-    if (!req || !serv || !serv->cors.enabled || strcasecmp(req->method, cHTTPX_MethodOptions) != 0)
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!req || !server || !server->cors.enabled || strcasecmp(req->method, cHTTPX_MethodOptions) != 0)
         return 0;
 
     if (!cHTTPX_HeaderGet(req, "Origin") || !cHTTPX_HeaderGet(req, "Access-Control-Request-Method"))
@@ -532,7 +514,8 @@ static int valid_request_id(const char* value)
 
 static void set_request_id(chttpx_request_t* req)
 {
-    if (!serv || !serv->request_id_enabled)
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!server || !server->request_id_enabled)
         return;
     const char* supplied = cHTTPX_HeaderGet(req, "X-Request-ID");
     if (valid_request_id(supplied))
@@ -548,15 +531,15 @@ static void set_request_id(chttpx_request_t* req)
              sequence);
 }
 
-static int language_allowed(const char* language)
+static int language_allowed(chttpx_serv_t* server, const char* language)
 {
-    if (!serv || !language || !*language)
+    if (!server || !language || !*language)
         return 0;
-    if (serv->languages_count == 0)
-        return serv->default_language && strcasecmp(language, serv->default_language) == 0;
-    for (size_t i = 0; i < serv->languages_count; i++)
+    if (server->languages_count == 0)
+        return server->default_language && strcasecmp(language, server->default_language) == 0;
+    for (size_t i = 0; i < server->languages_count; i++)
     {
-        if (serv->languages[i] && strcasecmp(language, serv->languages[i]) == 0)
+        if (server->languages[i] && strcasecmp(language, server->languages[i]) == 0)
             return 1;
     }
     return 0;
@@ -564,7 +547,7 @@ static int language_allowed(const char* language)
 
 static void set_request_language(chttpx_request_t* req)
 {
-    snprintf(req->language, sizeof(req->language), "%s", serv && serv->default_language ? serv->default_language : "en");
+    chttpx_serv_t* server = req ? req->_server : NULL;\n    snprintf(req->language, sizeof(req->language), "%s", server && server->default_language ? server->default_language : "en");
     const char* header = cHTTPX_HeaderGet(req, "Accept-Language");
     if (!header)
         return;
@@ -599,7 +582,7 @@ static void set_request_language(chttpx_request_t* req)
         char* dash = strchr(item, '-');
         if (dash)
             *dash = '\0';
-        if (quality > best_quality && language_allowed(item))
+        if (quality > best_quality && language_allowed(server, item))
         {
             snprintf(req->language, sizeof(req->language), "%s", item);
             best_quality = quality;
