@@ -20,17 +20,17 @@
  * IN THE SOFTWARE.
  */
 
-#include "response.h"
+#include "cHTTPX_response.h"
 
-#include "inet.h"
-#include "body.h"
-#include "http.h"
-#include "serv.h"
-#include "media.h"
-#include "headers.h"
-#include "cookies.h"
-#include "queries.h"
-#include "crosspltm.h"
+#include "cHTTPX_inet.h"
+#include "cHTTPX_body.h"
+#include "cHTTPX_http.h"
+#include "cHTTPX_serv.h"
+#include "cHTTPX_media.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_cookies.h"
+#include "cHTTPX_queries.h"
+#include "cHTTPX_crosspltm.h"
 
 #include <errno.h>
 #include <stdarg.h>

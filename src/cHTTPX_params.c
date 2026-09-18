@@ -20,14 +20,14 @@
  * IN THE SOFTWARE.
  */
 
-#include "params.h"
+#include "cHTTPX_params.h"
 
-#include "crosspltm.h"
+#include "cHTTPX_crosspltm.h"
 
 #include <errno.h>
 #include <limits.h>
 
-#include "crosspltm.h"
+#include "cHTTPX_crosspltm.h"
 
 /**
  * Get a route parameter value by its name.

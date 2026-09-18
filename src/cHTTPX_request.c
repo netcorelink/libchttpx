@@ -20,13 +20,13 @@
  * IN THE SOFTWARE.
  */
 
-#include "request.h"
+#include "cHTTPX_request.h"
 
-#include "i18n.h"
-#include "crosspltm.h"
-#include "headers.h"
-#include "response.h"
-#include "http.h"
+#include "cHTTPX_i18n.h"
+#include "cHTTPX_crosspltm.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_response.h"
+#include "cHTTPX_http.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "../lib/cjson/cJSON.h"

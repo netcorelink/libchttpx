@@ -20,12 +20,12 @@
  * IN THE SOFTWARE.
  */
 
-#include "media.h"
+#include "cHTTPX_media.h"
 
-#include "headers.h"
-#include "queries.h"
-#include "serv.h"
-#include "utils.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_queries.h"
+#include "cHTTPX_serv.h"
+#include "cHTTPX_utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>

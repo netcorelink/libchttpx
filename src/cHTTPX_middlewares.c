@@ -8,14 +8,14 @@
  * sell copies of the Software.
  */
 
-#include "middlewares.h"
+#include "cHTTPX_middlewares.h"
 
-#include "crosspltm.h"
-#include "headers.h"
-#include "http.h"
-#include "request.h"
-#include "response.h"
-#include "serv.h"
+#include "cHTTPX_crosspltm.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_http.h"
+#include "cHTTPX_request.h"
+#include "cHTTPX_response.h"
+#include "cHTTPX_serv.h"
 
 #include <time.h>
 #include <stdio.h>

@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "queries.h"
+#include "cHTTPX_queries.h"
 
-#include "crosspltm.h"
+#include "cHTTPX_crosspltm.h"
 
 #include <errno.h>
 #include <limits.h>

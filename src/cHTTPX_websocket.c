@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "websocket.h"
+#include "cHTTPX_websocket.h"
 
 // Beta version
 

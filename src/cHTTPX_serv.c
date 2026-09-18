@@ -8,12 +8,12 @@
  * sell copies of the Software.
  */
 
-#include "serv.h"
+#include "cHTTPX_serv.h"
 
-#include "utils.h"
-#include "crosspltm.h"
-#include "middlewares.h"
-#include "http.h"
+#include "cHTTPX_utils.h"
+#include "cHTTPX_crosspltm.h"
+#include "cHTTPX_middlewares.h"
+#include "cHTTPX_http.h"
 
 #include <errno.h>
 
