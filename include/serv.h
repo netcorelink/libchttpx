@@ -61,10 +61,6 @@ extern "C"
         const char** languages;
         size_t languages_count;
         const char* default_language;
-
-        /* Internally owned copies backing the public language views above. */
-        char** _owned_languages;
-        char* _owned_default_language;
         chttpx_log_level_t log_level;
         chttpx_logger_fn logger;
         void* logger_data;
@@ -114,6 +110,10 @@ extern "C"
         const char** languages;
         size_t languages_count;
         const char* default_language;
+
+        /* Internally owned copies backing the public language views above. */
+        char** _owned_languages;
+        char* _owned_default_language;
 
         chttpx_log_level_t log_level;
         chttpx_logger_fn logger;
