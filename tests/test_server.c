@@ -8,7 +8,8 @@ static int handler_calls;
 static int options_handler_calls;
 static char observed_body[64];
 static char observed_language[16];
-static char observed_request_id[65];\nstatic char payment_observed_body[64];
+static char observed_request_id[65];
+static char payment_observed_body[64];
 static uint16_t test_port;
 
 static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
@@ -160,23 +161,45 @@ int main(void)
 
     char response[4096];
 
-    exchange("OPTIONS /body HTTP/1.1\r\nHost: localhost\r\nOrigin: https://example.com\r\n"
-             "Access-Control-Request-Method: POST\r\n\r\n",
+    exchange("OPTIONS /body HTTP/1.1\r
+Host: localhost\r
+Origin: https://example.com\r
+"
+             "Access-Control-Request-Method: POST\r
+\r
+",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
     assert(strstr(response, "Access-Control-Allow-Origin: https://example.com") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 0);
 
-    exchange("OPTIONS /body HTTP/1.1\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    exchange("OPTIONS /body HTTP/1.1\r
+Host: localhost\r
+\r
+", response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 1);
 
-    exchange("GET /empty HTTP/1.1\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    exchange("GET /empty HTTP/1.1\r
+Host: localhost\r
+\r
+", response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 500 Internal Server Error") != NULL);
     assert(strstr(response, "Connection: close") != NULL);
 
-    exchange("POST /body HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n"
-             "Accept-Language: en;q=0.2, ru-RU;q=0.9\r\nX-Request-ID: integration-123\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+    exchange("POST /body HTTP/1.1\r
+Host: localhost\r
+Content-Type: text/plain\r
+Transfer-Encoding: chunked\r
+"
+             "Accept-Language: en;q=0.2, ru-RU;q=0.9\r
+X-Request-ID: integration-123\r
+\r
+5\r
+hello\r
+0\r
+\r
+",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "X-Request-ID: integration-123") != NULL);
@@ -185,29 +208,56 @@ int main(void)
     assert(strcmp(observed_language, "ru") == 0);
     assert(strcmp(observed_request_id, "integration-123") == 0);
 
-    exchange("POST /buy HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n"
-             "X-Request-ID: local-call\r\n\r\n{\"plan\":\"premium\"}",
+    exchange("POST /buy HTTP/1.1\r
+Host: localhost\r
+Content-Type: application/json\r
+Content-Length: 18\r
+"
+             "X-Request-ID: local-call\r
+\r
+{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\"service\":\"payments\"") != NULL);
     assert(strcmp(payment_observed_body, "{\"plan\":\"premium\"}") == 0);
 
-    exchange("POST /buy-remote HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n"
-             "X-Request-ID: remote-call\r\n\r\n{\"plan\":\"premium\"}",
+    exchange("POST /buy-remote HTTP/1.1\r
+Host: localhost\r
+Content-Type: application/json\r
+Content-Length: 18\r
+"
+             "X-Request-ID: remote-call\r
+\r
+{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\"service\":\"payments\"") != NULL);
 
-    exchange("POST /body HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n", response,
+    exchange("POST /body HTTP/1.1\r
+Host: localhost\r
+Content-Type: application/json\r
+Content-Length: 100\r
+\r
+", response,
              sizeof(response));
     assert(strstr(response, "HTTP/1.1 413 Payload Too Large") != NULL);
 
-    exchange("POST /body HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\n"
-             "Content-Length: 5\r\nContent-Length: 6\r\n\r\nhello",
+    exchange("POST /body HTTP/1.1\r
+Host: localhost\r
+Content-Type: text/plain\r
+"
+             "Content-Length: 5\r
+Content-Length: 6\r
+\r
+hello",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 400 Bad Request") != NULL);
 
-    exchange("POST /body HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n", response, sizeof(response));
+    exchange("POST /body HTTP/1.1\r
+Host: localhost\r
+Transfer-Encoding: gzip\r
+\r
+", response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 400 Bad Request") != NULL);
 
     cHTTPX_AppShutdown(&app);
