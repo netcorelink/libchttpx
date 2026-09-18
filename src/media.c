@@ -289,7 +289,7 @@ static void parse_multipart_buffered(chttpx_request_t* req)
         if (next < data + 2 || next[-2] != '\r' || next[-1] != '\n')
             goto bad_request;
 
-        size_t next_offset = (size_t)(next - data);
+        // cppcheck-suppress nullPointerArithmeticRedundantCheck\n        size_t next_offset = (size_t)(next - data);
         if (next_offset < 2)
             goto bad_request;
         size_t data_size = next_offset - 2;
