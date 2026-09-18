@@ -329,7 +329,7 @@ cHTTPX_RouteUploadPolicy(upload, &policy);
 
 The handler is skipped with `413` or `415` when policy validation fails. MIME helpers include `cHTTPX_MimeMatch()`, `cHTTPX_MimeIsImage()`, `cHTTPX_MimeIsVideo()`, and `cHTTPX_MimeIsAudio()`.
 
-Fixed-length and chunked request bodies are accepted. `cHTTPX_OnBodyChunk()` is the callback registration API for request-body consumers; in this release the core parser still buffers structured form/JSON bodies and stores raw uploads in temporary files.
+Fixed-length and chunked request bodies are accepted. Multipart bodies are spooled to a disk-backed temporary stream while they are received, then parsed into bounded text fields and request-owned temporary files. Large multipart uploads therefore no longer require a buffer equal to the complete request size in RAM. JSON, text, and URL-encoded bodies remain memory-backed. `cHTTPX_OnBodyChunk()` replays an already parsed body or upload in bounded chunks.
 
 ## Request ID and language
 

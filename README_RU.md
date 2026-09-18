@@ -321,7 +321,7 @@ cHTTPX_RouteUploadPolicy(upload, &policy);
 
 При нарушении policy handler не запускается, возвращается `413` или `415`. Есть `cHTTPX_MimeMatch()`, `cHTTPX_MimeIsImage()`, `cHTTPX_MimeIsVideo()` и `cHTTPX_MimeIsAudio()`.
 
-Fixed-length и chunked request bodies поддерживаются. `cHTTPX_OnBodyChunk()` — API регистрации body callback; в этой версии structured JSON/form body всё ещё буферизуются, а raw uploads сохраняются во временный файл.
+Fixed-length и chunked request bodies поддерживаются. Multipart body во время приёма сохраняется в дисковый временный stream и затем разбирается ограниченными буферами; файловые части становятся request-owned временными файлами. Поэтому большой `multipart/form-data` больше не требует RAM размером со весь запрос. JSON, text и URL-encoded body остаются memory-backed.
 
 ## Request ID и Accept-Language
 

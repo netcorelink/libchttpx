@@ -1,4 +1,5 @@
 #include "libchttpx.h"
+#include "body.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -127,6 +128,84 @@ static void test_multipart(void)
     assert(fopen(path, "rb") == NULL);
 }
 
+
+static void test_streamed_multipart(void)
+{
+    chttpx_serv_t server = {0};
+    server.max_body_size = 1024 * 1024;
+    server.max_upload_size = 8 * 1024 * 1024;
+    serv = &server;
+
+    chttpx_request_t req = {0};
+    const char body[] = "--StreamBoundary\r\n"
+                        "Content-Disposition: form-data; name=\"title\"\r\n\r\nhello\r\n"
+                        "--StreamBoundary\r\n"
+                        "Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n"
+                        "Content-Type: image/jpeg\r\n\r\nJPEGDATA\r\n"
+                        "--StreamBoundary--\r\n";
+    char request[2048];
+    int body_size = (int)strlen(body);
+    int request_size = snprintf(request, sizeof(request),
+                                "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                                "Content-Length: %d\r\n\r\n%s",
+                                body_size, body);
+    assert(request_size > 0 && (size_t)request_size < sizeof(request));
+
+    strcpy(req.content_type, "multipart/form-data; boundary=StreamBoundary");
+    strcpy(req.headers[0].name, "Content-Type");
+    strcpy(req.headers[0].value, req.content_type);
+    strcpy(req.headers[1].name, "Content-Length");
+    snprintf(req.headers[1].value, sizeof(req.headers[1].value), "%d", body_size);
+    req.headers_count = 2;
+
+    _parse_req_body(&req, 0, request, (size_t)request_size);
+    assert(req._parse_status == 0);
+    assert(req.body == NULL);
+    assert(req._multipart_stream != NULL);
+
+    _parse_media(&req, request, (size_t)request_size);
+    assert(req._parse_status == 0);
+    assert(strcmp(cHTTPX_FormValue(&req, "title"), "hello") == 0);
+    const chttpx_file_t* file = cHTTPX_FormFile(&req, "file");
+    assert(file && file->size == 8);
+    assert(strcmp(file->original_name, "photo.jpg") == 0);
+
+    cHTTPX_RequestCleanup(&req);
+
+    memset(&req, 0, sizeof(req));
+    char chunked_body[4096];
+    int chunked_body_size = snprintf(chunked_body, sizeof(chunked_body), "%zx\r\n%s\r\n0\r\n\r\n", strlen(body), body);
+    assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
+
+    request_size = snprintf(request, sizeof(request),
+                            "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                            "Transfer-Encoding: chunked\r\n\r\n%s",
+                            chunked_body);
+    assert(request_size > 0 && (size_t)request_size < sizeof(request));
+
+    strcpy(req.content_type, "multipart/form-data; boundary=StreamBoundary");
+    strcpy(req.headers[0].name, "Content-Type");
+    strcpy(req.headers[0].value, req.content_type);
+    strcpy(req.headers[1].name, "Transfer-Encoding");
+    strcpy(req.headers[1].value, "chunked");
+    req.headers_count = 2;
+
+    _parse_req_body(&req, 0, request, (size_t)request_size);
+    assert(req._parse_status == 0);
+    assert(req.body == NULL);
+    assert(req._multipart_stream != NULL);
+    assert(req.content_length == strlen(body));
+
+    _parse_media(&req, request, (size_t)request_size);
+    assert(req._parse_status == 0);
+    assert(strcmp(cHTTPX_FormValue(&req, "title"), "hello") == 0);
+    file = cHTTPX_FormFile(&req, "file");
+    assert(file && file->size == 8);
+
+    cHTTPX_RequestCleanup(&req);
+    serv = NULL;
+}
+
 static void test_routing_api(void)
 {
     chttpx_serv_t server = {0};
@@ -166,6 +245,7 @@ int main(void)
     test_typed_values();
     test_bind_and_json();
     test_multipart();
+    test_streamed_multipart();
     test_routing_api();
     test_helpers();
     puts("all tests passed");
