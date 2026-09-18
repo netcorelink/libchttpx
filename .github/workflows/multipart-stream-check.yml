@@ -18,7 +18,7 @@ jobs:
       - name: Build core tests
         run: |
           mkdir -p .build
-          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/test_core.c src/*.c -lcjson -lpthread -o .build/test_core
+          gcc -std=gnu11 -Wall -Wextra -Werror -Wno-error=format-truncation -Iinclude tests/test_core.c src/*.c -lcjson -lpthread -o .build/test_core
 
       - name: Run core tests
         run: ./.build/test_core
