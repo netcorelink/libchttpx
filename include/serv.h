@@ -115,8 +115,11 @@ extern "C"
         chttpx_logger_fn logger;
         void* logger_data;
 
-        /* Routes params */
-        chttpx_route_t* routes;
+        /* Routes params.
+         * Route objects are allocated separately so pointers returned by
+         * cHTTPX_Get()/Post()/... stay valid when the registry grows.
+         */
+        chttpx_route_t** routes;
         size_t routes_count;
         size_t routes_capacity;
 
