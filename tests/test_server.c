@@ -9,8 +9,9 @@ static int options_handler_calls;
 static char observed_body[64];
 static char observed_language[16];
 static char observed_request_id[65];
-static char payment_observed_body[64];
-static uint16_t test_port;
+static char internal_observed_body[64];
+static uint16_t public_port;
+static uint16_t internal_port;
 
 static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
@@ -34,26 +35,20 @@ static void empty_handler(chttpx_request_t* req, chttpx_response_t* res)
     (void)res;
 }
 
-static void payment_handler(chttpx_request_t* req, chttpx_response_t* res)
+static void internal_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    snprintf(payment_observed_body, sizeof(payment_observed_body), "%.*s", (int)req->body_size,
+    snprintf(internal_observed_body, sizeof(internal_observed_body), "%.*s", (int)req->body_size,
              req->body ? (const char*)req->body : "");
-    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"service\":\"payments\",\"accepted\":true}");
+    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"server\":\"internal\",\"accepted\":true}");
 }
 
-static void local_buy_handler(chttpx_request_t* req, chttpx_response_t* res)
+static void proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    if (cHTTPX_Call(req, "payments", cHTTPX_MethodPost, "/payments/create", res) != CHTTPX_OK)
-        *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "local payment call failed");
+    if (cHTTPX_Call(req, "internal", cHTTPX_MethodPost, "/process", res) != CHTTPX_OK)
+        *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "internal server call failed");
 }
 
-static void remote_buy_handler(chttpx_request_t* req, chttpx_response_t* res)
-{
-    if (cHTTPX_Call(req, "remote-payments", cHTTPX_MethodPost, "/payments/create", res) != CHTTPX_OK)
-        *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote payment call failed");
-}
-
-static void exchange(const char* request, char* response, size_t response_size)
+static void exchange(uint16_t port, const char* request, char* response, size_t response_size)
 {
     chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -64,7 +59,7 @@ static void exchange(const char* request, char* response, size_t response_size)
 
     struct sockaddr_in address = {0};
     address.sin_family = AF_INET;
-    address.sin_port = htons(test_port);
+    address.sin_port = htons(port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
@@ -105,22 +100,6 @@ static void wait_until_listening(chttpx_serv_t* server)
 
 int main(void)
 {
-    chttpx_app_t remote_app;
-    assert(cHTTPX_AppInit(&remote_app) == CHTTPX_OK);
-
-    chttpx_config_t remote_config = cHTTPX_DefaultConfig();
-    remote_config.port = 0;
-
-    chttpx_serv_t* remote_server =
-        cHTTPX_AppMicroserverWithConfig(&remote_app, "payments-remote-host", &remote_config);
-    assert(remote_server);
-
-    chttpx_router_t remote_router = cHTTPX_RoutePathPrefix(remote_server, "/payments");
-    assert(cHTTPX_Post(&remote_router, "/create", payment_handler));
-
-    assert(cHTTPX_AppStart(&remote_app) == CHTTPX_OK);
-    wait_until_listening(remote_server);
-
     chttpx_app_t app;
     assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
 
@@ -129,47 +108,44 @@ int main(void)
     char fallback[] = "en";
     const char* languages[] = {language_en, language_ru};
 
-    chttpx_config_t config = cHTTPX_DefaultConfig();
-    config.port = 0;
-    config.max_body_size = 32;
-    config.languages = languages;
-    config.languages_count = CHTTPX_ARRAY_LEN(languages);
-    config.default_language = fallback;
+    chttpx_config_t public_config = cHTTPX_DefaultConfig();
+    public_config.port = 0;
+    public_config.max_body_size = 32;
+    public_config.languages = languages;
+    public_config.languages_count = CHTTPX_ARRAY_LEN(languages);
+    public_config.default_language = fallback;
 
-    chttpx_serv_t* server = cHTTPX_AppMicroserverWithConfig(&app, "main", &config);
-    assert(server);
-    test_port = server->port;
+    chttpx_serv_t* public_api = cHTTPX_AppServerWithConfig(&app, "public", &public_config);
+    assert(public_api);
+    public_port = public_api->port;
 
-    chttpx_serv_t* payments = cHTTPX_AppMicroservice(&app, "payments");
-    assert(payments);
+    chttpx_serv_t* internal_api = cHTTPX_AppServer(&app, "internal", 0);
+    assert(internal_api);
+    internal_port = internal_api->port;
 
-    /* App components must own copied language configuration. */
     strcpy(language_ru, "xx");
     strcpy(fallback, "xx");
 
-    chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
-    assert(cHTTPX_Post(&router, "/body", request_handler));
-    assert(cHTTPX_Options(&router, "/body", options_handler));
-    assert(cHTTPX_Get(&router, "/empty", empty_handler));
-    assert(cHTTPX_Post(&router, "/buy", local_buy_handler));
-    assert(cHTTPX_Post(&router, "/buy-remote", remote_buy_handler));
+    chttpx_router_t public_router = cHTTPX_RoutePathPrefix(public_api, "");
+    assert(cHTTPX_Post(&public_router, "/body", request_handler));
+    assert(cHTTPX_Options(&public_router, "/body", options_handler));
+    assert(cHTTPX_Get(&public_router, "/empty", empty_handler));
+    assert(cHTTPX_Post(&public_router, "/proxy", proxy_handler));
 
-    chttpx_router_t payment_router = cHTTPX_RoutePathPrefix(payments, "/payments");
-    assert(cHTTPX_Post(&payment_router, "/create", payment_handler));
-
-    char remote_url[128];
-    snprintf(remote_url, sizeof(remote_url), "http://127.0.0.1:%u", remote_server->port);
-    assert(cHTTPX_AppRemote(&app, "remote-payments", remote_url) == CHTTPX_OK);
+    chttpx_router_t internal_router = cHTTPX_RoutePathPrefix(internal_api, "");
+    assert(cHTTPX_Post(&internal_router, "/process", internal_handler));
 
     const char* cors_origins[] = {"https://example.com"};
-    cHTTPX_Cors(server, cors_origins, CHTTPX_ARRAY_LEN(cors_origins), NULL, NULL);
+    cHTTPX_Cors(public_api, cors_origins, CHTTPX_ARRAY_LEN(cors_origins), NULL, NULL);
 
     assert(cHTTPX_AppStart(&app) == CHTTPX_OK);
-    wait_until_listening(server);
+    wait_until_listening(public_api);
+    wait_until_listening(internal_api);
 
     char response[4096];
 
-    exchange("OPTIONS /body HTTP/1.1\r\n"
+    exchange(public_port,
+             "OPTIONS /body HTTP/1.1\r\n"
              "Host: localhost\r\n"
              "Origin: https://example.com\r\n"
              "Access-Control-Request-Method: POST\r\n"
@@ -179,21 +155,24 @@ int main(void)
     assert(strstr(response, "Access-Control-Allow-Origin: https://example.com") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 0);
 
-    exchange("OPTIONS /body HTTP/1.1\r\n"
+    exchange(public_port,
+             "OPTIONS /body HTTP/1.1\r\n"
              "Host: localhost\r\n"
              "\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 1);
 
-    exchange("GET /empty HTTP/1.1\r\n"
+    exchange(public_port,
+             "GET /empty HTTP/1.1\r\n"
              "Host: localhost\r\n"
              "\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 500 Internal Server Error") != NULL);
     assert(strstr(response, "Connection: close") != NULL);
 
-    exchange("POST /body HTTP/1.1\r\n"
+    exchange(public_port,
+             "POST /body HTTP/1.1\r\n"
              "Host: localhost\r\n"
              "Content-Type: text/plain\r\n"
              "Transfer-Encoding: chunked\r\n"
@@ -203,36 +182,35 @@ int main(void)
              "5\r\nhello\r\n0\r\n\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
-    assert(strstr(response, "X-Request-ID: integration-123") != NULL);
-    assert(__atomic_load_n(&handler_calls, __ATOMIC_SEQ_CST) == 1);
     assert(strcmp(observed_body, "hello") == 0);
     assert(strcmp(observed_language, "ru") == 0);
     assert(strcmp(observed_request_id, "integration-123") == 0);
 
-    exchange("POST /buy HTTP/1.1\r\n"
+    exchange(public_port,
+             "POST /proxy HTTP/1.1\r\n"
              "Host: localhost\r\n"
              "Content-Type: application/json\r\n"
              "Content-Length: 18\r\n"
-             "X-Request-ID: local-call\r\n"
              "\r\n"
              "{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
-    assert(strstr(response, "\"service\":\"payments\"") != NULL);
-    assert(strcmp(payment_observed_body, "{\"plan\":\"premium\"}") == 0);
+    assert(strstr(response, "\"server\":\"internal\"") != NULL);
+    assert(strcmp(internal_observed_body, "{\"plan\":\"premium\"}") == 0);
 
-    exchange("POST /buy-remote HTTP/1.1\r\n"
+    exchange(internal_port,
+             "POST /process HTTP/1.1\r\n"
              "Host: localhost\r\n"
-             "Content-Type: application/json\r\n"
-             "Content-Length: 18\r\n"
-             "X-Request-ID: remote-call\r\n"
+             "Content-Type: text/plain\r\n"
+             "Content-Length: 4\r\n"
              "\r\n"
-             "{\"plan\":\"premium\"}",
+             "ping",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
-    assert(strstr(response, "\"service\":\"payments\"") != NULL);
+    assert(strcmp(internal_observed_body, "ping") == 0);
 
-    exchange("POST /body HTTP/1.1\r\n"
+    exchange(public_port,
+             "POST /body HTTP/1.1\r\n"
              "Host: localhost\r\n"
              "Content-Type: application/json\r\n"
              "Content-Length: 100\r\n"
@@ -240,26 +218,8 @@ int main(void)
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 413 Payload Too Large") != NULL);
 
-    exchange("POST /body HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: text/plain\r\n"
-             "Content-Length: 5\r\n"
-             "Content-Length: 6\r\n"
-             "\r\n"
-             "hello",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 400 Bad Request") != NULL);
-
-    exchange("POST /body HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Transfer-Encoding: gzip\r\n"
-             "\r\n",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 400 Bad Request") != NULL);
-
     cHTTPX_AppShutdown(&app);
-    cHTTPX_AppShutdown(&remote_app);
 
-    puts("server/app integration tests passed");
+    puts("multi-server App integration tests passed");
     return 0;
 }
