@@ -14,7 +14,9 @@ extern "C"
 #endif
 
 #include <stdio.h>
-#include <stdint.h>\n\n    struct chttpx_serv;
+#include <stdint.h>
+
+    struct chttpx_serv;
 
     typedef struct
     {
