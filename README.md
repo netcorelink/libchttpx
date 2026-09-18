@@ -64,11 +64,17 @@ int main(void)
     if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
+    chttpx_config_t public_config = cHTTPX_DefaultConfig();
+    public_config.port = 8080;
+
+    chttpx_config_t internal_config = cHTTPX_DefaultConfig();
+    internal_config.port = 9090;
+
     chttpx_serv_t* public_api =
-        cHTTPX_AppServer(&app, "public", 8080);
+        cHTTPX_AppServer(&app, "public", &public_config);
 
     chttpx_serv_t* internal_api =
-        cHTTPX_AppServer(&app, "internal", 9090);
+        cHTTPX_AppServer(&app, "internal", &internal_config);
 
     if (!public_api || !internal_api)
     {
@@ -107,7 +113,28 @@ cHTTPX_Call(
 );
 ```
 
-The current body, content type, request ID, language, and request headers are inherited automatically. Use `cHTTPX_CallWithBody()` when a different body is needed.
+The current body, content type, request ID, language, and request headers are inherited automatically.
+
+Use `cHTTPX_CallEx()` when the outgoing request needs to be customized, for example with a different body:
+
+```c
+const char* body = "{\"user_id\":123,\"plan\":\"premium\"}";
+
+chttpx_call_options_t options = {
+    .body = body,
+    .body_size = strlen(body),
+    .content_type = cHTTPX_CTYPE_JSON,
+};
+
+cHTTPX_CallEx(
+    req,
+    "payments",
+    cHTTPX_MethodPost,
+    "/payments/create",
+    &options,
+    res
+);
+```
 
 For a server in another process or Docker Compose, register it with `cHTTPX_AppRemote()`:
 
@@ -150,7 +177,7 @@ config.request_id_enabled = true;
 
 `Content-Length` is validated before a request body is downloaded. Oversized regular bodies and uploads receive `413 Payload Too Large`; oversized headers receive `431 Request Header Fields Too Large`.
 
-`cHTTPX_AppInit()` returns `chttpx_error_t`. `cHTTPX_AppServerWithConfig()` returns the created server pointer or `NULL`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
+`cHTTPX_AppInit()` returns `chttpx_error_t`. `cHTTPX_AppServer()` returns the created server pointer or `NULL`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
 
 ## Routes and groups
 
