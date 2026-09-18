@@ -676,7 +676,7 @@ void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
     if (!req || !req->content_type[0] || req->_parse_status)
         return;
 
-    if (strstr(req->content_type, cHTTPX_CTYPE_MULTI))
+    if (cHTTPX_MimeMatch(req->content_type, cHTTPX_CTYPE_MULTI))
     {
         if (req->_multipart_stream)
             parse_multipart_stream(req, (FILE*)req->_multipart_stream);
@@ -685,9 +685,10 @@ void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
         else
             req->_parse_status = cHTTPX_StatusBadRequest;
     }
-    else if (strstr(req->content_type, cHTTPX_CTYPE_FORM))
+    else if (cHTTPX_MimeMatch(req->content_type, cHTTPX_CTYPE_FORM))
         parse_urlencoded(req);
-    else if (req->content_length > 0 && !strstr(req->content_type, cHTTPX_CTYPE_JSON) && !strstr(req->content_type, "text/"))
+    else if (req->content_length > 0 && !cHTTPX_MimeMatch(req->content_type, cHTTPX_CTYPE_JSON) &&
+             !cHTTPX_MimeMatch(req->content_type, "text/*"))
     {
         if (req->_multipart_stream)
             save_raw_upload_stream(req, (FILE*)req->_multipart_stream);
