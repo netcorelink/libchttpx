@@ -141,7 +141,7 @@ config.max_upload_size = 500ULL * 1024 * 1024;
 config.request_id_enabled = true;
 ```
 
-`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppMicroserverWithConfig()` возвращает `chttpx_error_t`; библиотека не завершает приложение.
+`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppInit()` возвращает `chttpx_error_t`, а `cHTTPX_AppMicroserverWithConfig()` возвращает указатель на созданный server или `NULL`; библиотека не завершает приложение через `exit()`.
 
 ## Routes и groups
 
@@ -401,7 +401,7 @@ static void logger(chttpx_log_level_t level, const char* request_id,
     fprintf(stderr, "request_id=%s %s\n", request_id, message);
 }
 
-cHTTPX_SetLogger(logger, NULL, CHTTPX_LOG_INFO);
+cHTTPX_SetLogger(server, logger, NULL, CHTTPX_LOG_INFO);
 cHTTPX_MiddlewareLogging(server);
 cHTTPX_MiddlewareRateLimiter(server, 100, 1);
 ```
@@ -412,15 +412,15 @@ cHTTPX_MiddlewareRateLimiter(server, 100, 1);
 
 Timeouts задаются в `chttpx_config_t`. Для SIGINT/SIGTERM вызывайте `cHTTPX_AppShutdown(&app)` из control/signal thread: функция прекращает accept, закрывает listener, ждёт активные requests, освобождает routes и CORS state.
 
-`current_clients` изменяется атомарно; busy-loop при достижении лимита удалён. Routes настраиваются до `Listen()` и затем только читаются. Один request и его allocator должны использоваться только его worker thread. Shared state приложения синхронизируется самим приложением.
+`current_clients` изменяется атомарно; busy-loop при достижении лимита удалён. Routes настраиваются до `cHTTPX_AppStart()`/`cHTTPX_AppRun()` и затем только читаются. Один request и его allocator должны использоваться только его worker thread. Shared state приложения синхронизируется самим приложением.
 
-## Обработка ошибок и совместимость
+## Обработка ошибок и миграция
 
 Status line использует корректный reason phrase. `cHTTPX_SendAll()` обрабатывает partial sends. Сервер возвращает `CHTTPX_ERR_*`, а не вызывает `exit()`.
 
 Миграция:
 
-- старый `cHTTPX_Init()` работает, новый код использует config;
+- standalone `cHTTPX_Init()`/`cHTTPX_Listen()`/`cHTTPX_Shutdown()` удалены; server создаётся и управляется только через `cHTTPX_App`;
 - `cHTTPX_RegisterRoute()` работает, но method helpers удобнее;
 - `req->context` работает, но named contexts не конфликтуют между middleware;
 - `req->filename` заполняется для первого файла, но лучше `RequestFile`/`FormFile`;
