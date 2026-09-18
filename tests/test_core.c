@@ -305,6 +305,12 @@ static void free_test_routes(chttpx_serv_t* server)
             continue;
         free((void*)registered->method);
         free((void*)registered->path);
+        if (registered->has_upload_policy)
+        {
+            for (size_t j = 0; j < registered->upload_policy.allowed_types_count; j++)
+                free((void*)registered->upload_policy.allowed_types[j]);
+            free((void*)registered->upload_policy.allowed_types);
+        }
         free(registered);
     }
     free(server->routes);
@@ -336,6 +342,13 @@ static void test_routing_api(void)
     assert(strcmp(route->path, "/api/v2/users/me") == 0);
     assert(cHTTPX_RouteUseAfter(route, middleware) == CHTTPX_OK);
     assert(route->after_middleware_count == 1);
+
+    char mutable_type[] = "image/*";
+    const char* allowed_types[] = {mutable_type};
+    chttpx_upload_policy_t policy = {.max_size = 4096, .allowed_types = allowed_types, .allowed_types_count = 1};
+    assert(cHTTPX_RouteUploadPolicy(route, &policy) == CHTTPX_OK);
+    mutable_type[0] = 'v';
+    assert(strcmp(route->upload_policy.allowed_types[0], "image/*") == 0);
 
     free_test_routes(&server);
     serv = NULL;
