@@ -180,26 +180,28 @@ static chttpx_route_t* route(chttpx_router_t* router, const char* method, const 
     if (serv->routes_count == serv->routes_capacity)
     {
         size_t new_capacity = (serv->routes_capacity == 0) ? 4 : serv->routes_capacity * 2;
-        chttpx_route_t* new_routes = realloc(serv->routes, sizeof(chttpx_route_t) * new_capacity);
-
-        if (!new_routes)
-        {
+        if (new_capacity < serv->routes_capacity || new_capacity > SIZE_MAX / sizeof(*serv->routes))
             return NULL;
-        }
+
+        chttpx_route_t** new_routes = realloc(serv->routes, sizeof(*serv->routes) * new_capacity);
+        if (!new_routes)
+            return NULL;
 
         serv->routes = new_routes;
         serv->routes_capacity = new_capacity;
     }
 
-    chttpx_route_t* registered = &serv->routes[serv->routes_count];
-    memset(registered, 0, sizeof(*registered));
+    chttpx_route_t* registered = calloc(1, sizeof(*registered));
+    if (!registered)
+        return NULL;
+
     registered->method = strdup(method);
     registered->path = strdup(path);
     if (!registered->method || !registered->path)
     {
         free((char*)registered->method);
         free((char*)registered->path);
-        memset(registered, 0, sizeof(*registered));
+        free(registered);
         return NULL;
     }
     registered->handler = handler;
@@ -207,7 +209,7 @@ static chttpx_route_t* route(chttpx_router_t* router, const char* method, const 
     memcpy(registered->middlewares, router->middlewares, sizeof(chttpx_middleware_t) * router->middleware_count);
     registered->after_middleware_count = router->after_middleware_count;
     memcpy(registered->after_middlewares, router->after_middlewares, sizeof(chttpx_middleware_t) * router->after_middleware_count);
-    serv->routes_count++;
+    serv->routes[serv->routes_count++] = registered;
     return registered;
 }
 
@@ -441,8 +443,12 @@ void cHTTPX_Shutdown()
 
     for (size_t i = 0; i < serv->routes_count; i++)
     {
-        free((char*)serv->routes[i].method);
-        free((char*)serv->routes[i].path);
+        chttpx_route_t* registered = serv->routes[i];
+        if (!registered)
+            continue;
+        free((char*)registered->method);
+        free((char*)registered->path);
+        free(registered);
     }
 
     free(serv->routes);
