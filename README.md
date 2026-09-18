@@ -50,7 +50,7 @@ The Windows build uses the bundled `lib/cjson` source and links Winsock.
 All HTTP servers are created through one `cHTTPX_App`. Every `cHTTPX_AppServer()` is a normal independent `chttpx_serv_t` with its own routes, middleware, CORS, logger, and port.
 
 ```c
-#include <libchttpx/libchttpx.h>
+#include <libchttpx.h>
 
 static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
@@ -476,6 +476,16 @@ HTTP responses use the correct reason phrase. Socket and I/O helpers return erro
 - `cHTTPX_Parse()`/`cHTTPX_Validate()` remain available; prefer `cHTTPX_BindJSON()`.
 - Do not manually free response bodies or JSON-bound strings anymore.
 - Recovery middleware no longer catches fatal process signals.
+
+## Examples
+
+Runnable examples are stored in [example/](example/README.md).
+
+```sh
+make examples
+```
+
+This builds separate binaries for basic usage, multiple servers, local and remote calls, middleware, JSON binding, and uploads.
 
 ## Build and tests
 

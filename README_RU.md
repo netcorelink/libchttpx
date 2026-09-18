@@ -47,7 +47,7 @@ make win-lib
 Все HTTP-серверы создаются через один `cHTTPX_App`. Каждый `cHTTPX_AppServer()` — обычный независимый `chttpx_serv_t` со своими routes, middleware, CORS, logger и портом.
 
 ```c
-#include <libchttpx/libchttpx.h>
+#include <libchttpx.h>
 
 static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
@@ -466,6 +466,16 @@ Status line использует корректный reason phrase. `cHTTPX_Sen
 - `Parse`/`Validate` работают, но `BindJSON` убирает boilerplate;
 - вручную освобождать response body и JSON-bound строки больше не нужно;
 - recovery middleware больше не перехватывает фатальные сигналы.
+
+## Примеры
+
+Рабочие примеры находятся в [example/](example/README.md).
+
+```sh
+make examples
+```
+
+Команда собирает отдельные примеры: базовый сервер, несколько серверов, local/remote Call, middleware, JSON binding и uploads.
 
 ## Сборка и tests
 

@@ -1,11 +1,9 @@
-#include "libchttpx.h"
+#include <libchttpx.h>
 
-#include <stdio.h>
-
-static void home(chttpx_request_t* req, chttpx_response_t* res)
+static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
-    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "libchttpx is running");
+    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
 }
 
 int main(void)
@@ -25,14 +23,10 @@ int main(void)
     }
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
-    if (!cHTTPX_Get(&router, "/", home))
-    {
-        fprintf(stderr, "Failed to register route\n");
-        cHTTPX_AppShutdown(&app);
-        return 1;
-    }
+    cHTTPX_Get(&router, "/health", health);
 
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
+
     return result == CHTTPX_OK ? 0 : 1;
 }
