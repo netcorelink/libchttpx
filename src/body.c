@@ -33,28 +33,93 @@
 #include <string.h>
 #include <limits.h>
 
-static int parse_content_length(chttpx_request_t* req, size_t* content_length)
+static int parse_content_length_value(const char* value, size_t* content_length)
 {
-    const char* value = cHTTPX_HeaderGet(req, "Content-Length");
-    if (!value)
-    {
-        *content_length = 0;
-        return 1;
-    }
-    if (!*value || *value == '-')
+    if (!value || !content_length || !*value || *value == '-')
         return 0;
+
     errno = 0;
     char* end = NULL;
     unsigned long long parsed = strtoull(value, &end, 10);
     if (errno == ERANGE || !end || *end || parsed > SIZE_MAX)
         return 0;
+
     *content_length = (size_t)parsed;
     return 1;
 }
 
+static int transfer_encoding_is_chunked(const char* value)
+{
+    if (!value)
+        return 0;
+
+    while (*value == ' ' || *value == '\t')
+        value++;
+
+    size_t length = strlen(value);
+    while (length > 0 && (value[length - 1] == ' ' || value[length - 1] == '\t'))
+        length--;
+
+    return length == 7 && strncasecmp(value, "chunked", 7) == 0;
+}
+
+static int parse_request_framing(chttpx_request_t* req, size_t* content_length, bool* chunked)
+{
+    if (!req || !content_length || !chunked)
+        return 0;
+
+    bool has_content_length = false;
+    bool has_transfer_encoding = false;
+    size_t parsed_length = 0;
+
+    for (size_t i = 0; i < req->headers_count; i++)
+    {
+        const chttpx_header_t* header = &req->headers[i];
+
+        if (strcasecmp(header->name, "Content-Length") == 0)
+        {
+            size_t current_length = 0;
+            if (!parse_content_length_value(header->value, &current_length))
+                return 0;
+            if (has_content_length && current_length != parsed_length)
+                return 0;
+            has_content_length = true;
+            parsed_length = current_length;
+        }
+        else if (strcasecmp(header->name, "Transfer-Encoding") == 0)
+        {
+            /* libchttpx currently implements only one terminal coding: chunked. */
+            if (has_transfer_encoding || !transfer_encoding_is_chunked(header->value))
+                return 0;
+            has_transfer_encoding = true;
+        }
+    }
+
+    /* Never accept ambiguous HTTP message framing. */
+    if (has_transfer_encoding && has_content_length)
+        return 0;
+
+    *content_length = has_content_length ? parsed_length : 0;
+    *chunked = has_transfer_encoding;
+    return 1;
+}
+
+static int content_type_matches(const char* value, const char* expected)
+{
+    if (!value || !expected)
+        return 0;
+
+    size_t expected_size = strlen(expected);
+    if (strncasecmp(value, expected, expected_size) != 0)
+        return 0;
+
+    char suffix = value[expected_size];
+    return suffix == '\0' || suffix == ';' || suffix == ' ' || suffix == '\t';
+}
+
 static int append_bytes(unsigned char** data, size_t* size, size_t* capacity, const unsigned char* bytes, size_t count, size_t limit)
 {
-    if (count > limit - *size)
+    if (*size > limit || count > limit - *size)
         return 0;
     if (*size + count + 1 > *capacity)
     {
@@ -352,16 +417,19 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
 {
     req->client_fd = client_fd;
 
-    size_t content_length;
-    if (!parse_content_length(req, &content_length))
+    size_t content_length = 0;
+    bool chunked = false;
+    if (!parse_request_framing(req, &content_length, &chunked))
     {
         req->_parse_status = cHTTPX_StatusBadRequest;
         return;
     }
     req->content_length = content_length;
 
-    bool multipart_body = strstr(req->content_type, cHTTPX_CTYPE_MULTI) != NULL;
-    int memory_body = strstr(req->content_type, cHTTPX_CTYPE_JSON) || strstr(req->content_type, "text/") || strstr(req->content_type, cHTTPX_CTYPE_FORM);
+    bool multipart_body = content_type_matches(req->content_type, cHTTPX_CTYPE_MULTI);
+    bool memory_body = content_type_matches(req->content_type, cHTTPX_CTYPE_JSON) ||
+                       content_type_matches(req->content_type, cHTTPX_CTYPE_FORM) ||
+                       strncasecmp(req->content_type, "text/", 5) == 0;
 
     const char* body_start = chttpx_memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start)
@@ -374,16 +442,15 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     body_start += 4;
     size_t body_in_buffer = buffer_len - (body_start - buffer);
 
-    const char* transfer_encoding = cHTTPX_HeaderGet(req, "Transfer-Encoding");
-    if (transfer_encoding && strcasecmp(transfer_encoding, "chunked") == 0)
+    if (chunked)
     {
-        if (cHTTPX_HeaderGet(req, "Content-Length"))
-        {
-            req->_parse_status = cHTTPX_StatusBadRequest;
-            return;
-        }
-        size_t limit = multipart_body ? serv->max_upload_size : (memory_body ? serv->max_body_size : serv->max_upload_size);
-        decode_chunked(req, client_fd, (const unsigned char*)body_start, body_in_buffer, limit, multipart_body);
+        size_t limit = memory_body ? serv->max_body_size : serv->max_upload_size;
+        /*
+         * JSON/text/form bodies are intentionally memory-backed. Multipart
+         * and raw uploads are disk-backed so max_upload_size does not become
+         * a per-request RAM allocation.
+         */
+        decode_chunked(req, client_fd, (const unsigned char*)body_start, body_in_buffer, limit, !memory_body);
         return;
     }
 
