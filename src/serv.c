@@ -564,6 +564,8 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
     server->routes_count = 0;
     server->routes_capacity = 0;
 
+    _chttpx_middleware_server_cleanup(server);
+
     for (size_t i = 0; i < server->cors.origins_count; i++)
         free((void*)server->cors.origins[i]);
     free((void*)server->cors.origins);
