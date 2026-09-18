@@ -171,6 +171,38 @@ static void test_streamed_multipart(void)
     assert(strcmp(file->original_name, "photo.jpg") == 0);
 
     cHTTPX_RequestCleanup(&req);
+
+    memset(&req, 0, sizeof(req));
+    char chunked_body[4096];
+    int chunked_body_size = snprintf(chunked_body, sizeof(chunked_body), "%zx\r\n%s\r\n0\r\n\r\n", strlen(body), body);
+    assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
+
+    request_size = snprintf(request, sizeof(request),
+                            "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                            "Transfer-Encoding: chunked\r\n\r\n%s",
+                            chunked_body);
+    assert(request_size > 0 && (size_t)request_size < sizeof(request));
+
+    strcpy(req.content_type, "multipart/form-data; boundary=StreamBoundary");
+    strcpy(req.headers[0].name, "Content-Type");
+    strcpy(req.headers[0].value, req.content_type);
+    strcpy(req.headers[1].name, "Transfer-Encoding");
+    strcpy(req.headers[1].value, "chunked");
+    req.headers_count = 2;
+
+    _parse_req_body(&req, 0, request, (size_t)request_size);
+    assert(req._parse_status == 0);
+    assert(req.body == NULL);
+    assert(req._multipart_stream != NULL);
+    assert(req.content_length == strlen(body));
+
+    _parse_media(&req, request, (size_t)request_size);
+    assert(req._parse_status == 0);
+    assert(strcmp(cHTTPX_FormValue(&req, "title"), "hello") == 0);
+    file = cHTTPX_FormFile(&req, "file");
+    assert(file && file->size == 8);
+
+    cHTTPX_RequestCleanup(&req);
     serv = NULL;
 }
 
