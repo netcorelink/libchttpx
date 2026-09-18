@@ -131,7 +131,7 @@ int cHTTPX_AppInit(chttpx_app_t* app)
     return CHTTPX_OK;
 }
 
-chttpx_serv_t* cHTTPX_AppServerWithConfig(chttpx_app_t* app, const char* name, const chttpx_config_t* config)
+chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttpx_config_t* config)
 {
     if (!app || !app->_initialized || app->_started || !name || !*name || !config)
         return NULL;
@@ -158,12 +158,6 @@ chttpx_serv_t* cHTTPX_AppServerWithConfig(chttpx_app_t* app, const char* name, c
     return server;
 }
 
-chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, uint16_t port)
-{
-    chttpx_config_t config = cHTTPX_DefaultConfig();
-    config.port = port;
-    return cHTTPX_AppServerWithConfig(app, name, &config);
-}
 
 int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url)
 {
@@ -730,12 +724,16 @@ static int remote_call(chttpx_request_t* source, const char* base_url, const cha
     return res->status ? CHTTPX_OK : CHTTPX_ERR_MEMORY;
 }
 
-int cHTTPX_CallWithBody(chttpx_request_t* source, const char* server_name, const char* method, const char* path, const void* body,
-                       size_t body_size, const char* content_type, chttpx_response_t* res)
+int cHTTPX_CallEx(chttpx_request_t* source, const char* server_name, const char* method, const char* path,
+                  const chttpx_call_options_t* options, chttpx_response_t* res)
 {
-    if (!source || !source->_server || !source->_server->app || !server_name || !*server_name || !method || !path || !res ||
-        (body_size && !body))
+    if (!source || !source->_server || !source->_server->app || !server_name || !*server_name || !method || !path || !options || !res ||
+        (options->body_size && !options->body))
         return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    const void* body = options->body;
+    size_t body_size = options->body_size;
+    const char* content_type = options->content_type;
 
     chttpx_app_t* app = source->_server->app;
 
@@ -755,6 +753,11 @@ int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* meth
     if (!req)
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
-    return cHTTPX_CallWithBody(req, server_name, method, path, req->body, req->body_size,
-                               req->content_type[0] ? req->content_type : cHTTPX_CTYPE_JSON, res);
+    chttpx_call_options_t options = {
+        .body = req->body,
+        .body_size = req->body_size,
+        .content_type = req->content_type[0] ? req->content_type : cHTTPX_CTYPE_JSON,
+    };
+
+    return cHTTPX_CallEx(req, server_name, method, path, &options, res);
 }
