@@ -196,7 +196,7 @@ static void parse_urlencoded(chttpx_request_t* req)
 
 static int header_attribute(const char* headers, size_t headers_size, const char* attribute, char* output, size_t output_size)
 {
-    const char* found = chttpx_memmem(headers, headers_size, attribute, strlen(attribute));
+    const char* found = memmem_case(headers, headers_size, attribute, strlen(attribute));
     if (!found)
         return 0;
     found += strlen(attribute);
@@ -237,7 +237,7 @@ static int multipart_boundary(const chttpx_request_t* req, char* boundary, size_
             value++;
 
         size_t size = quoted ? strcspn(value, "\"\r\n") : strcspn(value, "; \t\r\n");
-        if (size == 0 || size > 200 || size + 3 > boundary_size)
+        if (size == 0 || size > 200 || size + 3 > boundary_size || (quoted && value[size] != '"'))
             return 0;
 
         boundary[0] = '-';
