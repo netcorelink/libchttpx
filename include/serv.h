@@ -139,6 +139,12 @@ extern "C"
 
     typedef struct
     {
+        chttpx_serv_t* server;
+        chttpx_socket_t client_fd;
+    } chttpx_client_ctx_t;
+
+    typedef struct
+    {
         chttpx_serv_t* serv;
         char prefix[CHTTPX_MAX_PATH];
         chttpx_middleware_t middlewares[MAX_MIDDLEWARES];
