@@ -35,11 +35,8 @@ extern "C"
     /** Initialize an application runtime. */
     int cHTTPX_AppInit(chttpx_app_t* app);
 
-    /** Create an App-managed HTTP server using the default configuration. */
-    chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, uint16_t port);
-
-    /** Create an App-managed HTTP server using an explicit configuration. */
-    chttpx_serv_t* cHTTPX_AppServerWithConfig(chttpx_app_t* app, const char* name, const chttpx_config_t* config);
+    /** Create an App-managed HTTP server using the supplied configuration. */
+    chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttpx_config_t* config);
 
     /**
      * Register a server that lives in another process/container.
@@ -71,9 +68,22 @@ extern "C"
      */
     int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* method, const char* path, chttpx_response_t* res);
 
-    /** Same as cHTTPX_Call(), but replaces the inherited request body. */
-    int cHTTPX_CallWithBody(chttpx_request_t* req, const char* server_name, const char* method, const char* path, const void* body,
-                           size_t body_size, const char* content_type, chttpx_response_t* res);
+    typedef struct
+    {
+        const void* body;
+        size_t body_size;
+        const char* content_type;
+    } chttpx_call_options_t;
+
+    /**
+     * Extended call variant.
+     *
+     * Use options to override the body/content type inherited by cHTTPX_Call().
+     * More call-level customization can be added to this structure later
+     * without introducing separate call functions.
+     */
+    int cHTTPX_CallEx(chttpx_request_t* req, const char* server_name, const char* method, const char* path,
+                      const chttpx_call_options_t* options, chttpx_response_t* res);
 
 #ifdef __cplusplus
 }
