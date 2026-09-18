@@ -61,7 +61,8 @@ extern "C"
      * Call another server by name.
      *
      * Local AppServer targets are dispatched directly without opening another
-     * TCP connection. AppRemote targets are called over HTTP.
+     * TCP connection. AppRemote targets are called over HTTP with a fixed
+     * 30-second connect/send/receive timeout.
      *
      * The current body, content type, request id, language and request headers
      * are inherited from req.
