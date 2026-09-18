@@ -274,24 +274,25 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
 /* Register a route handler for a specific HTTP method and path. */
 static chttpx_route_t* route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
-    if (!serv)
+    chttpx_serv_t* server = router ? router->serv : NULL;
+    if (!server || server != serv)
     {
-        fprintf(stderr, "Error: server is not initialized\n");
+        fprintf(stderr, "Error: server is not initialized or router is stale\n");
         return NULL;
     }
 
-    if (serv->routes_count == serv->routes_capacity)
+    if (server->routes_count == server->routes_capacity)
     {
-        size_t new_capacity = (serv->routes_capacity == 0) ? 4 : serv->routes_capacity * 2;
-        if (new_capacity < serv->routes_capacity || new_capacity > SIZE_MAX / sizeof(*serv->routes))
+        size_t new_capacity = (server->routes_capacity == 0) ? 4 : server->routes_capacity * 2;
+        if (new_capacity < server->routes_capacity || new_capacity > SIZE_MAX / sizeof(*server->routes))
             return NULL;
 
-        chttpx_route_t** new_routes = realloc(serv->routes, sizeof(*serv->routes) * new_capacity);
+        chttpx_route_t** new_routes = realloc(server->routes, sizeof(*server->routes) * new_capacity);
         if (!new_routes)
             return NULL;
 
-        serv->routes = new_routes;
-        serv->routes_capacity = new_capacity;
+        server->routes = new_routes;
+        server->routes_capacity = new_capacity;
     }
 
     chttpx_route_t* registered = calloc(1, sizeof(*registered));
@@ -304,16 +305,16 @@ static chttpx_route_t* route(chttpx_router_t* router, const char* method, const 
     {
         free((char*)registered->method);
         free((char*)registered->path);
-        free_route_upload_policy(registered);
         free(registered);
         return NULL;
     }
+
     registered->handler = handler;
     registered->middleware_count = router->middleware_count;
     memcpy(registered->middlewares, router->middlewares, sizeof(chttpx_middleware_t) * router->middleware_count);
     registered->after_middleware_count = router->after_middleware_count;
     memcpy(registered->after_middlewares, router->after_middlewares, sizeof(chttpx_middleware_t) * router->after_middleware_count);
-    serv->routes[serv->routes_count++] = registered;
+    server->routes[server->routes_count++] = registered;
     return registered;
 }
 
@@ -591,6 +592,7 @@ void cHTTPX_Shutdown()
             continue;
         free((char*)registered->method);
         free((char*)registered->path);
+        free_route_upload_policy(registered);
         free(registered);
     }
 
