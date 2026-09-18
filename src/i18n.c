@@ -237,10 +237,8 @@ void cHTTPX_i18n(const char* directory)
  */
 const char* cHTTPX_i18n_t(const char* key, const char* lang)
 {
-    if (!i18n_manager)
-    {
+    if (!i18n_manager || !i18n_manager->default_locale)
         return key;
-    }
 
     i18n_locale_t* loc = i18n_manager->default_locale;
 
@@ -269,12 +267,9 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
 
 int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback)
 {
-    if (!serv || !fallback || (count && !languages))
+    if (!serv)
         return CHTTPX_ERR_INVALID_ARGUMENT;
-    serv->languages = languages;
-    serv->languages_count = count;
-    serv->default_language = fallback;
-    return CHTTPX_OK;
+    return _chttpx_server_set_languages(serv, languages, count, fallback);
 }
 
 const char* LANGUAGE_CODES[LANG_COUNT] = {
