@@ -47,6 +47,8 @@ The Windows build uses the bundled `lib/cjson` source and links Winsock.
 
 ## Quick start
 
+Servers are created only through `cHTTPX_App`. The application owns lifecycle, local microservers, local microservices, and the remote service registry.
+
 ```c
 #include <libchttpx/libchttpx.h>
 
@@ -58,31 +60,74 @@ static void health(chttpx_request_t* req, chttpx_response_t* res)
 
 int main(void)
 {
-    chttpx_serv_t server;
-    chttpx_config_t config = cHTTPX_DefaultConfig();
-    config.port = 8080;
-    config.max_clients = 256;
-
-    if (cHTTPX_InitWithConfig(&server, &config) != CHTTPX_OK)
+    chttpx_app_t app;
+    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
-    chttpx_router_t root = cHTTPX_RoutePathPrefix("");
+    chttpx_serv_t* server =
+        cHTTPX_AppMicroserver(&app, "main", 8080);
+    if (!server)
+    {
+        cHTTPX_AppShutdown(&app);
+        return 1;
+    }
+
+    chttpx_router_t root =
+        cHTTPX_RoutePathPrefix(server, "");
+
     cHTTPX_Get(&root, "/health", health);
 
-    cHTTPX_Listen();
-    cHTTPX_Shutdown();
-    return 0;
+    int result = cHTTPX_AppRun(&app);
+    cHTTPX_AppShutdown(&app);
+    return result == CHTTPX_OK ? 0 : 1;
 }
 ```
 
-The legacy initializer remains available:
+### Microserver and Microservice
+
+A **Microserver** is a full network server with its own listener, routes, middleware, CORS, logger, and limits.
+
+A **Microservice** is an isolated server-like module inside the same `App`. It has its own routes and middleware but does not create a separate TCP listener.
 
 ```c
-size_t max_clients = 256;
-cHTTPX_Init(&server, 8080, &max_clients);
+chttpx_serv_t* main_server =
+    cHTTPX_AppMicroserver(&app, "main", 8080);
+
+chttpx_serv_t* payments =
+    cHTTPX_AppMicroservice(&app, "payments");
 ```
 
-Prefer `cHTTPX_InitWithConfig()` in new code.
+A local microservice is called without TCP through the same route/handler pipeline:
+
+```c
+if (cHTTPX_Call(
+        req,
+        "payments",
+        cHTTPX_MethodPost,
+        "/payments/create",
+        res
+    ) != CHTTPX_OK)
+{
+    *res = cHTTPX_ResError(
+        cHTTPX_StatusInternalServerError,
+        "payment service unavailable"
+    );
+}
+```
+
+`cHTTPX_Call()` automatically forwards the current body, content type, request ID, language, and relevant request headers. Use `cHTTPX_CallWithBody()` only when a different body is required.
+
+A service in another process or Docker container is registered by URL:
+
+```c
+cHTTPX_AppRemote(
+    &app,
+    "payments",
+    "http://payment-server:8090"
+);
+```
+
+The call site remains the same: `cHTTPX_Call(req, "payments", ...)`. Local targets are direct-dispatched; remote targets use HTTP.
 
 ## Server configuration
 
@@ -106,7 +151,7 @@ Initialization returns `chttpx_error_t`; the library does not call `exit()` for 
 ## Routes and groups
 
 ```c
-chttpx_router_t api = cHTTPX_RoutePathPrefix("/api/v2");
+chttpx_router_t api = cHTTPX_RoutePathPrefix(server, "/api/v2");
 chttpx_router_t auth = cHTTPX_RouteGroup(&api, "/auth");
 
 cHTTPX_Post(&auth, "/login", login_handler);
@@ -146,14 +191,14 @@ chttpx_route_t* route = cHTTPX_Post(&private_api, "/admin/import", import_data);
 cHTTPX_RouteUse(route, require_admin);
 cHTTPX_RouteUseAfter(route, record_metrics);
 
-cHTTPX_MiddlewareUse(global_before);
-cHTTPX_MiddlewareUseAfter(global_after);
+cHTTPX_MiddlewareUse(server, global_before);
+cHTTPX_MiddlewareUseAfter(server, global_after);
 cHTTPX_RouterUseAfter(&private_api, trace_private_route);
 ```
 
 After middleware runs in reverse registration order after the handler or a short-circuiting route middleware and before the response is sent.
 
-`cHTTPX_MiddlewareRecovery()` is retained as a compatibility no-op. Catching `SIGSEGV` with `setjmp`/`longjmp` and continuing a potentially corrupted process was unsafe. Use process supervision and restart on fatal faults.
+`cHTTPX_MiddlewareRecovery(server)` is retained as a compatibility no-op. Catching `SIGSEGV` with `setjmp`/`longjmp` and continuing a potentially corrupted process was unsafe. Use process supervision and restart on fatal faults.
 
 ## Request data
 
@@ -348,7 +393,7 @@ config.default_language = "en";
 
 ```c
 const char* origins[] = {"https://example.com"};
-cHTTPX_Cors(origins, CHTTPX_ARRAY_LEN(origins),
+cHTTPX_Cors(server, origins, CHTTPX_ARRAY_LEN(origins),
             "GET, POST, PATCH, OPTIONS",
             "Content-Type, Authorization, X-Request-ID");
 ```
@@ -367,15 +412,15 @@ static void logger(chttpx_log_level_t level, const char* request_id,
 }
 
 cHTTPX_SetLogger(logger, NULL, CHTTPX_LOG_INFO);
-cHTTPX_MiddlewareLogging();
-cHTTPX_MiddlewareRateLimiter(100, 1);
+cHTTPX_MiddlewareLogging(server);
+cHTTPX_MiddlewareRateLimiter(server, 100, 1);
 ```
 
 The library no longer hardcodes a `./logs` directory. The built-in logger writes to stderr; an application callback can integrate any logging system. The rate limiter protects its shared table with a mutex.
 
 ## Graceful shutdown and thread safety
 
-Call `cHTTPX_Shutdown()` from a signal-control thread for SIGINT/SIGTERM handling. It stops accepting, closes the listener, waits for active request threads, frees routes and CORS state, and clears the server.
+Call `cHTTPX_AppShutdown(&app)` from a signal-control thread for SIGINT/SIGTERM handling. It stops accepting, closes the listener, waits for active request threads, frees routes and CORS state, and clears the server.
 
 `current_clients` updates are atomic and the accept loop no longer spins at 100% CPU when capacity is reached. Routes are expected to be configured before listening and are read-only while serving. A request and its request-scoped allocator must only be used by its handling thread. Application-owned shared state still requires application synchronization.
 
@@ -385,7 +430,7 @@ HTTP responses use the correct reason phrase. Socket and I/O helpers return erro
 
 ## Migration from the old API
 
-- `cHTTPX_Init(&server, port, &max_clients)` still works; prefer `cHTTPX_InitWithConfig()`.
+- `cHTTPX_Init(&server, port, &max_clients)` still works; prefer `cHTTPX_AppMicroserverWithConfig()`.
 - `cHTTPX_RegisterRoute()` still works; prefer method helpers.
 - `req->context` still works; prefer named contexts.
 - `req->filename` remains populated for the first upload; prefer `cHTTPX_RequestFile()`/`cHTTPX_FormFile()`.
