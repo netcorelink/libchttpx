@@ -18,6 +18,8 @@ extern "C"
 
 #define MAX_LOCALES 64
 
+    struct chttpx_serv;
+
     typedef struct
     {
         char* key;
@@ -102,7 +104,7 @@ extern "C"
      * @return CHTTPX_OK on
      * success, otherwise a negative error code.
      */
-    int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback);
+    int cHTTPX_i18n_languages(struct chttpx_serv* server, const char** languages, size_t count, const char* fallback);
 
 #ifdef __cplusplus
 }
