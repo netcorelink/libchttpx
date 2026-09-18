@@ -287,7 +287,7 @@ static void parse_multipart_buffered(chttpx_request_t* req)
         if (!next || next < data + 2 || next[-2] != '\r' || next[-1] != '\n')
             goto bad_request;
 
-        size_t data_size = (size_t)((next - 2) - data);
+        size_t next_offset = (size_t)(next - data);\n        if (next_offset < 2)\n            goto bad_request;\n        size_t data_size = next_offset - 2;
         char name[256], filename[512], content_type[512];
         int has_filename = 0;
         parse_part_headers((const char*)part, headers_size, name, sizeof(name), filename, sizeof(filename), &has_filename, content_type,
