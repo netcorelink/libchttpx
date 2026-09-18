@@ -210,22 +210,44 @@ static int header_attribute(const char* headers, size_t headers_size, const char
 
 static int multipart_boundary(const chttpx_request_t* req, char* boundary, size_t boundary_size)
 {
-    const char* value = strstr(req->content_type, "boundary=");
-    if (!value)
+    if (!req)
         return 0;
-    value += 9;
-    if (*value == '"')
+
+    const char* cursor = req->content_type;
+    while ((cursor = strchr(cursor, ';')) != NULL)
+    {
+        cursor++;
+        while (*cursor == ' ' || *cursor == '\t')
+            cursor++;
+
+        if (strncasecmp(cursor, "boundary", 8) != 0)
+            continue;
+
+        const char* value = cursor + 8;
+        while (*value == ' ' || *value == '\t')
+            value++;
+        if (*value != '=')
+            continue;
         value++;
+        while (*value == ' ' || *value == '\t')
+            value++;
 
-    size_t size = strcspn(value, "\";\r\n");
-    if (size == 0 || size > 200 || size + 3 > boundary_size)
-        return 0;
+        bool quoted = *value == '"';
+        if (quoted)
+            value++;
 
-    boundary[0] = '-';
-    boundary[1] = '-';
-    memcpy(boundary + 2, value, size);
-    boundary[size + 2] = '\0';
-    return 1;
+        size_t size = quoted ? strcspn(value, "\"\r\n") : strcspn(value, "; \t\r\n");
+        if (size == 0 || size > 200 || size + 3 > boundary_size)
+            return 0;
+
+        boundary[0] = '-';
+        boundary[1] = '-';
+        memcpy(boundary + 2, value, size);
+        boundary[size + 2] = '\0';
+        return 1;
+    }
+
+    return 0;
 }
 
 static void parse_part_headers(const char* headers, size_t headers_size, char* name, size_t name_size, char* filename, size_t filename_size,
@@ -745,7 +767,22 @@ int cHTTPX_FileDetach(chttpx_request_t* req, const chttpx_file_t* file)
 {
     if (!req || !file || !file->path || !cHTTPX_Detach(req, (void*)file->path))
         return 0;
-    cHTTPX_Defer(req, (void*)file->path, free);
+
+    /*
+     * Keep ownership of the path string request-scoped after transferring
+     * ownership of the file itself to the caller.
+     */
+    if (cHTTPX_Defer(req, (void*)file->path, free) != 0)
+    {
+        if (cHTTPX_Defer(req, (void*)file->path, remove_temporary_file) != 0)
+        {
+            remove(file->path);
+            free((void*)file->path);
+            ((chttpx_file_t*)file)->path = NULL;
+        }
+        return 0;
+    }
+
     ((chttpx_file_t*)file)->temporary = false;
     return 1;
 }
