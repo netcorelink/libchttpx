@@ -157,6 +157,14 @@ cHTTPX_Call(
 
 Если `payments` — local `AppServer`, вызов идёт напрямую без TCP. Если `payments` зарегистрирован через `AppRemote`, библиотека делает HTTP-запрос на указанный адрес.
 
+Для remote-вызовов используется фиксированный timeout 30 секунд на connect/send/receive. Через `CallEx` его изменить нельзя.
+
+Результаты `Call`:
+- `CHTTPX_OK` — remote server вернул корректный HTTP-ответ, включая 4xx/5xx; статус находится в `res->status`.
+- `CHTTPX_ERR_UNAVAILABLE` — до remote server не удалось подключиться или соединение оборвалось до корректного ответа.
+- `CHTTPX_ERR_TIMEOUT` — connect/send/receive не завершился за 30 секунд.
+- `CHTTPX_ERR_PROTOCOL` — remote сторона вернула некорректный HTTP-ответ.
+
 ## Конфигурация сервера
 
 ```c
