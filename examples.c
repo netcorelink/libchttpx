@@ -14,7 +14,7 @@ int main(void)
     if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
-    chttpx_serv_t* server = cHTTPX_AppMicroserver(&app, "main", 8080);
+    chttpx_serv_t* server = cHTTPX_AppServer(&app, "main", 8080);
     if (!server)
     {
         cHTTPX_AppShutdown(&app);
