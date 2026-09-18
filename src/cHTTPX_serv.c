@@ -126,6 +126,7 @@ static void free_route_upload_policy(chttpx_route_t* registered)
 chttpx_config_t cHTTPX_DefaultConfig(void)
 {
     return (chttpx_config_t){.port = 8080,
+                             .network_mode = CHTTPX_NETWORK_DUAL,
                              .max_clients = MAX_CLIENTS_DEFAULT,
                              .read_timeout_sec = 30,
                              .write_timeout_sec = 30,
@@ -141,6 +142,7 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
 int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config)
 {
     if (!server || !app || !name || !*name || !config || config->max_clients == 0 ||
+        config->network_mode < CHTTPX_NETWORK_IPV4 || config->network_mode > CHTTPX_NETWORK_DUAL ||
         (config->languages_count > 0 && !config->languages))
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
@@ -153,6 +155,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         return CHTTPX_ERR_MEMORY;
 
     server->port = config->port;
+    server->network_mode = config->network_mode;
     server->max_clients = config->max_clients;
     server->read_timeout_sec = config->read_timeout_sec;
     server->write_timeout_sec = config->write_timeout_sec;
@@ -176,9 +179,27 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
 
     _recovery_init();
 
-    server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int family = config->network_mode == CHTTPX_NETWORK_IPV4 ? AF_INET : AF_INET6;
+    server->server_fd = socket(family, SOCK_STREAM, 0);
     if (!socket_valid(server->server_fd))
         goto socket_error;
+
+    if (family == AF_INET6)
+    {
+        int ipv6_only = config->network_mode == CHTTPX_NETWORK_IPV6 ? 1 : 0;
+        if (setsockopt(server->server_fd, IPPROTO_IPV6, IPV6_V6ONLY,
+#ifdef CHTTPX_PLATFORM_WINDOWS
+                       (const char*)&ipv6_only,
+#else
+                       &ipv6_only,
+#endif
+                       sizeof(ipv6_only)) < 0)
+        {
+            chttpx_close(server->server_fd);
+            invalidate_socket(server);
+            goto socket_error;
+        }
+    }
 
     int opt = 1;
     setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR,
@@ -189,12 +210,26 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
 #endif
                sizeof(opt));
 
-    struct sockaddr_in addr = {0};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(config->port);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    struct sockaddr_storage addr = {0};
+    socklen_t address_size = 0;
 
-    if (bind(server->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+    if (family == AF_INET)
+    {
+        struct sockaddr_in* addr4 = (struct sockaddr_in*)&addr;
+        addr4->sin_family = AF_INET;
+        addr4->sin_port = htons(config->port);
+        addr4->sin_addr.s_addr = htonl(INADDR_ANY);
+        address_size = sizeof(*addr4);
+    }
+    else
+    {
+        struct sockaddr_in6* addr6 = (struct sockaddr_in6*)&addr;
+        addr6->sin6_family = AF_INET6;
+        addr6->sin6_port = htons(config->port);
+        address_size = sizeof(*addr6);
+    }
+
+    if (bind(server->server_fd, (struct sockaddr*)&addr, address_size) < 0)
     {
         chttpx_close(server->server_fd);
         invalidate_socket(server);
@@ -206,8 +241,9 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
 
     if (config->port == 0)
     {
-        socklen_t address_size = sizeof(addr);
-        if (getsockname(server->server_fd, (struct sockaddr*)&addr, &address_size) != 0)
+        struct sockaddr_storage bound = {0};
+        socklen_t bound_size = sizeof(bound);
+        if (getsockname(server->server_fd, (struct sockaddr*)&bound, &bound_size) != 0)
         {
             chttpx_close(server->server_fd);
             invalidate_socket(server);
@@ -216,7 +252,20 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
             server->name = NULL;
             return CHTTPX_ERR_SOCKET;
         }
-        server->port = ntohs(addr.sin_port);
+
+        if (bound.ss_family == AF_INET)
+            server->port = ntohs(((struct sockaddr_in*)&bound)->sin_port);
+        else if (bound.ss_family == AF_INET6)
+            server->port = ntohs(((struct sockaddr_in6*)&bound)->sin6_port);
+        else
+        {
+            chttpx_close(server->server_fd);
+            invalidate_socket(server);
+            free_server_languages(server);
+            free(server->name);
+            server->name = NULL;
+            return CHTTPX_ERR_SOCKET;
+        }
     }
 
     if (listen(server->server_fd, 128) < 0)
