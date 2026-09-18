@@ -102,24 +102,23 @@ DLL, import library и headers копируются в `tools/`.
 
 Подробная документация разделена по функционалу:
 
-- [Индекс документации](docs/README.md)
-- [App runtime, несколько серверов, AppRemote, Call и CallEx](docs/app/README.md)
-- [Конфигурация сервера, лимиты, lifecycle и error codes](docs/server/README.md)
-- [Routing и route groups](docs/routing/README.md)
-- [Middleware](docs/middleware/README.md)
-- [Requests, headers, params, queries и body](docs/request/README.md)
-- [Responses и ownership](docs/responses/README.md)
-- [JSON binding, validation и JSON builder](docs/json/README.md)
-- [Request-scoped память и contexts](docs/memory/README.md)
-- [Uploads, multipart forms и MIME helpers](docs/uploads/README.md)
-- [CORS](docs/cors/README.md)
-- [Cookies](docs/cookies/README.md)
+- [Индекс документации](docs/README_RU.md)
+- [App runtime, несколько серверов, AppRemote, Call и CallEx](docs/app/README_RU.md)
+- [Конфигурация сервера, лимиты, lifecycle и error codes](docs/server/README_RU.md)
+- [Routing и route groups](docs/routing/README_RU.md)
+- [Middleware](docs/middleware/README_RU.md)
+- [Requests, headers, params, queries и body](docs/request/README_RU.md)
+- [Responses и ownership](docs/responses/README_RU.md)
+- [JSON binding, validation и JSON builder](docs/json/README_RU.md)
+- [Request-scoped память и contexts](docs/memory/README_RU.md)
+- [Uploads, multipart forms и MIME helpers](docs/uploads/README_RU.md)
+- [CORS](docs/cors/README_RU.md)
+- [Cookies](docs/cookies/README_RU.md)
 - [Request ID и i18n](docs/i18n/README.md)
-- [Logging](docs/logging/README.md)
-- [Rate limiting](docs/rate-limiting/README.md)
-- [WebSocket API — experimental](docs/websocket/README.md)
+- [Logging](docs/logging/README_RU.md)
+- [Rate limiting](docs/rate-limiting/README_RU.md)
+- [WebSocket API — experimental](docs/websocket/README_RU.md)
 
-Модульная документация внутри `docs/` сейчас написана на английском.
 
 ## Лицензия
 
