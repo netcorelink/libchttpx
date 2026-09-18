@@ -66,8 +66,10 @@ static void exchange(const char* request, char* response, size_t response_size)
     address.sin_family = AF_INET;
     address.sin_port = htons(test_port);
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
     assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
     assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == CHTTPX_OK);
+
 #ifdef CHTTPX_PLATFORM_WINDOWS
     shutdown(socket_fd, SD_SEND);
 #else
@@ -82,6 +84,7 @@ static void exchange(const char* request, char* response, size_t response_size)
             break;
         total += (size_t)received;
     }
+
     response[total] = '\0';
     chttpx_close(socket_fd);
 }
@@ -96,6 +99,7 @@ static void wait_until_listening(chttpx_serv_t* server)
         usleep(1000);
 #endif
     }
+
     assert(__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE));
 }
 
@@ -106,11 +110,14 @@ int main(void)
 
     chttpx_config_t remote_config = cHTTPX_DefaultConfig();
     remote_config.port = 0;
-    chttpx_serv_t* remote_server = cHTTPX_AppMicroserverWithConfig(&remote_app, "payments-remote-host", &remote_config);
+
+    chttpx_serv_t* remote_server =
+        cHTTPX_AppMicroserverWithConfig(&remote_app, "payments-remote-host", &remote_config);
     assert(remote_server);
 
     chttpx_router_t remote_router = cHTTPX_RoutePathPrefix(remote_server, "/payments");
     assert(cHTTPX_Post(&remote_router, "/create", payment_handler));
+
     assert(cHTTPX_AppStart(&remote_app) == CHTTPX_OK);
     wait_until_listening(remote_server);
 
@@ -136,18 +143,19 @@ int main(void)
     chttpx_serv_t* payments = cHTTPX_AppMicroservice(&app, "payments");
     assert(payments);
 
+    /* App components must own copied language configuration. */
     strcpy(language_ru, "xx");
     strcpy(fallback, "xx");
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
-    cHTTPX_Post(&router, "/body", request_handler);
-    cHTTPX_Options(&router, "/body", options_handler);
-    cHTTPX_Get(&router, "/empty", empty_handler);
-    cHTTPX_Post(&router, "/buy", local_buy_handler);
-    cHTTPX_Post(&router, "/buy-remote", remote_buy_handler);
+    assert(cHTTPX_Post(&router, "/body", request_handler));
+    assert(cHTTPX_Options(&router, "/body", options_handler));
+    assert(cHTTPX_Get(&router, "/empty", empty_handler));
+    assert(cHTTPX_Post(&router, "/buy", local_buy_handler));
+    assert(cHTTPX_Post(&router, "/buy-remote", remote_buy_handler));
 
     chttpx_router_t payment_router = cHTTPX_RoutePathPrefix(payments, "/payments");
-    cHTTPX_Post(&payment_router, "/create", payment_handler);
+    assert(cHTTPX_Post(&payment_router, "/create", payment_handler));
 
     char remote_url[128];
     snprintf(remote_url, sizeof(remote_url), "http://127.0.0.1:%u", remote_server->port);
@@ -161,45 +169,38 @@ int main(void)
 
     char response[4096];
 
-    exchange("OPTIONS /body HTTP/1.1\r
-Host: localhost\r
-Origin: https://example.com\r
-"
-             "Access-Control-Request-Method: POST\r
-\r
-",
+    exchange("OPTIONS /body HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Origin: https://example.com\r\n"
+             "Access-Control-Request-Method: POST\r\n"
+             "\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
     assert(strstr(response, "Access-Control-Allow-Origin: https://example.com") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 0);
 
-    exchange("OPTIONS /body HTTP/1.1\r
-Host: localhost\r
-\r
-", response, sizeof(response));
+    exchange("OPTIONS /body HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "\r\n",
+             response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 1);
 
-    exchange("GET /empty HTTP/1.1\r
-Host: localhost\r
-\r
-", response, sizeof(response));
+    exchange("GET /empty HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "\r\n",
+             response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 500 Internal Server Error") != NULL);
     assert(strstr(response, "Connection: close") != NULL);
 
-    exchange("POST /body HTTP/1.1\r
-Host: localhost\r
-Content-Type: text/plain\r
-Transfer-Encoding: chunked\r
-"
-             "Accept-Language: en;q=0.2, ru-RU;q=0.9\r
-X-Request-ID: integration-123\r
-\r
-5\r
-hello\r
-0\r
-\r
-",
+    exchange("POST /body HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: text/plain\r\n"
+             "Transfer-Encoding: chunked\r\n"
+             "Accept-Language: en;q=0.2, ru-RU;q=0.9\r\n"
+             "X-Request-ID: integration-123\r\n"
+             "\r\n"
+             "5\r\nhello\r\n0\r\n\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "X-Request-ID: integration-123") != NULL);
@@ -208,56 +209,52 @@ hello\r
     assert(strcmp(observed_language, "ru") == 0);
     assert(strcmp(observed_request_id, "integration-123") == 0);
 
-    exchange("POST /buy HTTP/1.1\r
-Host: localhost\r
-Content-Type: application/json\r
-Content-Length: 18\r
-"
-             "X-Request-ID: local-call\r
-\r
-{\"plan\":\"premium\"}",
+    exchange("POST /buy HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: 18\r\n"
+             "X-Request-ID: local-call\r\n"
+             "\r\n"
+             "{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\"service\":\"payments\"") != NULL);
     assert(strcmp(payment_observed_body, "{\"plan\":\"premium\"}") == 0);
 
-    exchange("POST /buy-remote HTTP/1.1\r
-Host: localhost\r
-Content-Type: application/json\r
-Content-Length: 18\r
-"
-             "X-Request-ID: remote-call\r
-\r
-{\"plan\":\"premium\"}",
+    exchange("POST /buy-remote HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: 18\r\n"
+             "X-Request-ID: remote-call\r\n"
+             "\r\n"
+             "{\"plan\":\"premium\"}",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\"service\":\"payments\"") != NULL);
 
-    exchange("POST /body HTTP/1.1\r
-Host: localhost\r
-Content-Type: application/json\r
-Content-Length: 100\r
-\r
-", response,
-             sizeof(response));
+    exchange("POST /body HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: 100\r\n"
+             "\r\n",
+             response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 413 Payload Too Large") != NULL);
 
-    exchange("POST /body HTTP/1.1\r
-Host: localhost\r
-Content-Type: text/plain\r
-"
-             "Content-Length: 5\r
-Content-Length: 6\r
-\r
-hello",
+    exchange("POST /body HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: text/plain\r\n"
+             "Content-Length: 5\r\n"
+             "Content-Length: 6\r\n"
+             "\r\n"
+             "hello",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 400 Bad Request") != NULL);
 
-    exchange("POST /body HTTP/1.1\r
-Host: localhost\r
-Transfer-Encoding: gzip\r
-\r
-", response, sizeof(response));
+    exchange("POST /body HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Transfer-Encoding: gzip\r\n"
+             "\r\n",
+             response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 400 Bad Request") != NULL);
 
     cHTTPX_AppShutdown(&app);
