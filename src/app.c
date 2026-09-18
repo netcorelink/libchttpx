@@ -11,8 +11,14 @@
 #include "queries.h"
 #include "utils.h"
 
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef CHTTPX_PLATFORM_POSIX
+#include <netdb.h>
+#endif
 
 typedef struct
 {
@@ -21,9 +27,20 @@ typedef struct
     bool thread_started;
 } chttpx_app_server_t;
 
+typedef struct
+{
+    char* name;
+    char* base_url;
+} chttpx_app_remote_t;
+
 static chttpx_app_server_t* app_servers(chttpx_app_t* app)
 {
     return (chttpx_app_server_t*)app->_servers;
+}
+
+static chttpx_app_remote_t* app_remotes(chttpx_app_t* app)
+{
+    return (chttpx_app_remote_t*)app->_remotes;
 }
 
 static chttpx_serv_t* find_server(chttpx_app_t* app, const char* name)
@@ -36,6 +53,21 @@ static chttpx_serv_t* find_server(chttpx_app_t* app, const char* name)
     {
         if (items[i].server && items[i].server->name && strcmp(items[i].server->name, name) == 0)
             return items[i].server;
+    }
+
+    return NULL;
+}
+
+static chttpx_app_remote_t* find_remote(chttpx_app_t* app, const char* name)
+{
+    if (!app || !name)
+        return NULL;
+
+    chttpx_app_remote_t* items = app_remotes(app);
+    for (size_t i = 0; i < app->_remotes_count; i++)
+    {
+        if (items[i].name && strcmp(items[i].name, name) == 0)
+            return &items[i];
     }
 
     return NULL;
@@ -58,6 +90,26 @@ static int ensure_server_capacity(chttpx_app_t* app)
     memset(app_servers(app) + app->_servers_capacity, 0,
            (new_capacity - app->_servers_capacity) * sizeof(chttpx_app_server_t));
     app->_servers_capacity = new_capacity;
+    return CHTTPX_OK;
+}
+
+static int ensure_remote_capacity(chttpx_app_t* app)
+{
+    if (app->_remotes_count < app->_remotes_capacity)
+        return CHTTPX_OK;
+
+    size_t new_capacity = app->_remotes_capacity ? app->_remotes_capacity * 2 : 4;
+    if (new_capacity < app->_remotes_capacity || new_capacity > SIZE_MAX / sizeof(chttpx_app_remote_t))
+        return CHTTPX_ERR_LIMIT;
+
+    void* resized = realloc(app->_remotes, new_capacity * sizeof(chttpx_app_remote_t));
+    if (!resized)
+        return CHTTPX_ERR_MEMORY;
+
+    app->_remotes = resized;
+    memset(app_remotes(app) + app->_remotes_capacity, 0,
+           (new_capacity - app->_remotes_capacity) * sizeof(chttpx_app_remote_t));
+    app->_remotes_capacity = new_capacity;
     return CHTTPX_OK;
 }
 
@@ -84,7 +136,7 @@ chttpx_serv_t* cHTTPX_AppServerWithConfig(chttpx_app_t* app, const char* name, c
     if (!app || !app->_initialized || app->_started || !name || !*name || !config)
         return NULL;
 
-    if (find_server(app, name))
+    if (find_server(app, name) || find_remote(app, name))
         return NULL;
 
     if (ensure_server_capacity(app) != CHTTPX_OK)
@@ -111,6 +163,35 @@ chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, uint16_t po
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = port;
     return cHTTPX_AppServerWithConfig(app, name, &config);
+}
+
+int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url)
+{
+    if (!app || !app->_initialized || app->_started || !name || !*name || !base_url ||
+        strncmp(base_url, "http://", 7) != 0)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    if (find_server(app, name) || find_remote(app, name))
+        return CHTTPX_ERR_STATE;
+
+    int result = ensure_remote_capacity(app);
+    if (result != CHTTPX_OK)
+        return result;
+
+    chttpx_app_remote_t* item = &app_remotes(app)[app->_remotes_count];
+    item->name = strdup(name);
+    item->base_url = strdup(base_url);
+
+    if (!item->name || !item->base_url)
+    {
+        free(item->name);
+        free(item->base_url);
+        memset(item, 0, sizeof(*item));
+        return CHTTPX_ERR_MEMORY;
+    }
+
+    app->_remotes_count++;
+    return CHTTPX_OK;
 }
 
 static void* app_listener(void* arg)
@@ -210,6 +291,14 @@ void cHTTPX_AppShutdown(chttpx_app_t* app)
     }
 
     free(app->_servers);
+
+    chttpx_app_remote_t* remote_items = app_remotes(app);
+    for (size_t i = 0; i < app->_remotes_count; i++)
+    {
+        free(remote_items[i].name);
+        free(remote_items[i].base_url);
+    }
+    free(app->_remotes);
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     if (app->_network_initialized)
