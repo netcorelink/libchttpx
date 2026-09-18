@@ -13,8 +13,8 @@ extern "C"
 {
 #endif
 
-#include "http.h"
-#include "request.h"
+#include "cHTTPX_http.h"
+#include "cHTTPX_request.h"
 
 #define FILE_BUFFER 65536
 

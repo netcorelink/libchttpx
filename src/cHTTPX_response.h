@@ -13,7 +13,7 @@ extern "C"
 {
 #endif
 
-#include "request.h"
+#include "cHTTPX_request.h"
 
 #include <time.h>
 

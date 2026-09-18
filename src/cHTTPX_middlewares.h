@@ -13,8 +13,8 @@ extern "C"
 {
 #endif
 
-#include "request.h"
-#include "response.h"
+#include "cHTTPX_request.h"
+#include "cHTTPX_response.h"
 
 #include <stdio.h>
 #include <pthread.h>

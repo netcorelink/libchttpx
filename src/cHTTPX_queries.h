@@ -13,7 +13,7 @@ extern "C"
 {
 #endif
 
-#include "request.h"
+#include "cHTTPX_request.h"
 
     /**
      * Get a query parameter value by name.

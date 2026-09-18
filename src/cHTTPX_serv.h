@@ -13,9 +13,9 @@ extern "C"
 {
 #endif
 
-#include "cors.h"
-#include "response.h"
-#include "middlewares.h"
+#include "cHTTPX_cors.h"
+#include "cHTTPX_response.h"
+#include "cHTTPX_middlewares.h"
 
 #include <stdio.h>
 #include <stdint.h>

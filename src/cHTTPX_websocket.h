@@ -5,7 +5,7 @@
  * under the terms of the MIT license. See `libchttpx.c` for details.
  */
 
-#include "serv.h"
+#include "cHTTPX_serv.h"
 
 #include <stdlib.h>
 
