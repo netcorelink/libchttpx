@@ -47,7 +47,7 @@ The Windows build uses the bundled `lib/cjson` source and links Winsock.
 
 ## Quick start
 
-Servers are created only through `cHTTPX_App`. The application owns lifecycle, local microservers, local microservices, and the remote service registry.
+All HTTP servers are created through one `cHTTPX_App`. Every `cHTTPX_AppServer()` is a normal independent `chttpx_serv_t` with its own routes, middleware, CORS, logger, and port.
 
 ```c
 #include <libchttpx/libchttpx.h>
@@ -64,70 +64,50 @@ int main(void)
     if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
-    chttpx_serv_t* server =
-        cHTTPX_AppMicroserver(&app, "main", 8080);
-    if (!server)
+    chttpx_serv_t* public_api =
+        cHTTPX_AppServer(&app, "public", 8080);
+
+    chttpx_serv_t* internal_api =
+        cHTTPX_AppServer(&app, "internal", 9090);
+
+    if (!public_api || !internal_api)
     {
         cHTTPX_AppShutdown(&app);
         return 1;
     }
 
-    chttpx_router_t root =
-        cHTTPX_RoutePathPrefix(server, "");
+    chttpx_router_t public_router =
+        cHTTPX_RoutePathPrefix(public_api, "");
 
-    cHTTPX_Get(&root, "/health", health);
+    cHTTPX_Get(&public_router, "/health", health);
 
-    int result = cHTTPX_AppRun(&app);
+    if (cHTTPX_AppStart(&app) != CHTTPX_OK)
+    {
+        cHTTPX_AppShutdown(&app);
+        return 1;
+    }
+
+    cHTTPX_AppWait(&app);
     cHTTPX_AppShutdown(&app);
-    return result == CHTTPX_OK ? 0 : 1;
+    return 0;
 }
 ```
 
-### Microserver and Microservice
+`cHTTPX_AppStart(&app)` starts every registered server in its own listener thread.
 
-A **Microserver** is a full network server with its own listener, routes, middleware, CORS, logger, and limits.
-
-A **Microservice** is an isolated server-like module inside the same `App`. It has its own routes and middleware but does not create a separate TCP listener.
+When one server needs to call a route on another server in the same `App`, use `cHTTPX_Call()`. No extra TCP connection is opened; the request is dispatched directly through the target server's route pipeline.
 
 ```c
-chttpx_serv_t* main_server =
-    cHTTPX_AppMicroserver(&app, "main", 8080);
-
-chttpx_serv_t* payments =
-    cHTTPX_AppMicroservice(&app, "payments");
-```
-
-A local microservice is called without TCP through the same route/handler pipeline:
-
-```c
-if (cHTTPX_Call(
-        req,
-        "payments",
-        cHTTPX_MethodPost,
-        "/payments/create",
-        res
-    ) != CHTTPX_OK)
-{
-    *res = cHTTPX_ResError(
-        cHTTPX_StatusInternalServerError,
-        "payment service unavailable"
-    );
-}
-```
-
-`cHTTPX_Call()` automatically forwards the current body, content type, request ID, language, and relevant request headers. Use `cHTTPX_CallWithBody()` only when a different body is required.
-
-A service in another process or Docker container is registered by URL:
-
-```c
-cHTTPX_AppRemote(
-    &app,
-    "payments",
-    "http://payment-server:8090"
+cHTTPX_Call(
+    req,
+    "internal",
+    cHTTPX_MethodPost,
+    "/process",
+    res
 );
 ```
 
-The call site remains the same: `cHTTPX_Call(req, "payments", ...)`. Local targets are direct-dispatched; remote targets use HTTP.
+The current body, content type, request ID, language, and request headers are inherited automatically. Use `cHTTPX_CallWithBody()` when a different body is needed.
 
 ## Server configuration
 
@@ -146,7 +126,7 @@ config.request_id_enabled = true;
 
 `Content-Length` is validated before a request body is downloaded. Oversized regular bodies and uploads receive `413 Payload Too Large`; oversized headers receive `431 Request Header Fields Too Large`.
 
-`cHTTPX_AppInit()` returns `chttpx_error_t`. `cHTTPX_AppMicroserverWithConfig()` returns the created server pointer or `NULL`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
+`cHTTPX_AppInit()` returns `chttpx_error_t`. `cHTTPX_AppServerWithConfig()` returns the created server pointer or `NULL`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
 
 ## Routes and groups
 
