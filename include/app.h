@@ -23,6 +23,10 @@ extern "C"
         size_t _servers_count;
         size_t _servers_capacity;
 
+        void* _remotes;
+        size_t _remotes_count;
+        size_t _remotes_capacity;
+
         bool _initialized;
         bool _started;
         bool _network_initialized;
@@ -37,7 +41,14 @@ extern "C"
     /** Create an App-managed HTTP server using an explicit configuration. */
     chttpx_serv_t* cHTTPX_AppServerWithConfig(chttpx_app_t* app, const char* name, const chttpx_config_t* config);
 
-    /** Start every server in the App in its own listener thread. */
+    /**
+     * Register a server that lives in another process/container.
+     *
+     * Example: http://payment-server:8090
+     */
+    int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url);
+
+    /** Start every local server in the App in its own listener thread. */
     int cHTTPX_AppStart(chttpx_app_t* app);
 
     /** Wait until all started server listener threads exit. */
@@ -50,11 +61,13 @@ extern "C"
     void cHTTPX_AppShutdown(chttpx_app_t* app);
 
     /**
-     * Call another server registered in the same App by name.
+     * Call another server by name.
+     *
+     * Local AppServer targets are dispatched directly without opening another
+     * TCP connection. AppRemote targets are called over HTTP.
      *
      * The current body, content type, request id, language and request headers
-     * are inherited from req. The target route is dispatched directly without
-     * opening another TCP connection.
+     * are inherited from req.
      */
     int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* method, const char* path, chttpx_response_t* res);
 
