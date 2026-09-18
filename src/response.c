@@ -420,6 +420,7 @@ static int append_response_header(char* buffer, size_t capacity, size_t* length,
  */
 static void send_response(chttpx_request_t* req, chttpx_response_t res)
 {
+    chttpx_serv_t* server = req ? req->_server : NULL;
     size_t capacity = 1024;
     for (size_t i = 0; i < res.headers_count; i++)
         capacity += strlen(res.headers[i].name) + strlen(res.headers[i].value) + 4;
@@ -547,7 +548,8 @@ static int language_allowed(chttpx_serv_t* server, const char* language)
 
 static void set_request_language(chttpx_request_t* req)
 {
-    chttpx_serv_t* server = req ? req->_server : NULL;\n    snprintf(req->language, sizeof(req->language), "%s", server && server->default_language ? server->default_language : "en");
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    snprintf(req->language, sizeof(req->language), "%s", server && server->default_language ? server->default_language : "en");
     const char* header = cHTTPX_HeaderGet(req, "Accept-Language");
     if (!header)
         return;
@@ -593,7 +595,7 @@ static void set_request_language(chttpx_request_t* req)
     }
 }
 
-static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffer, size_t received)
+static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t client_fd, char* buffer, size_t received)
 {
     chttpx_request_t* req = calloc(1, sizeof(chttpx_request_t));
     if (!req)
@@ -625,6 +627,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
         return NULL;
     }
     req->client_fd = client_fd;
+    req->_server = server;
 
     /* Client IP */
     const char* client_ip = cHTTPX_ClientInetIP(client_fd);
