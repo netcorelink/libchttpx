@@ -344,16 +344,11 @@ static int stabilize_response(chttpx_response_t* res)
     return CHTTPX_OK;
 }
 
-int cHTTPX_CallWithBody(chttpx_request_t* source, const char* server_name, const char* method, const char* path, const void* body,
-                       size_t body_size, const char* content_type, chttpx_response_t* res)
+static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const char* method, const char* path, const void* body,
+                      size_t body_size, const char* content_type, chttpx_response_t* res)
 {
-    if (!source || !source->_server || !source->_server->app || !server_name || !*server_name || !method || !path || !res ||
-        (body_size && !body))
+    if (!source || !target || !target->initialized || !method || !path || !res || (body_size && !body))
         return CHTTPX_ERR_INVALID_ARGUMENT;
-
-    chttpx_serv_t* target = find_server(source->_server->app, server_name);
-    if (!target || !target->initialized)
-        return CHTTPX_ERR_NOT_FOUND;
 
     if (__atomic_load_n(&target->current_clients, __ATOMIC_SEQ_CST) >= target->max_clients)
         return CHTTPX_ERR_LIMIT;
@@ -434,6 +429,325 @@ int cHTTPX_CallWithBody(chttpx_request_t* source, const char* server_name, const
 
     free_internal_request(&internal);
     return result;
+}
+
+typedef struct
+{
+    char host[256];
+    char port[16];
+    char base_path[CHTTPX_MAX_PATH];
+} chttpx_remote_url_t;
+
+static int parse_remote_url(const char* url, chttpx_remote_url_t* parsed)
+{
+    if (!url || !parsed || strncmp(url, "http://", 7) != 0)
+        return 0;
+
+    memset(parsed, 0, sizeof(*parsed));
+
+    const char* authority = url + 7;
+    const char* slash = strchr(authority, '/');
+    const char* authority_end = slash ? slash : authority + strlen(authority);
+    const char* colon = NULL;
+
+    for (const char* cursor = authority; cursor < authority_end; cursor++)
+        if (*cursor == ':')
+            colon = cursor;
+
+    const char* host_end = colon ? colon : authority_end;
+    size_t host_size = (size_t)(host_end - authority);
+    if (host_size == 0 || host_size >= sizeof(parsed->host))
+        return 0;
+
+    memcpy(parsed->host, authority, host_size);
+    parsed->host[host_size] = '\0';
+
+    if (colon)
+    {
+        size_t port_size = (size_t)(authority_end - colon - 1);
+        if (port_size == 0 || port_size >= sizeof(parsed->port))
+            return 0;
+
+        memcpy(parsed->port, colon + 1, port_size);
+        parsed->port[port_size] = '\0';
+    }
+    else
+    {
+        snprintf(parsed->port, sizeof(parsed->port), "80");
+    }
+
+    if (slash)
+        snprintf(parsed->base_path, sizeof(parsed->base_path), "%s", slash);
+
+    return 1;
+}
+
+static chttpx_socket_t connect_remote(const chttpx_remote_url_t* remote)
+{
+    struct addrinfo hints;
+    struct addrinfo* result = NULL;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if (getaddrinfo(remote->host, remote->port, &hints, &result) != 0)
+    {
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        return INVALID_SOCKET;
+#else
+        return -1;
+#endif
+    }
+
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    chttpx_socket_t connected = INVALID_SOCKET;
+#else
+    chttpx_socket_t connected = -1;
+#endif
+
+    for (struct addrinfo* current = result; current; current = current->ai_next)
+    {
+        chttpx_socket_t socket_fd = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        if (socket_fd == INVALID_SOCKET)
+#else
+        if (socket_fd < 0)
+#endif
+            continue;
+
+        if (connect(socket_fd, current->ai_addr, (int)current->ai_addrlen) == 0)
+        {
+            connected = socket_fd;
+            break;
+        }
+
+        chttpx_close(socket_fd);
+    }
+
+    freeaddrinfo(result);
+    return connected;
+}
+
+static const char* remote_response_content_type(const char* value)
+{
+    if (!value)
+        return cHTTPX_CTYPE_OCTET;
+    if (strncasecmp(value, "application/json", 16) == 0)
+        return cHTTPX_CTYPE_JSON;
+    if (strncasecmp(value, "text/plain", 10) == 0)
+        return cHTTPX_CTYPE_TEXT;
+    if (strncasecmp(value, "text/html", 9) == 0)
+        return cHTTPX_CTYPE_HTML;
+    return cHTTPX_CTYPE_OCTET;
+}
+
+static const char* find_remote_content_type(char* headers)
+{
+    char* line = strstr(headers, "\r\n");
+    if (!line)
+        return NULL;
+
+    line += 2;
+    while (*line)
+    {
+        char* end = strstr(line, "\r\n");
+        if (!end || end == line)
+            break;
+
+        if ((size_t)(end - line) > 13 && strncasecmp(line, "Content-Type:", 13) == 0)
+        {
+            char* value = line + 13;
+            while (value < end && (*value == ' ' || *value == '\t'))
+                value++;
+
+            *end = '\0';
+            return value;
+        }
+
+        line = end + 2;
+    }
+
+    return NULL;
+}
+
+static int remote_call(chttpx_request_t* source, const char* base_url, const char* method, const char* path, const void* body,
+                       size_t body_size, const char* content_type, chttpx_response_t* res)
+{
+    chttpx_remote_url_t remote;
+    if (!parse_remote_url(base_url, &remote))
+        return CHTTPX_ERR_PROTOCOL;
+
+    chttpx_socket_t socket_fd = connect_remote(&remote);
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    if (socket_fd == INVALID_SOCKET)
+#else
+    if (socket_fd < 0)
+#endif
+        return CHTTPX_ERR_SOCKET;
+
+    char full_path[CHTTPX_MAX_PATH];
+    if (snprintf(full_path, sizeof(full_path), "%s%s", remote.base_path, path) >= (int)sizeof(full_path))
+    {
+        chttpx_close(socket_fd);
+        return CHTTPX_ERR_LIMIT;
+    }
+
+    const char* selected_content_type =
+        content_type && *content_type ? content_type : (source->content_type[0] ? source->content_type : cHTTPX_CTYPE_JSON);
+    const char* authorization = cHTTPX_HeaderGet(source, "Authorization");
+
+    char header[8192];
+    int header_size = snprintf(header, sizeof(header),
+                               "%s %s HTTP/1.1\r\n"
+                               "Host: %s:%s\r\n"
+                               "Connection: close\r\n"
+                               "Content-Type: %s\r\n"
+                               "Content-Length: %zu\r\n"
+                               "X-Request-ID: %s\r\n"
+                               "Accept-Language: %s\r\n",
+                               method, full_path, remote.host, remote.port, selected_content_type, body_size,
+                               source->request_id, source->language);
+
+    if (header_size < 0 || (size_t)header_size >= sizeof(header))
+    {
+        chttpx_close(socket_fd);
+        return CHTTPX_ERR_LIMIT;
+    }
+
+    size_t used = (size_t)header_size;
+    if (authorization && *authorization)
+    {
+        int added = snprintf(header + used, sizeof(header) - used, "Authorization: %s\r\n", authorization);
+        if (added < 0 || (size_t)added >= sizeof(header) - used)
+        {
+            chttpx_close(socket_fd);
+            return CHTTPX_ERR_LIMIT;
+        }
+
+        used += (size_t)added;
+    }
+
+    if (used + 2 > sizeof(header))
+    {
+        chttpx_close(socket_fd);
+        return CHTTPX_ERR_LIMIT;
+    }
+
+    memcpy(header + used, "\r\n", 2);
+    used += 2;
+
+    if (cHTTPX_SendAll(socket_fd, header, used) != CHTTPX_OK ||
+        (body_size && cHTTPX_SendAll(socket_fd, body, body_size) != CHTTPX_OK))
+    {
+        chttpx_close(socket_fd);
+        return CHTTPX_ERR_IO;
+    }
+
+    size_t limit = source->_server->max_body_size ? source->_server->max_body_size + 64 * 1024 : 10 * 1024 * 1024;
+    size_t capacity = 8192;
+    if (capacity > limit)
+        capacity = limit;
+
+    char* response = malloc(capacity + 1);
+    if (!response)
+    {
+        chttpx_close(socket_fd);
+        return CHTTPX_ERR_MEMORY;
+    }
+
+    size_t total = 0;
+    for (;;)
+    {
+        if (total == capacity)
+        {
+            if (capacity >= limit)
+            {
+                free(response);
+                chttpx_close(socket_fd);
+                return CHTTPX_ERR_LIMIT;
+            }
+
+            size_t next = capacity * 2;
+            if (next > limit)
+                next = limit;
+
+            char* resized = realloc(response, next + 1);
+            if (!resized)
+            {
+                free(response);
+                chttpx_close(socket_fd);
+                return CHTTPX_ERR_MEMORY;
+            }
+
+            response = resized;
+            capacity = next;
+        }
+
+        int received = recv(socket_fd, response + total, capacity - total, 0);
+        if (received < 0)
+        {
+#ifdef CHTTPX_PLATFORM_POSIX
+            if (errno == EINTR)
+                continue;
+#endif
+            free(response);
+            chttpx_close(socket_fd);
+            return CHTTPX_ERR_IO;
+        }
+
+        if (received == 0)
+            break;
+
+        total += (size_t)received;
+    }
+
+    chttpx_close(socket_fd);
+    response[total] = '\0';
+
+    int status = 0;
+    if (sscanf(response, "HTTP/%*s %d", &status) != 1 || status < 100 || status > 599)
+    {
+        free(response);
+        return CHTTPX_ERR_PROTOCOL;
+    }
+
+    char* delimiter = chttpx_memmem(response, total, "\r\n\r\n", 4);
+    if (!delimiter)
+    {
+        free(response);
+        return CHTTPX_ERR_PROTOCOL;
+    }
+
+    size_t header_bytes = (size_t)(delimiter - response) + 4;
+    char* body_start = response + header_bytes;
+    size_t response_body_size = total - header_bytes;
+
+    const char* response_type = remote_response_content_type(find_remote_content_type(response));
+    *res = cHTTPX_ResBinary((uint16_t)status, response_type, (const unsigned char*)body_start, response_body_size);
+
+    free(response);
+    return res->status ? CHTTPX_OK : CHTTPX_ERR_MEMORY;
+}
+
+int cHTTPX_CallWithBody(chttpx_request_t* source, const char* server_name, const char* method, const char* path, const void* body,
+                       size_t body_size, const char* content_type, chttpx_response_t* res)
+{
+    if (!source || !source->_server || !source->_server->app || !server_name || !*server_name || !method || !path || !res ||
+        (body_size && !body))
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    chttpx_app_t* app = source->_server->app;
+
+    chttpx_serv_t* local = find_server(app, server_name);
+    if (local)
+        return local_call(source, local, method, path, body, body_size, content_type, res);
+
+    chttpx_app_remote_t* remote = find_remote(app, server_name);
+    if (remote)
+        return remote_call(source, remote->base_url, method, path, body, body_size, content_type, res);
+
+    return CHTTPX_ERR_NOT_FOUND;
 }
 
 int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* method, const char* path, chttpx_response_t* res)
