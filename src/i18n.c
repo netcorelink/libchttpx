@@ -188,14 +188,17 @@ void cHTTPX_i18n(const char* directory)
     struct dirent* ent;
     while ((ent = readdir(dir)) != NULL)
     {
-        if (!strstr(ent->d_name, ".json"))
+        size_t file_name_size = strlen(ent->d_name);
+        if (file_name_size <= 5 || strcmp(ent->d_name + file_name_size - 5, ".json") != 0)
             continue;
 
         if (i18n_manager->count >= MAX_LOCALES)
             break;
 
         char locale[8] = {0};
-        size_t locale_size = (size_t)(strchr(ent->d_name, '.') - ent->d_name);
+        size_t locale_size = file_name_size - 5;
+        if (locale_size == 0)
+            continue;
         if (locale_size >= sizeof(locale))
             locale_size = sizeof(locale) - 1;
         memcpy(locale, ent->d_name, locale_size);
@@ -237,10 +240,8 @@ void cHTTPX_i18n(const char* directory)
  */
 const char* cHTTPX_i18n_t(const char* key, const char* lang)
 {
-    if (!i18n_manager)
-    {
+    if (!i18n_manager || !i18n_manager->default_locale)
         return key;
-    }
 
     i18n_locale_t* loc = i18n_manager->default_locale;
 
@@ -267,14 +268,11 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
     return key;
 }
 
-int cHTTPX_i18n_languages(const char** languages, size_t count, const char* fallback)
+int cHTTPX_i18n_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
 {
-    if (!serv || !fallback || (count && !languages))
+    if (!server || !server->initialized)
         return CHTTPX_ERR_INVALID_ARGUMENT;
-    serv->languages = languages;
-    serv->languages_count = count;
-    serv->default_language = fallback;
-    return CHTTPX_OK;
+    return _chttpx_server_set_languages(server, languages, count, fallback);
 }
 
 const char* LANGUAGE_CODES[LANG_COUNT] = {

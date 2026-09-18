@@ -35,14 +35,30 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <limits.h>
 
 int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
 {
     const unsigned char* cursor = data;
     size_t sent = 0;
+
+#ifdef SO_NOSIGPIPE
+    int no_sigpipe = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
+
     while (sent < size)
     {
-        ssize_t result = send(fd, (const char*)cursor + sent, size - sent, 0);
+        int flags = 0;
+#ifdef MSG_NOSIGNAL
+        flags |= MSG_NOSIGNAL;
+#endif
+        size_t wanted = size - sent;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        if (wanted > INT_MAX)
+            wanted = INT_MAX;
+#endif
+        ssize_t result = send(fd, (const char*)cursor + sent, wanted, flags);
         if (result < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
@@ -276,104 +292,102 @@ static int match_route(const char* template, const char* path, chttpx_param_t* p
  */
 static chttpx_route_t* find_route(chttpx_request_t* req)
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!server || !server->initialized)
         return NULL;
-    }
 
-    for (size_t i = 0; i < serv->routes_count; i++)
+    for (size_t i = 0; i < server->routes_count; i++)
     {
-        if (strcmp(serv->routes[i].method, req->method) != 0)
+        chttpx_route_t* registered = server->routes[i];
+        if (!registered || strcmp(registered->method, req->method) != 0)
             continue;
 
         int count = 0;
-        if (match_route(serv->routes[i].path, req->path, req->params, &count))
+        if (match_route(registered->path, req->path, req->params, &count))
         {
             req->params_count = count;
-            return &serv->routes[i];
+            return registered;
         }
     }
 
     return NULL;
 }
 
-static ssize_t read_req(int fd, char* buffer, size_t buffer_size)
+static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
+    size_t limit = server && server->max_header_size && server->max_header_size < buffer_size ? server->max_header_size : buffer_size - 1;
 
     while (1)
     {
-        size_t limit = serv && serv->max_header_size && serv->max_header_size < buffer_size ? serv->max_header_size : buffer_size - 1;
-        if (total >= limit)
+        if (total >= buffer_size - 1)
             return -2;
 
         ssize_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
-        if (n <= 0)
+        if (n < 0)
+        {
+#ifdef CHTTPX_PLATFORM_POSIX
+            if (errno == EINTR)
+                continue;
+#endif
+            return -1;
+        }
+        if (n == 0)
             return -1;
 
-        total += n;
+        total += (size_t)n;
+        buffer[total] = '\0';
 
-        if (total > limit)
+        char* delimiter = chttpx_memmem(buffer, total, "\r\n\r\n", 4);
+        if (delimiter)
+        {
+            size_t header_size = (size_t)(delimiter - buffer) + 4;
+            return header_size > limit ? -2 : (ssize_t)total;
+        }
+
+        /*
+         * If the complete header delimiter is not present by the configured
+         * limit, the header block itself is already too large. Body bytes
+         * received together with a valid small header are intentionally not
+         * counted against max_header_size.
+         */
+        if (total >= limit)
             return -2;
-
-        if (total < buffer_size)
-            buffer[total] = '\0';
-
-        if (chttpx_memmem(buffer, total, "\r\n\r\n", 4))
-            break;
     }
-
-    return total;
 }
 
-static void set_client_timeout(chttpx_socket_t client_fd)
+static void set_client_timeout(chttpx_serv_t* server, chttpx_socket_t client_fd)
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    if (!server)
         return;
-    }
 
-    /* Read timeout params */
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    DWORD read_timeout_ms = (DWORD)server->read_timeout_sec * 1000U;
+    DWORD write_timeout_ms = (DWORD)server->write_timeout_sec * 1000U;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms));
+    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms));
+#else
     struct timeval tv;
-    tv.tv_sec = serv->read_timeout_sec;
     tv.tv_usec = 0;
-#ifdef _WIN32
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
-#else
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
 
-    /* Write timeout params */
-    tv.tv_sec = serv->write_timeout_sec;
-#ifdef _WIN32
-    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
-#else
+    tv.tv_sec = server->read_timeout_sec;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    tv.tv_sec = server->write_timeout_sec;
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 }
 
 /* Cors */
-static const char* allowed_origin_cors(const char* req_origin)
+static const char* allowed_origin_cors(chttpx_serv_t* server, const char* req_origin)
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
+    if (!server || !server->cors.enabled || !req_origin)
         return NULL;
-    }
 
-    if (!serv->cors.enabled || !req_origin)
+    for (size_t i = 0; i < server->cors.origins_count; i++)
     {
-        return NULL;
-    }
-
-    for (size_t i = 0; i < serv->cors.origins_count; i++)
-    {
-        if (strcmp(serv->cors.origins[i], req_origin) == 0)
-        {
-            return serv->cors.origins[i];
-        }
+        if (strcmp(server->cors.origins[i], req_origin) == 0)
+            return server->cors.origins[i];
     }
 
     return NULL;
@@ -406,23 +420,25 @@ static int append_response_header(char* buffer, size_t capacity, size_t* length,
  */
 static void send_response(chttpx_request_t* req, chttpx_response_t res)
 {
+    chttpx_serv_t* server = req ? req->_server : NULL;
     size_t capacity = 1024;
     for (size_t i = 0; i < res.headers_count; i++)
         capacity += strlen(res.headers[i].name) + strlen(res.headers[i].value) + 4;
-    if (serv && serv->cors.enabled)
-        capacity += strlen(serv->cors.methods) + strlen(serv->cors.headers) + MAX_HEADER_VALUE + 512;
+    if (server && server->cors.enabled)
+        capacity += strlen(server->cors.methods) + strlen(server->cors.headers) + MAX_HEADER_VALUE + 512;
     char* buffer = malloc(capacity);
     if (!buffer)
         return;
     size_t length = 0;
 
     /* Cors */
-    const char* allowed_origin = req ? allowed_origin_cors(cHTTPX_HeaderGet(req, "Origin")) : NULL;
+    const char* allowed_origin = req ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
     if (!append_response_header(buffer, capacity, &length,
                                 "HTTP/1.1 %d %s\r\n"
                                 "Content-Type: %s\r\n"
-                                "Content-Length: %zu\r\n",
+                                "Content-Length: %zu\r\n"
+                                "Connection: close\r\n",
                                 res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET,
                                 res.body_size))
         goto done;
@@ -442,7 +458,7 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
                                     "Access-Control-Allow-Methods: %s\r\n"
                                     "Access-Control-Allow-Headers: %s\r\n"
                                     "Access-Control-Allow-Credentials: true\r\n",
-                                    allowed_origin, serv->cors.methods, serv->cors.headers))
+                                    allowed_origin, server->cors.methods, server->cors.headers))
             goto done;
     }
 
@@ -470,16 +486,19 @@ done:
     free(buffer);
 }
 
-/* For OPTIONS method */
-static int is_method_options(chttpx_request_t* req)
+/* Handle browser CORS preflight without hijacking ordinary OPTIONS routes. */
+static int is_cors_preflight(chttpx_request_t* req)
 {
-    if (strcasecmp(req->method, cHTTPX_MethodOptions) == 0)
-    {
-        chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
-        send_response(req, res);
-        return 1;
-    }
-    return 0;
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!req || !server || !server->cors.enabled || strcasecmp(req->method, cHTTPX_MethodOptions) != 0)
+        return 0;
+
+    if (!cHTTPX_HeaderGet(req, "Origin") || !cHTTPX_HeaderGet(req, "Access-Control-Request-Method"))
+        return 0;
+
+    chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
+    send_response(req, res);
+    return 1;
 }
 
 static int valid_request_id(const char* value)
@@ -496,7 +515,8 @@ static int valid_request_id(const char* value)
 
 static void set_request_id(chttpx_request_t* req)
 {
-    if (!serv || !serv->request_id_enabled)
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!server || !server->request_id_enabled)
         return;
     const char* supplied = cHTTPX_HeaderGet(req, "X-Request-ID");
     if (valid_request_id(supplied))
@@ -512,15 +532,15 @@ static void set_request_id(chttpx_request_t* req)
              sequence);
 }
 
-static int language_allowed(const char* language)
+static int language_allowed(chttpx_serv_t* server, const char* language)
 {
-    if (!serv || !language || !*language)
+    if (!server || !language || !*language)
         return 0;
-    if (serv->languages_count == 0)
-        return serv->default_language && strcasecmp(language, serv->default_language) == 0;
-    for (size_t i = 0; i < serv->languages_count; i++)
+    if (server->languages_count == 0)
+        return server->default_language && strcasecmp(language, server->default_language) == 0;
+    for (size_t i = 0; i < server->languages_count; i++)
     {
-        if (serv->languages[i] && strcasecmp(language, serv->languages[i]) == 0)
+        if (server->languages[i] && strcasecmp(language, server->languages[i]) == 0)
             return 1;
     }
     return 0;
@@ -528,7 +548,8 @@ static int language_allowed(const char* language)
 
 static void set_request_language(chttpx_request_t* req)
 {
-    snprintf(req->language, sizeof(req->language), "%s", serv && serv->default_language ? serv->default_language : "en");
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    snprintf(req->language, sizeof(req->language), "%s", server && server->default_language ? server->default_language : "en");
     const char* header = cHTTPX_HeaderGet(req, "Accept-Language");
     if (!header)
         return;
@@ -563,7 +584,7 @@ static void set_request_language(chttpx_request_t* req)
         char* dash = strchr(item, '-');
         if (dash)
             *dash = '\0';
-        if (quality > best_quality && language_allowed(item))
+        if (quality > best_quality && language_allowed(server, item))
         {
             snprintf(req->language, sizeof(req->language), "%s", item);
             best_quality = quality;
@@ -574,7 +595,7 @@ static void set_request_language(chttpx_request_t* req)
     }
 }
 
-static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffer, size_t received)
+static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t client_fd, char* buffer, size_t received)
 {
     chttpx_request_t* req = calloc(1, sizeof(chttpx_request_t));
     if (!req)
@@ -606,6 +627,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
         return NULL;
     }
     req->client_fd = client_fd;
+    req->_server = server;
 
     /* Client IP */
     const char* client_ip = cHTTPX_ClientInetIP(client_fd);
@@ -621,6 +643,8 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
 
     /* Parse cookies */
     _parse_req_cookies(req);
+    if (req->_parse_status)
+        return req;
 
     /* Content-Type */
     const char* content_type = cHTTPX_HeaderGet(req, "Content-Type");
@@ -644,10 +668,14 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     {
         *query = '\0';
         _parse_req_query(req, query + 1);
+        if (req->_parse_status)
+            return req;
     }
 
     /* Parse body request */
     _parse_req_body(req, client_fd, buffer, received);
+    if (req->_parse_status)
+        return req;
 
     /* Parse media request */
     _parse_media(req, buffer, received);
@@ -655,28 +683,111 @@ static chttpx_request_t* parse_req_buffer(chttpx_socket_t client_fd, char* buffe
     return req;
 }
 
+int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_response_t* res)
+{
+    if (!server || !server->initialized || !req || !res || !req->method || !req->path)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    req->_server = server;
+    chttpx_route_t* route = find_route(req);
+    memset(res, 0, sizeof(*res));
+    clock_gettime(CLOCK_MONOTONIC, &res->start_ts);
+
+    if (route)
+    {
+        for (size_t i = 0; i < server->middleware.middleware_count; i++)
+        {
+            if (!server->middleware.middlewares[i](req, res))
+                goto after_route_middlewares;
+        }
+
+        if (route->has_upload_policy && req->files_count > 0)
+        {
+            for (size_t file_index = 0; file_index < req->files_count; file_index++)
+            {
+                const chttpx_file_t* file = &req->files[file_index];
+                if (route->upload_policy.max_size && file->size > route->upload_policy.max_size)
+                {
+                    *res = cHTTPX_ResError(cHTTPX_StatusPayloadTooLarge, "upload is too large");
+                    goto after_route_middlewares;
+                }
+
+                if (route->upload_policy.allowed_types_count > 0)
+                {
+                    bool allowed = false;
+                    for (size_t type_index = 0; type_index < route->upload_policy.allowed_types_count; type_index++)
+                    {
+                        if (cHTTPX_MimeMatch(file->content_type, route->upload_policy.allowed_types[type_index]))
+                        {
+                            allowed = true;
+                            break;
+                        }
+                    }
+
+                    if (!allowed)
+                    {
+                        *res = cHTTPX_ResError(cHTTPX_StatusUnsupportedMediaType, "unsupported upload media type");
+                        goto after_route_middlewares;
+                    }
+                }
+            }
+        }
+
+        for (size_t i = 0; i < route->middleware_count; i++)
+        {
+            if (!route->middlewares[i](req, res))
+                goto after_route_middlewares;
+        }
+
+        route->handler(req, res);
+
+    after_route_middlewares:
+        for (size_t i = route->after_middleware_count; i > 0; i--)
+            route->after_middlewares[i - 1](req, res);
+    }
+    else
+    {
+        *res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
+    }
+
+    for (size_t i = server->middleware.after_middleware_count; i > 0; i--)
+        server->middleware.after_middlewares[i - 1](req, res);
+
+    if (res->status < 100 || res->status > 599)
+    {
+        cHTTPX_ResponseCleanup(res);
+        *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "handler did not produce a valid response");
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &res->end_ts);
+    postmiddleware_logging_write(req, res);
+    return CHTTPX_OK;
+}
+
 /**
- * Handle a single client connection.
- * @param client_fd The file descriptor of the accepted client socket.
- * This function reads the request, parses it, calls the matching route handler,
- * and sends the response back to the client.
+ * Handle one accepted socket. The argument is a chttpx_client_ctx_t carrying
+ * both the socket and the exact App-managed server that accepted it.
  */
 void* chttpx_handle(void* arg)
 {
-    chttpx_socket_t client_sock = *(chttpx_socket_t*)arg;
-    free(arg);
+    chttpx_client_ctx_t* context = arg;
+    if (!context)
+        return NULL;
 
-    if (!serv)
+    chttpx_serv_t* server = context->server;
+    chttpx_socket_t client_sock = context->client_fd;
+    free(context);
+
+    if (!server || !server->initialized)
     {
-        fprintf(stderr, "Error: server is not initialized\n");
+        chttpx_close(client_sock);
         return NULL;
     }
 
-    /* Timeouts */
-    set_client_timeout(client_sock);
+    set_client_timeout(server, client_sock);
 
     char buf[BUFFER_SIZE];
-    ssize_t received = read_req(client_sock, buf, BUFFER_SIZE);
+    ssize_t received = read_req(server, client_sock, buf, BUFFER_SIZE);
     if (received == -2)
     {
         static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -690,8 +801,7 @@ void* chttpx_handle(void* arg)
         return NULL;
     }
 
-    /* REQUEST */
-    chttpx_request_t* req = parse_req_buffer(client_sock, buf, received);
+    chttpx_request_t* req = parse_req_buffer(server, client_sock, buf, (size_t)received);
     if (!req)
     {
         chttpx_close(client_sock);
@@ -700,98 +810,27 @@ void* chttpx_handle(void* arg)
 
     if (req->_parse_status)
     {
-        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status,
-                                                        req->_parse_status == cHTTPX_StatusPayloadTooLarge ? "payload too large" : "invalid request");
+        const char* parse_message = req->_parse_status == cHTTPX_StatusPayloadTooLarge
+                                        ? "payload too large"
+                                        : (req->_parse_status == cHTTPX_StatusInternalServerError ? "internal server error" : "invalid request");
+        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status, parse_message);
         send_response(req, parse_error);
         cHTTPX_ResponseCleanup(&parse_error);
         goto cleanup_request;
     }
 
-    /* ALLOWED OPTIONS METHOD */
-    if (is_method_options(req))
+    if (is_cors_preflight(req))
         goto cleanup_request;
 
-    chttpx_route_t* r = find_route(req);
     chttpx_response_t res = {0};
-
-    /* Start time for logging */
-    clock_gettime(CLOCK_MONOTONIC, &res.start_ts);
-
-    if (r)
+    if (_chttpx_dispatch(server, req, &res) == CHTTPX_OK)
     {
-        /* Use middlewares */
-        for (size_t i = 0; i < serv->middleware.middleware_count; i++)
-        {
-            if (!serv->middleware.middlewares[i](req, &res))
-                goto after_middlewares;
-        }
-
-        if (r->has_upload_policy && req->files_count > 0)
-        {
-            for (size_t file_index = 0; file_index < req->files_count; file_index++)
-            {
-                const chttpx_file_t* file = &req->files[file_index];
-                if (r->upload_policy.max_size && file->size > r->upload_policy.max_size)
-                {
-                    res = cHTTPX_ResError(cHTTPX_StatusPayloadTooLarge, "upload is too large");
-                    goto after_middlewares;
-                }
-                if (r->upload_policy.allowed_types_count > 0)
-                {
-                    bool allowed = false;
-                    for (size_t type_index = 0; type_index < r->upload_policy.allowed_types_count; type_index++)
-                    {
-                        if (cHTTPX_MimeMatch(file->content_type, r->upload_policy.allowed_types[type_index]))
-                        {
-                            allowed = true;
-                            break;
-                        }
-                    }
-                    if (!allowed)
-                    {
-                        res = cHTTPX_ResError(cHTTPX_StatusUnsupportedMediaType, "unsupported upload media type");
-                        goto after_middlewares;
-                    }
-                }
-            }
-        }
-
-        for (size_t i = 0; i < r->middleware_count; i++)
-        {
-            if (!r->middlewares[i](req, &res))
-                goto after_middlewares;
-        }
-
-        /* Handler */
-        r->handler(req, &res);
-
-    after_middlewares:
-        for (size_t i = r->after_middleware_count; i > 0; i--)
-            r->after_middlewares[i - 1](req, &res);
+        send_response(req, res);
+        cHTTPX_ResponseCleanup(&res);
     }
-
-    else
-    {
-        res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
-    }
-
-    for (size_t i = serv->middleware.after_middleware_count; i > 0; i--)
-        serv->middleware.after_middlewares[i - 1](req, &res);
-
-    /* End time for logging */
-    clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
-
-    send_response(req, res);
-
-    /* Logging response */
-    postmiddleware_logging_write(req, &res);
-
-    cHTTPX_ResponseCleanup(&res);
 
 cleanup_request:
     cHTTPX_RequestCleanup(req);
-
-    /* Free REQuest cookie */
     chttpx_free_req_cookie(req);
 
     free(req->method);

@@ -47,9 +47,9 @@
  *                       If NULL, defaults to:
  *                       "Content-Type"
  */
-void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods, const char* headers)
+void cHTTPX_Cors(chttpx_serv_t* server, const char** origins, size_t origins_count, const char* methods, const char* headers)
 {
-    if (!serv)
+    if (!server || !server->initialized)
     {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
@@ -72,16 +72,16 @@ void cHTTPX_Cors(const char** origins, size_t origins_count, const char* methods
             goto memory_error;
         }
     }
-    for (size_t i = 0; i < serv->cors.origins_count; i++)
-        free((void*)serv->cors.origins[i]);
-    free((void*)serv->cors.origins);
-    free((void*)serv->cors.methods);
-    free((void*)serv->cors.headers);
-    serv->cors.enabled = 1;
-    serv->cors.origins = owned_origins;
-    serv->cors.origins_count = origins_count;
-    serv->cors.methods = owned_methods;
-    serv->cors.headers = owned_headers;
+    for (size_t i = 0; i < server->cors.origins_count; i++)
+        free((void*)server->cors.origins[i]);
+    free((void*)server->cors.origins);
+    free((void*)server->cors.methods);
+    free((void*)server->cors.headers);
+    server->cors.enabled = 1;
+    server->cors.origins = owned_origins;
+    server->cors.origins_count = origins_count;
+    server->cors.methods = owned_methods;
+    server->cors.headers = owned_headers;
     return;
 
 memory_error:

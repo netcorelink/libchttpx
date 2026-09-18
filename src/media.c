@@ -196,7 +196,7 @@ static void parse_urlencoded(chttpx_request_t* req)
 
 static int header_attribute(const char* headers, size_t headers_size, const char* attribute, char* output, size_t output_size)
 {
-    const char* found = chttpx_memmem(headers, headers_size, attribute, strlen(attribute));
+    const char* found = memmem_case(headers, headers_size, attribute, strlen(attribute));
     if (!found)
         return 0;
     found += strlen(attribute);
@@ -210,22 +210,44 @@ static int header_attribute(const char* headers, size_t headers_size, const char
 
 static int multipart_boundary(const chttpx_request_t* req, char* boundary, size_t boundary_size)
 {
-    const char* value = strstr(req->content_type, "boundary=");
-    if (!value)
+    if (!req)
         return 0;
-    value += 9;
-    if (*value == '"')
+
+    const char* cursor = req->content_type;
+    while ((cursor = strchr(cursor, ';')) != NULL)
+    {
+        cursor++;
+        while (*cursor == ' ' || *cursor == '\t')
+            cursor++;
+
+        if (strncasecmp(cursor, "boundary", 8) != 0)
+            continue;
+
+        const char* value = cursor + 8;
+        while (*value == ' ' || *value == '\t')
+            value++;
+        if (*value != '=')
+            continue;
         value++;
+        while (*value == ' ' || *value == '\t')
+            value++;
 
-    size_t size = strcspn(value, "\";\r\n");
-    if (size == 0 || size > 200 || size + 3 > boundary_size)
-        return 0;
+        bool quoted = *value == '"';
+        if (quoted)
+            value++;
 
-    boundary[0] = '-';
-    boundary[1] = '-';
-    memcpy(boundary + 2, value, size);
-    boundary[size + 2] = '\0';
-    return 1;
+        size_t size = quoted ? strcspn(value, "\"\r\n") : strcspn(value, "; \t\r\n");
+        if (size == 0 || size > 200 || size + 3 > boundary_size || (quoted && value[size] != '"'))
+            return 0;
+
+        boundary[0] = '-';
+        boundary[1] = '-';
+        memcpy(boundary + 2, value, size);
+        boundary[size + 2] = '\0';
+        return 1;
+    }
+
+    return 0;
 }
 
 static void parse_part_headers(const char* headers, size_t headers_size, char* name, size_t name_size, char* filename, size_t filename_size,
@@ -478,6 +500,7 @@ done:
 
 static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
 {
+    chttpx_serv_t* server = req ? req->_server : NULL;
     char boundary[204];
     if (!multipart_boundary(req, boundary, sizeof(boundary)) || fseek(stream, 0, SEEK_SET) != 0)
         goto bad_request;
@@ -545,8 +568,8 @@ static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
         else
         {
             size_t value_limit = MULTIPART_FORM_VALUE_LIMIT;
-            if (serv && serv->max_body_size < value_limit)
-                value_limit = serv->max_body_size;
+            if (server && server->max_body_size < value_limit)
+                value_limit = server->max_body_size;
             if (form_bytes >= value_limit)
             {
                 req->_parse_status = cHTTPX_StatusPayloadTooLarge;
@@ -574,6 +597,52 @@ bad_request:
     return;
 
 internal_error:
+    req->_parse_status = cHTTPX_StatusInternalServerError;
+}
+
+static void save_raw_upload_stream(chttpx_request_t* req, FILE* stream)
+{
+    if (!req || !stream || fseek(stream, 0, SEEK_SET) != 0)
+    {
+        if (req)
+            req->_parse_status = cHTTPX_StatusInternalServerError;
+        return;
+    }
+
+    char path[512];
+    FILE* file = create_temporary_file(path, sizeof(path));
+    if (!file)
+    {
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+        return;
+    }
+
+    size_t total = 0;
+    unsigned char chunk[FILE_BUFFER];
+    size_t received = 0;
+    while ((received = fread(chunk, 1, sizeof(chunk), stream)) > 0)
+    {
+        if (fwrite(chunk, 1, received, file) != received)
+            goto internal_error;
+        if (total > SIZE_MAX - received)
+            goto internal_error;
+        total += received;
+    }
+
+    if (ferror(stream) || total != req->content_length)
+        goto internal_error;
+
+    fclose(file);
+    if (!track_file(req, path, "file", "upload.bin", req->content_type, total))
+    {
+        remove(path);
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+    }
+    return;
+
+internal_error:
+    fclose(file);
+    remove(path);
     req->_parse_status = cHTTPX_StatusInternalServerError;
 }
 
@@ -630,7 +699,7 @@ void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
     if (!req || !req->content_type[0] || req->_parse_status)
         return;
 
-    if (strstr(req->content_type, cHTTPX_CTYPE_MULTI))
+    if (cHTTPX_MimeMatch(req->content_type, cHTTPX_CTYPE_MULTI))
     {
         if (req->_multipart_stream)
             parse_multipart_stream(req, (FILE*)req->_multipart_stream);
@@ -639,11 +708,14 @@ void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
         else
             req->_parse_status = cHTTPX_StatusBadRequest;
     }
-    else if (strstr(req->content_type, cHTTPX_CTYPE_FORM))
+    else if (cHTTPX_MimeMatch(req->content_type, cHTTPX_CTYPE_FORM))
         parse_urlencoded(req);
-    else if (req->content_length > 0 && !strstr(req->content_type, cHTTPX_CTYPE_JSON) && !strstr(req->content_type, "text/"))
+    else if (req->content_length > 0 && !cHTTPX_MimeMatch(req->content_type, cHTTPX_CTYPE_JSON) &&
+             !cHTTPX_MimeMatch(req->content_type, "text/*"))
     {
-        if (req->body)
+        if (req->_multipart_stream)
+            save_raw_upload_stream(req, (FILE*)req->_multipart_stream);
+        else if (req->body)
         {
             char path[512];
             FILE* file = create_temporary_file(path, sizeof(path));
@@ -696,7 +768,22 @@ int cHTTPX_FileDetach(chttpx_request_t* req, const chttpx_file_t* file)
 {
     if (!req || !file || !file->path || !cHTTPX_Detach(req, (void*)file->path))
         return 0;
-    cHTTPX_Defer(req, (void*)file->path, free);
+
+    /*
+     * Keep ownership of the path string request-scoped after transferring
+     * ownership of the file itself to the caller.
+     */
+    if (cHTTPX_Defer(req, (void*)file->path, free) != 0)
+    {
+        if (cHTTPX_Defer(req, (void*)file->path, remove_temporary_file) != 0)
+        {
+            remove(file->path);
+            free((void*)file->path);
+            ((chttpx_file_t*)file)->path = NULL;
+        }
+        return 0;
+    }
+
     ((chttpx_file_t*)file)->temporary = false;
     return 1;
 }

@@ -17,6 +17,8 @@ extern "C"
 
 #include <time.h>
 
+    struct chttpx_serv;
+
     // RESponse
     typedef enum
     {
@@ -58,6 +60,9 @@ extern "C"
      * and sends the response back to the client.
      */
     void* chttpx_handle(void* arg);
+
+    /* Internal route dispatcher shared by socket requests and cHTTPX_Call(). */
+    int _chttpx_dispatch(struct chttpx_serv* server, chttpx_request_t* req, chttpx_response_t* res);
 
     /**
      * Create a JSON HTTP response with formatted content.

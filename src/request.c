@@ -424,6 +424,9 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
             else
                 goto type_error;
             break;
+
+        default:
+            goto type_error;
         }
     }
 
@@ -457,7 +460,7 @@ static int is_valid_email(const char* email)
 
     for (const char* p = email; *p; p++)
     {
-        if (!isalnum(*p) && *p != '@' && *p != '.' && *p != '_' && *p != '-')
+        if (!isalnum((unsigned char)*p) && *p != '@' && *p != '.' && *p != '_' && *p != '-')
             return 0;
     }
 

@@ -1,5 +1,6 @@
 #include "libchttpx.h"
 #include "body.h"
+#include "headers.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -129,14 +130,102 @@ static void test_multipart(void)
 }
 
 
+static void test_header_boundary(void)
+{
+    chttpx_request_t req = {0};
+    char request[] = "POST /body HTTP/1.1\r\n"
+                     "Host: localhost\r\n"
+                     "Content-Length: 13\r\n\r\n"
+                     "Fake: header\r\n";
+
+    _parse_req_headers(&req, request, strlen(request));
+    assert(req._parse_status == 0);
+    assert(req.headers_count == 2);
+    assert(strcmp(cHTTPX_HeaderGet(&req, "Host"), "localhost") == 0);
+    assert(cHTTPX_HeaderGet(&req, "Fake") == NULL);
+}
+
+static void test_request_framing(void)
+{
+    chttpx_serv_t server = {0};
+    server.max_body_size = 1024;
+    server.max_upload_size = 1024;
+
+    chttpx_request_t req = {0};
+    req._server = &server;
+    strcpy(req.content_type, "text/plain");
+    strcpy(req.headers[0].name, "Content-Length");
+    strcpy(req.headers[0].value, "5");
+    strcpy(req.headers[1].name, "Content-Length");
+    strcpy(req.headers[1].value, "6");
+    req.headers_count = 2;
+    char request[] = "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
+    _parse_req_body(&req, 0, request, strlen(request));
+    assert(req._parse_status == cHTTPX_StatusBadRequest);
+
+    memset(&req, 0, sizeof(req));
+    req._server = &server;
+    strcpy(req.content_type, "text/plain");
+    strcpy(req.headers[0].name, "Transfer-Encoding");
+    strcpy(req.headers[0].value, "gzip");
+    req.headers_count = 1;
+    _parse_req_body(&req, 0, request, strlen(request));
+    assert(req._parse_status == cHTTPX_StatusBadRequest);
+
+}
+
+static void test_streamed_raw_chunked_upload(void)
+{
+    chttpx_serv_t server = {0};
+    server.max_body_size = 1024;
+    server.max_upload_size = 1024 * 1024;
+
+    chttpx_request_t req = {0};
+    req._server = &server;
+    strcpy(req.content_type, "application/octet-stream");
+    strcpy(req.headers[0].name, "Content-Type");
+    strcpy(req.headers[0].value, req.content_type);
+    strcpy(req.headers[1].name, "Transfer-Encoding");
+    strcpy(req.headers[1].value, "chunked");
+    req.headers_count = 2;
+
+    char request[] = "POST /upload HTTP/1.1\r\n"
+                     "Content-Type: application/octet-stream\r\n"
+                     "Transfer-Encoding: chunked\r\n\r\n"
+                     "8\r\nRAW-DATA\r\n0\r\n\r\n";
+
+    _parse_req_body(&req, 0, request, strlen(request));
+    assert(req._parse_status == 0);
+    assert(req.body == NULL);
+    assert(req._multipart_stream != NULL);
+    assert(req.content_length == 8);
+
+    _parse_media(&req, request, strlen(request));
+    assert(req._parse_status == 0);
+    const chttpx_file_t* file = cHTTPX_RequestFile(&req);
+    assert(file && file->size == 8);
+
+    char path[512];
+    snprintf(path, sizeof(path), "%s", file->path);
+    FILE* uploaded = fopen(path, "rb");
+    assert(uploaded);
+    char bytes[9] = {0};
+    assert(fread(bytes, 1, 8, uploaded) == 8);
+    fclose(uploaded);
+    assert(strcmp(bytes, "RAW-DATA") == 0);
+
+    cHTTPX_RequestCleanup(&req);
+    assert(fopen(path, "rb") == NULL);
+}
+
 static void test_streamed_multipart(void)
 {
     chttpx_serv_t server = {0};
     server.max_body_size = 1024 * 1024;
     server.max_upload_size = 8 * 1024 * 1024;
-    serv = &server;
 
     chttpx_request_t req = {0};
+    req._server = &server;
     const char body[] = "--StreamBoundary\r\n"
                         "Content-Disposition: form-data; name=\"title\"\r\n\r\nhello\r\n"
                         "--StreamBoundary\r\n"
@@ -173,6 +262,7 @@ static void test_streamed_multipart(void)
     cHTTPX_RequestCleanup(&req);
 
     memset(&req, 0, sizeof(req));
+    req._server = &server;
     char chunked_body[4096];
     int chunked_body_size = snprintf(chunked_body, sizeof(chunked_body), "%zx\r\n%s\r\n0\r\n\r\n", strlen(body), body);
     assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
@@ -203,27 +293,64 @@ static void test_streamed_multipart(void)
     assert(file && file->size == 8);
 
     cHTTPX_RequestCleanup(&req);
-    serv = NULL;
+}
+
+static void free_test_routes(chttpx_serv_t* server)
+{
+    for (size_t i = 0; i < server->routes_count; i++)
+    {
+        chttpx_route_t* registered = server->routes[i];
+        if (!registered)
+            continue;
+        free((void*)registered->method);
+        free((void*)registered->path);
+        if (registered->has_upload_policy)
+        {
+            for (size_t j = 0; j < registered->upload_policy.allowed_types_count; j++)
+                free((void*)registered->upload_policy.allowed_types[j]);
+            free((void*)registered->upload_policy.allowed_types);
+        }
+        free(registered);
+    }
+    free(server->routes);
+    server->routes = NULL;
+    server->routes_count = 0;
+    server->routes_capacity = 0;
 }
 
 static void test_routing_api(void)
 {
     chttpx_serv_t server = {0};
-    serv = &server;
-    chttpx_router_t api = cHTTPX_RoutePathPrefix("/api/v2");
+    server.initialized = true;
+    chttpx_router_t api = cHTTPX_RoutePathPrefix(&server, "/api/v2");
     chttpx_router_t private_routes = cHTTPX_RouteGroup(&api, "");
     assert(cHTTPX_RouterUse(&private_routes, middleware) == CHTTPX_OK);
+
     chttpx_route_t* route = cHTTPX_Get(&private_routes, "/users/me", handler);
     assert(route && strcmp(route->path, "/api/v2/users/me") == 0);
     assert(route->middleware_count == 1);
+
+    /* Force several registry reallocations after retaining the first handle. */
+    for (size_t i = 0; i < 64; i++)
+    {
+        char path[64];
+        snprintf(path, sizeof(path), "/generated/%zu", i);
+        assert(cHTTPX_Get(&private_routes, path, handler) != NULL);
+    }
+
+    assert(strcmp(route->path, "/api/v2/users/me") == 0);
     assert(cHTTPX_RouteUseAfter(route, middleware) == CHTTPX_OK);
     assert(route->after_middleware_count == 1);
-    free((void*)route->method);
-    free((void*)route->path);
-    free(server.routes);
-    serv = NULL;
-}
 
+    char mutable_type[] = "image/*";
+    const char* allowed_types[] = {mutable_type};
+    chttpx_upload_policy_t policy = {.max_size = 4096, .allowed_types = allowed_types, .allowed_types_count = 1};
+    assert(cHTTPX_RouteUploadPolicy(route, &policy) == CHTTPX_OK);
+    mutable_type[0] = 'v';
+    assert(strcmp(route->upload_policy.allowed_types[0], "image/*") == 0);
+
+    free_test_routes(&server);
+}
 static void test_helpers(void)
 {
     assert(strcmp(cHTTPX_StatusReason(404), "Not Found") == 0);
@@ -245,6 +372,9 @@ int main(void)
     test_typed_values();
     test_bind_and_json();
     test_multipart();
+    test_header_boundary();
+    test_request_framing();
+    test_streamed_raw_chunked_upload();
     test_streamed_multipart();
     test_routing_api();
     test_helpers();

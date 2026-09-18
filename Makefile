@@ -21,6 +21,8 @@ LIN_LDFLAGS = -lcjson
 WIN_LDFLAGS = -lws2_32
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
+TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
+TEST_SERVER_SANITIZE_TARGET = $(BINDIR)/test_server_sanitize
 EXAMPLE_SRC = examples.c
 EXAMPLE_OBJ = $(OBJDIR)/examples.o
 
@@ -91,6 +93,28 @@ test-win:
 	$(TEST_TARGET).exe
 	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_server.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_SERVER_TARGET).exe $(WIN_LDFLAGS)
 	$(TEST_SERVER_TARGET).exe
+
+# LINux tests
+# -
+
+test: $(TEST_TARGET) $(TEST_SERVER_TARGET)
+	$(TEST_TARGET)
+	$(TEST_SERVER_TARGET)
+
+$(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_core.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+$(TEST_SERVER_TARGET): tests/test_server.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_server.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+test-sanitize:
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined tests/test_core.c $(LIN_SRCS) -o $(TEST_SANITIZE_TARGET) $(LIN_LDFLAGS) -pthread
+	ASAN_OPTIONS=detect_leaks=1 $(TEST_SANITIZE_TARGET)
+	$(CC) $(CFLAGS) -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined tests/test_server.c $(LIN_SRCS) -o $(TEST_SERVER_SANITIZE_TARGET) $(LIN_LDFLAGS) -pthread
+	ASAN_OPTIONS=detect_leaks=1 $(TEST_SERVER_SANITIZE_TARGET)
 
 # LINux lib compile
 # -

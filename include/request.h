@@ -21,6 +21,8 @@ extern "C"
 
 #define CHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+    struct chttpx_serv;
+
 #define MAX_BUFFER_BODY (1024ULL * 1024 * 1024) // 1GB
 #define BUFFER_SIZE 16384
 
@@ -228,12 +230,15 @@ extern "C"
         void* context;
         chttpx_context_free_fn context_free;
 
+        /* App-managed server/microservice handling this request. */
+        struct chttpx_serv* _server;
+
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
         void* _contexts;
         chttpx_body_chunk_fn _body_chunk_fn;
         void* _body_chunk_data;
-        /* Disk-backed multipart body awaiting form parsing. */
+        /* Disk-backed upload body awaiting media parsing (multipart or raw). */
         void* _multipart_stream;
         int _parse_status;
     } chttpx_request_t;
