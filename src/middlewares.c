@@ -5,19 +5,7 @@
  * of this software and associated documentation files (the "Software"), to
  * deal in the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * sell copies of the Software.
  */
 
 #include "middlewares.h"
@@ -31,98 +19,103 @@
 
 #include <time.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-static char logging_enabled = 0;
-
-/* Rate limiter */
-static rate_limiter_entry_t rate_limits[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE];
-static char rate_limit_ips[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE][64];
-
-#if defined(_WIN32) || defined(_WIN64)
-static CRITICAL_SECTION rate_limit_mu;
-
-#define INIT_RLIMIT_MUTEX() InitializeCriticalSection(&rate_limit_mu)
-#define LOCK_RLIMIT_MUTEX() EnterCriticalSection(&rate_limit_mu)
-#define UNLOCK_RLIMIT_MUTEX() LeaveCriticalSection(&rate_limit_mu)
-#else
-static pthread_mutex_t rate_limit_mu = PTHREAD_MUTEX_INITIALIZER;
-
-#define INIT_RLIMIT_MUTEX()
-#define LOCK_RLIMIT_MUTEX() pthread_mutex_lock(&rate_limit_mu)
-#define UNLOCK_RLIMIT_MUTEX() pthread_mutex_unlock(&rate_limit_mu)
-#endif
-
-static uint32_t rl_max_requests = 5;
-static uint32_t rl_window_sec = 1;
-
-/**
- * Register a global middleware function.
- *
- * Middleware functions are executed in the order they are registered,
- * before the route handler is called.
- *
- * If a middleware returns 0, the middleware chain is aborted and the
- * response provided by the middleware is sent to the client.
- *
- * If a middleware returns 1, processing continues to the next middleware
- * or to the route handler.
- *
- * @param mw Middleware function pointer.
- */
-void cHTTPX_MiddlewareUse(chttpx_middleware_t mw)
+typedef struct
 {
-    if (!serv)
-    {
-        fprintf(stderr, "Error: server is not initialized\n");
-        return;
-    }
+    rate_limiter_entry_t entries[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE];
+    char ips[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE][64];
+    uint32_t max_requests;
+    uint32_t window_sec;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    CRITICAL_SECTION mutex;
+#else
+    pthread_mutex_t mutex;
+#endif
+} chttpx_rate_limiter_state_t;
 
-    if (serv->middleware.middleware_count >= MAX_MIDDLEWARES)
-    {
-        fprintf(stderr, "Error: the number of middleware (MAX_MIDDLEWARES) has been exceeded\n");
-        return;
-    }
+static int middleware_registered(const chttpx_middleware_stack_t* stack, chttpx_middleware_t middleware)
+{
+    if (!stack || !middleware)
+        return 0;
 
-    serv->middleware.middlewares[serv->middleware.middleware_count++] = mw;
+    for (size_t i = 0; i < stack->middleware_count; i++)
+        if (stack->middlewares[i] == middleware)
+            return 1;
+
+    return 0;
 }
 
-void cHTTPX_MiddlewareUseAfter(chttpx_middleware_t mw)
+void cHTTPX_MiddlewareUse(chttpx_serv_t* server, chttpx_middleware_t middleware)
 {
-    if (!serv || !mw || serv->middleware.after_middleware_count >= MAX_MIDDLEWARES)
+    if (!server || !server->initialized || !middleware)
         return;
-    serv->middleware.after_middlewares[serv->middleware.after_middleware_count++] = mw;
+
+    if (server->middleware.middleware_count >= MAX_MIDDLEWARES)
+        return;
+
+    server->middleware.middlewares[server->middleware.middleware_count++] = middleware;
+}
+
+void cHTTPX_MiddlewareUseAfter(chttpx_serv_t* server, chttpx_middleware_t middleware)
+{
+    if (!server || !server->initialized || !middleware || server->middleware.after_middleware_count >= MAX_MIDDLEWARES)
+        return;
+
+    server->middleware.after_middlewares[server->middleware.after_middleware_count++] = middleware;
 }
 
 static uint32_t rate_limiter_hash(const char* ip)
 {
     uint64_t hash = 5381;
-    int char_v;
+    int value;
 
-    while ((char_v = *ip++))
-        hash = ((hash << 5) + hash) + char_v;
-    return hash % MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE;
+    while ((value = (unsigned char)*ip++))
+        hash = ((hash << 5) + hash) + (uint64_t)value;
+
+    return (uint32_t)(hash % MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE);
+}
+
+static void rate_limiter_lock(chttpx_rate_limiter_state_t* state)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    EnterCriticalSection(&state->mutex);
+#else
+    pthread_mutex_lock(&state->mutex);
+#endif
+}
+
+static void rate_limiter_unlock(chttpx_rate_limiter_state_t* state)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    LeaveCriticalSection(&state->mutex);
+#else
+    pthread_mutex_unlock(&state->mutex);
+#endif
 }
 
 static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t* req, chttpx_response_t* res)
 {
-    LOCK_RLIMIT_MUTEX();
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    chttpx_rate_limiter_state_t* state = server ? (chttpx_rate_limiter_state_t*)server->rate_limiter_state : NULL;
+    if (!state)
+        return next;
 
-    uint32_t indx = rate_limiter_hash(req->client_ip);
-    rate_limiter_entry_t* entry = &rate_limits[indx];
+    rate_limiter_lock(state);
 
-    if (strcmp(rate_limit_ips[indx], req->client_ip) != 0)
+    uint32_t index = rate_limiter_hash(req->client_ip);
+    rate_limiter_entry_t* entry = &state->entries[index];
+
+    if (strcmp(state->ips[index], req->client_ip) != 0)
     {
-        strncpy(rate_limit_ips[indx], req->client_ip, sizeof(rate_limit_ips[indx]) - 1);
-        rate_limit_ips[indx][sizeof(rate_limit_ips[indx]) - 1] = 0;
-
+        snprintf(state->ips[index], sizeof(state->ips[index]), "%s", req->client_ip);
         entry->window_start = time(NULL);
         entry->requests = 0;
     }
 
     time_t now = time(NULL);
-
-    if (now - entry->window_start >= rl_window_sec)
+    if (now - entry->window_start >= (time_t)state->window_sec)
     {
         entry->window_start = now;
         entry->requests = 0;
@@ -130,40 +123,48 @@ static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t* req,
 
     entry->requests++;
 
-    if (entry->requests > rl_max_requests)
+    if (entry->requests > state->max_requests)
     {
         *res = cHTTPX_ResJson(cHTTPX_StatusTooManyRequests, "{\"error\": \"too many requests\"}");
-
-        UNLOCK_RLIMIT_MUTEX();
+        rate_limiter_unlock(state);
         return out;
     }
 
-    UNLOCK_RLIMIT_MUTEX();
+    rate_limiter_unlock(state);
     return next;
 }
 
-/**
- * Configure the rate limiter and register the middleware.
- *
- * Example:
- * cHTTPX_MiddlewareRateLimiter(10, 1); // 10 requests per second
- *
- * @param max_requests maximum number of requests
- * @param window_sec time window in seconds
- */
-void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec)
+void cHTTPX_MiddlewareRateLimiter(chttpx_serv_t* server, uint32_t max_requests, uint32_t window_sec)
 {
-    rl_max_requests = max_requests;
-    rl_window_sec = window_sec;
+    if (!server || !server->initialized || max_requests == 0 || window_sec == 0)
+        return;
 
-    /* middleware */
-    INIT_RLIMIT_MUTEX();
-    cHTTPX_MiddlewareUse(rate_limiter_middleware);
+    chttpx_rate_limiter_state_t* state = (chttpx_rate_limiter_state_t*)server->rate_limiter_state;
+    if (!state)
+    {
+        state = calloc(1, sizeof(*state));
+        if (!state)
+            return;
+
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        InitializeCriticalSection(&state->mutex);
+#else
+        if (pthread_mutex_init(&state->mutex, NULL) != 0)
+        {
+            free(state);
+            return;
+        }
+#endif
+        server->rate_limiter_state = state;
+    }
+
+    state->max_requests = max_requests;
+    state->window_sec = window_sec;
+
+    if (!middleware_registered(&server->middleware, rate_limiter_middleware))
+        cHTTPX_MiddlewareUse(server, rate_limiter_middleware);
 }
 
-/**
- * Compatibility hook. Fatal signal recovery is deliberately disabled.
- */
 void _recovery_init(void)
 {
 }
@@ -175,12 +176,9 @@ static chttpx_middleware_result_t recovery_middleware(chttpx_request_t* req, cht
     return next;
 }
 
-/**
- * Compatibility no-op. Use a process supervisor for fatal faults.
- */
-void cHTTPX_MiddlewareRecovery()
+void cHTTPX_MiddlewareRecovery(chttpx_serv_t* server)
 {
-    cHTTPX_MiddlewareUse(recovery_middleware);
+    cHTTPX_MiddlewareUse(server, recovery_middleware);
 }
 
 static double diff_ms(struct timespec a, struct timespec b)
@@ -188,38 +186,38 @@ static double diff_ms(struct timespec a, struct timespec b)
     return (b.tv_sec - a.tv_sec) * 1000.0 + (b.tv_nsec - a.tv_nsec) / 1e6;
 }
 
-/**
- * Writes the HTTP request and response log to a file.
- *
- * This function is called after a request has been processed and a response
- * has been generated. It collects information about the client, HTTP method,
- * request path, protocol, response status, response size, and processing time,
- * then writes it to a log file.
- *
- * @param req Pointer to the chttpx_request_t request structure.
- * @param res Pointer to the chttpx_response_t response structure.
- */
 void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res)
 {
-    if (!logging_enabled)
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!server || !server->logging_enabled)
         return;
 
     double ms = diff_ms(res->start_ts, res->end_ts);
     char message[2048];
-    snprintf(message, sizeof(message), "%s \"%s %s %s\" %d %zu \"%s\" %.4fms", req->client_ip, req->method, req->path, req->protocol, res->status,
-             res->body_size, req->user_agent, ms);
-    if (serv && serv->logger && serv->log_level <= CHTTPX_LOG_INFO)
-        serv->logger(CHTTPX_LOG_INFO, req->request_id, message, serv->logger_data);
+    snprintf(message, sizeof(message), "%s \"%s %s %s\" %d %zu \"%s\" %.4fms", req->client_ip, req->method ? req->method : "",
+             req->path ? req->path : "", req->protocol, res->status, res->body_size, req->user_agent, ms);
+
+    if (server->logger && server->log_level <= CHTTPX_LOG_INFO)
+        server->logger(CHTTPX_LOG_INFO, req->request_id, message, server->logger_data);
 }
 
-/**
- * Registers a middleware for logging HTTP requests.
- *
- * This middleware is executed after every request to log request and response
- * information into a log file. If logging has not been initialized via
- * cHTTPX_LoggingInit, this middleware does not perform any logging.
- */
-void cHTTPX_MiddlewareLogging()
+void cHTTPX_MiddlewareLogging(chttpx_serv_t* server)
 {
-    logging_enabled = 1;
+    if (server && server->initialized)
+        server->logging_enabled = true;
+}
+
+void _chttpx_middleware_server_cleanup(chttpx_serv_t* server)
+{
+    if (!server || !server->rate_limiter_state)
+        return;
+
+    chttpx_rate_limiter_state_t* state = (chttpx_rate_limiter_state_t*)server->rate_limiter_state;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    DeleteCriticalSection(&state->mutex);
+#else
+    pthread_mutex_destroy(&state->mutex);
+#endif
+    free(state);
+    server->rate_limiter_state = NULL;
 }
