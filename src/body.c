@@ -415,6 +415,10 @@ static int spool_multipart_body(chttpx_request_t* req, chttpx_socket_t client_fd
 /* Parse body in request */
 void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buffer, size_t buffer_len)
 {
+    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!req || !server)
+        return;
+
     req->client_fd = client_fd;
 
     size_t content_length = 0;
@@ -444,7 +448,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
 
     if (chunked)
     {
-        size_t limit = memory_body ? serv->max_body_size : serv->max_upload_size;
+        size_t limit = memory_body ? server->max_body_size : server->max_upload_size;
         /*
          * JSON/text/form bodies are intentionally memory-backed. Multipart
          * and raw uploads are disk-backed so max_upload_size does not become
@@ -461,7 +465,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         return;
     }
 
-    size_t limit = multipart_body ? serv->max_upload_size : (memory_body ? serv->max_body_size : serv->max_upload_size);
+    size_t limit = multipart_body ? server->max_upload_size : (memory_body ? server->max_body_size : server->max_upload_size);
     if (req->content_length > limit)
     {
         req->_parse_status = cHTTPX_StatusPayloadTooLarge;
