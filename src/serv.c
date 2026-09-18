@@ -27,6 +27,8 @@
 #include "middlewares.h"
 #include "http.h"
 
+#include <errno.h>
+
 /* Extern server struct data */
 chttpx_serv_t* serv = NULL;
 
@@ -37,6 +39,22 @@ static void default_logger(chttpx_log_level_t level, const char* request_id, con
     if (level < CHTTPX_LOG_DEBUG || level > CHTTPX_LOG_OFF)
         level = CHTTPX_LOG_ERROR;
     fprintf(stderr, "[%s] request_id=%s %s\n", names[level], request_id && *request_id ? request_id : "-", message ? message : "");
+}
+
+static void network_runtime_cleanup(void)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    WSACleanup();
+#endif
+}
+
+static void server_sleep_ms(unsigned int milliseconds)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    Sleep(milliseconds);
+#else
+    usleep(milliseconds * 1000U);
+#endif
 }
 
 /**
@@ -71,7 +89,7 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
 
 int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
 {
-    if (!serv_p || !config || config->max_clients == 0)
+    if (!serv_p || !config || config->max_clients == 0 || serv)
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
     memset(serv_p, 0, sizeof(*serv_p));
@@ -101,6 +119,7 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
     if (serv->server_fd < 0)
 #endif
     {
+        network_runtime_cleanup();
         serv = NULL;
         return CHTTPX_ERR_SOCKET;
     }
@@ -122,6 +141,7 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
     if (bind(serv->server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
     {
         chttpx_close(serv->server_fd);
+        network_runtime_cleanup();
         serv = NULL;
         return CHTTPX_ERR_BIND;
     }
@@ -132,6 +152,7 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
         if (getsockname(serv->server_fd, (struct sockaddr*)&addr, &address_size) != 0)
         {
             chttpx_close(serv->server_fd);
+            network_runtime_cleanup();
             serv = NULL;
             return CHTTPX_ERR_SOCKET;
         }
@@ -141,6 +162,7 @@ int cHTTPX_InitWithConfig(chttpx_serv_t* serv_p, const chttpx_config_t* config)
     if (listen(serv->server_fd, 128) < 0)
     {
         chttpx_close(serv->server_fd);
+        network_runtime_cleanup();
         serv = NULL;
         return CHTTPX_ERR_LISTEN;
     }
@@ -332,12 +354,17 @@ void cHTTPX_SetLogger(chttpx_logger_fn logger, void* user_data, chttpx_log_level
 
 static void* handle_client_wrapper(void* arg)
 {
-    if (!serv)
+    chttpx_serv_t* server = serv;
+    if (!server)
+    {
+        chttpx_socket_t client_fd = *(chttpx_socket_t*)arg;
+        free(arg);
+        chttpx_close(client_fd);
         return NULL;
+    }
 
     chttpx_handle(arg);
-
-    __atomic_fetch_sub(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
+    __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
     return NULL;
 }
 
@@ -348,28 +375,44 @@ static void* handle_client_wrapper(void* arg)
  */
 void cHTTPX_Listen()
 {
-    if (!serv)
+    chttpx_serv_t* server = serv;
+    if (!server)
     {
         fprintf(stderr, "Error: server is not initialized\n");
         return;
     }
 
-    serv->listening = true;
-    while (!serv->shutdown_requested)
+    bool expected = false;
+    if (!__atomic_compare_exchange_n(&server->listening, &expected, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return;
+
+    while (!__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
     {
-        chttpx_socket_t client_fd = accept(serv->server_fd, NULL, NULL);
+        chttpx_socket_t client_fd = accept(server->server_fd, NULL, NULL);
 #ifdef CHTTPX_PLATFORM_WINDOWS
         if (client_fd == INVALID_SOCKET)
 #else
         if (client_fd < 0)
 #endif
         {
-            if (serv->shutdown_requested)
+            if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
                 break;
+#ifdef CHTTPX_PLATFORM_POSIX
+            if (errno == EINTR)
+                continue;
+#endif
+            /* Avoid a tight loop on persistent descriptor/resource errors. */
+            server_sleep_ms(10);
             continue;
         }
 
-        if (__atomic_load_n(&serv->current_clients, __ATOMIC_SEQ_CST) >= serv->max_clients)
+        if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
+        {
+            chttpx_close(client_fd);
+            break;
+        }
+
+        if (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
         {
             static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
@@ -377,16 +420,14 @@ void cHTTPX_Listen()
             continue;
         }
 
-        /* Inc. max clients */
-        __atomic_fetch_add(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&server->current_clients, 1, __ATOMIC_SEQ_CST);
 
-        /* Get client socket */
         chttpx_socket_t* client_sock = malloc(sizeof(*client_sock));
         if (!client_sock)
         {
             perror("malloc failed");
             chttpx_close(client_fd);
-            __atomic_fetch_sub(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
+            __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
             continue;
         }
         *client_sock = client_fd;
@@ -396,7 +437,7 @@ void cHTTPX_Listen()
         {
             free(client_sock);
             chttpx_close(client_fd);
-            __atomic_fetch_sub(&serv->current_clients, 1, __ATOMIC_SEQ_CST);
+            __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
             continue;
         }
 
@@ -406,44 +447,37 @@ void cHTTPX_Listen()
         pthread_detach(thread_id);
 #endif
     }
-    serv->listening = false;
-}
 
+    __atomic_store_n(&server->listening, false, __ATOMIC_RELEASE);
+}
 void cHTTPX_Shutdown()
 {
-    if (!serv)
+    chttpx_serv_t* server = serv;
+    if (!server)
         return;
 
-    serv->shutdown_requested = true;
+    __atomic_store_n(&server->shutdown_requested, true, __ATOMIC_RELEASE);
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    shutdown(serv->server_fd, SD_BOTH);
+    shutdown(server->server_fd, SD_BOTH);
 #else
-    shutdown(serv->server_fd, SHUT_RDWR);
+    shutdown(server->server_fd, SHUT_RDWR);
 #endif
-    chttpx_close(serv->server_fd);
-    serv->server_fd = 0;
-
-    while (serv->listening)
-    {
+    chttpx_close(server->server_fd);
 #ifdef CHTTPX_PLATFORM_WINDOWS
-        Sleep(10);
+    server->server_fd = INVALID_SOCKET;
 #else
-        usleep(10000);
+    server->server_fd = -1;
 #endif
-    }
 
-    while (__atomic_load_n(&serv->current_clients, __ATOMIC_SEQ_CST) > 0)
-    {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        Sleep(10);
-#else
-        usleep(10000);
-#endif
-    }
+    while (__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE))
+        server_sleep_ms(10);
 
-    for (size_t i = 0; i < serv->routes_count; i++)
+    while (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) > 0)
+        server_sleep_ms(10);
+
+    for (size_t i = 0; i < server->routes_count; i++)
     {
-        chttpx_route_t* registered = serv->routes[i];
+        chttpx_route_t* registered = server->routes[i];
         if (!registered)
             continue;
         free((char*)registered->method);
@@ -451,18 +485,19 @@ void cHTTPX_Shutdown()
         free(registered);
     }
 
-    free(serv->routes);
-    serv->routes = NULL;
-    serv->routes_count = 0;
-    serv->routes_capacity = 0;
-    for (size_t i = 0; i < serv->cors.origins_count; i++)
-        free((void*)serv->cors.origins[i]);
-    free((void*)serv->cors.origins);
-    free((void*)serv->cors.methods);
-    free((void*)serv->cors.headers);
-    memset(&serv->cors, 0, sizeof(serv->cors));
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WSACleanup();
-#endif
-    serv = NULL;
+    free(server->routes);
+    server->routes = NULL;
+    server->routes_count = 0;
+    server->routes_capacity = 0;
+
+    for (size_t i = 0; i < server->cors.origins_count; i++)
+        free((void*)server->cors.origins[i]);
+    free((void*)server->cors.origins);
+    free((void*)server->cors.methods);
+    free((void*)server->cors.headers);
+    memset(&server->cors, 0, sizeof(server->cors));
+
+    network_runtime_cleanup();
+    if (serv == server)
+        serv = NULL;
 }
