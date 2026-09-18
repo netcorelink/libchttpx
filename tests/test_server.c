@@ -9,6 +9,7 @@ static int options_handler_calls;
 static char observed_body[64];
 static char observed_language[16];
 static char observed_request_id[65];
+static char observed_client_ip[46];
 static char internal_observed_body[64];
 static uint16_t public_port;
 static uint16_t internal_port;
@@ -21,6 +22,12 @@ static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
     snprintf(observed_language, sizeof(observed_language), "%s", req->language);
     snprintf(observed_request_id, sizeof(observed_request_id), "%s", req->request_id);
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "done");
+}
+
+static void ip_handler(chttpx_request_t* req, chttpx_response_t* res)
+{
+    snprintf(observed_client_ip, sizeof(observed_client_ip), "%s", req->client_ip);
+    *res = cHTTPX_ResNoContent();
 }
 
 static void options_handler(chttpx_request_t* req, chttpx_response_t* res)
@@ -219,6 +226,7 @@ int main(void)
 
     chttpx_router_t public_router = cHTTPX_RoutePathPrefix(public_api, "");
     assert(cHTTPX_Post(&public_router, "/body", request_handler));
+    assert(cHTTPX_Get(&public_router, "/ip", ip_handler));
     assert(cHTTPX_Options(&public_router, "/body", options_handler));
     assert(cHTTPX_Get(&public_router, "/empty", empty_handler));
     assert(cHTTPX_Post(&public_router, "/proxy", proxy_handler));
@@ -245,11 +253,20 @@ int main(void)
     char response[4096];
 
     exchange_ipv6(public_port,
-                  "GET /missing HTTP/1.1\r\n"
+                  "GET /ip HTTP/1.1\r\n"
                   "Host: localhost\r\n"
                   "\r\n",
                   response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 404 Not Found") != NULL);
+    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    assert(strcmp(observed_client_ip, "::1") == 0);
+
+    exchange(public_port,
+             "GET /ip HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "\r\n",
+             response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    assert(strcmp(observed_client_ip, "127.0.0.1") == 0);
 
     exchange(public_port,
              "OPTIONS /body HTTP/1.1\r\n"
