@@ -61,11 +61,17 @@ int main(void)
     if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
+    chttpx_config_t public_config = cHTTPX_DefaultConfig();
+    public_config.port = 8080;
+
+    chttpx_config_t internal_config = cHTTPX_DefaultConfig();
+    internal_config.port = 9090;
+
     chttpx_serv_t* public_api =
-        cHTTPX_AppServer(&app, "public", 8080);
+        cHTTPX_AppServer(&app, "public", &public_config);
 
     chttpx_serv_t* internal_api =
-        cHTTPX_AppServer(&app, "internal", 9090);
+        cHTTPX_AppServer(&app, "internal", &internal_config);
 
     if (!public_api || !internal_api)
     {
@@ -104,7 +110,28 @@ cHTTPX_Call(
 );
 ```
 
-Текущий body, content type, request ID, language и request headers наследуются автоматически. Для другого body есть `cHTTPX_CallWithBody()`.
+Текущий body, content type, request ID, language и request headers наследуются автоматически.
+
+Если исходящий запрос нужно изменить, например отправить другой body, используется `cHTTPX_CallEx()`:
+
+```c
+const char* body = "{\"user_id\":123,\"plan\":\"premium\"}";
+
+chttpx_call_options_t options = {
+    .body = body,
+    .body_size = strlen(body),
+    .content_type = cHTTPX_CTYPE_JSON,
+};
+
+cHTTPX_CallEx(
+    req,
+    "payments",
+    cHTTPX_MethodPost,
+    "/payments/create",
+    &options,
+    res
+);
+```
 
 Для сервера в другом процессе или Docker Compose используется `cHTTPX_AppRemote()`:
 
@@ -145,7 +172,7 @@ config.max_upload_size = 500ULL * 1024 * 1024;
 config.request_id_enabled = true;
 ```
 
-`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppInit()` возвращает `chttpx_error_t`, а `cHTTPX_AppServerWithConfig()` возвращает указатель на созданный server или `NULL`; библиотека не завершает приложение через `exit()`.
+`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppInit()` возвращает `chttpx_error_t`, а `cHTTPX_AppServer()` возвращает указатель на созданный server или `NULL`; библиотека не завершает приложение через `exit()`.
 
 ## Routes и groups
 
