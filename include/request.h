@@ -230,6 +230,9 @@ extern "C"
         void* context;
         chttpx_context_free_fn context_free;
 
+        /* App-managed server/microservice handling this request. */
+        struct chttpx_serv* _server;
+
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
         void* _contexts;
