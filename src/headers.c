@@ -156,64 +156,135 @@ static int add_header(chttpx_request_t* req, const char* name, const char* value
     return 1;
 }
 
+static int valid_header_name(const char* name, size_t length)
+{
+    if (!name || length == 0)
+        return 0;
+
+    for (size_t i = 0; i < length; i++)
+    {
+        unsigned char ch = (unsigned char)name[i];
+        if (isalnum(ch))
+            continue;
+
+        switch (ch)
+        {
+        case '!':
+        case '#':
+        case '$':
+        case '%':
+        case '&':
+        case '\'':
+        case '*':
+        case '+':
+        case '-':
+        case '.':
+        case '^':
+        case '_':
+        case '`':
+        case '|':
+        case '~':
+            break;
+        default:
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 /* Parse headers in request */
 void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len)
 {
-    char* line_start = buffer;
-    char* buffer_end = buffer + buffer_len;
-
-    /* Meta data - continue one line */
-    char* newline = memchr(line_start, '\n', buffer_end - line_start);
-    if (!newline)
+    if (!req || !buffer)
         return;
+
+    char* header_end = chttpx_memmem(buffer, buffer_len, "\r\n\r\n", 4);
+    if (!header_end)
+    {
+        req->_parse_status = 400;
+        return;
+    }
+
+    /*
+     * The delimiter starts at the CRLF terminating the last header (or the
+     * request line when there are no headers). Never scan beyond it: buffer
+     * may already contain request-body bytes from the same recv().
+     */
+    char* parse_end = header_end + 2;
+    char* line_start = buffer;
+    char* newline = memchr(line_start, '\n', (size_t)(parse_end - line_start));
+    if (!newline || newline == line_start || newline[-1] != '\r')
+    {
+        req->_parse_status = 400;
+        return;
+    }
     line_start = newline + 1;
 
-    while (line_start < buffer_end)
+    while (line_start < parse_end)
     {
-        newline = memchr(line_start, '\n', buffer_end - line_start);
-        if (!newline)
+        newline = memchr(line_start, '\n', (size_t)(parse_end - line_start));
+        if (!newline || newline == line_start || newline[-1] != '\r')
+        {
+            req->_parse_status = 400;
+            return;
+        }
+
+        size_t line_len = (size_t)(newline - line_start - 1);
+        if (line_len == 0)
             break;
 
-        size_t line_len = newline - line_start;
-        if (line_len > 0 && line_start[line_len - 1] == '\r')
-            line_len--;
-
         char* colon = memchr(line_start, ':', line_len);
-        if (colon)
+        if (!colon)
         {
-            size_t name_len = colon - line_start;
-            size_t value_len = line_len - name_len - 1;
+            req->_parse_status = 400;
+            return;
+        }
 
-            if (name_len == 0 || name_len >= MAX_HEADER_NAME || value_len >= MAX_HEADER_VALUE)
+        size_t name_len = (size_t)(colon - line_start);
+        if (!valid_header_name(line_start, name_len) || name_len >= MAX_HEADER_NAME)
+        {
+            req->_parse_status = 400;
+            return;
+        }
+
+        char* value_start = colon + 1;
+        size_t value_len = line_len - name_len - 1;
+        while (value_len > 0 && (*value_start == ' ' || *value_start == '\t'))
+        {
+            value_start++;
+            value_len--;
+        }
+        while (value_len > 0 && (value_start[value_len - 1] == ' ' || value_start[value_len - 1] == '\t'))
+            value_len--;
+
+        if (value_len >= MAX_HEADER_VALUE)
+        {
+            req->_parse_status = 431;
+            return;
+        }
+
+        for (size_t i = 0; i < value_len; i++)
+        {
+            unsigned char ch = (unsigned char)value_start[i];
+            if ((ch < 0x20 && ch != '\t') || ch == 0x7f)
             {
-                req->_parse_status = 431;
+                req->_parse_status = 400;
                 return;
             }
+        }
 
-            char* value_start = colon + 1;
-            while (value_len > 0 && *value_start == ' ')
-            {
-                value_start++;
-                value_len--;
-            }
+        char name_buf[MAX_HEADER_NAME];
+        char value_buf[MAX_HEADER_VALUE];
+        memcpy(name_buf, line_start, name_len);
+        name_buf[name_len] = '\0';
+        memcpy(value_buf, value_start, value_len);
+        value_buf[value_len] = '\0';
 
-            char name_buf[MAX_HEADER_NAME];
-            char value_buf[MAX_HEADER_VALUE];
-
-            size_t copy_name = name_len < MAX_HEADER_NAME - 1 ? name_len : MAX_HEADER_NAME - 1;
-            size_t copy_value = value_len < MAX_HEADER_VALUE - 1 ? value_len : MAX_HEADER_VALUE - 1;
-
-            memcpy(name_buf, line_start, copy_name);
-            name_buf[copy_name] = '\0';
-
-            memcpy(value_buf, value_start, copy_value);
-            value_buf[copy_value] = '\0';
-
-            if (!add_header(req, name_buf, value_buf))
-            {
-                req->_parse_status = 431;
-                return;
-            }
+        if (!add_header(req, name_buf, value_buf))
+        {
+            req->_parse_status = 431;
+            return;
         }
 
         line_start = newline + 1;
