@@ -44,6 +44,8 @@ make win-lib
 
 ## Быстрый старт
 
+Серверы создаются только через `cHTTPX_App`. Приложение владеет lifecycle, local microservers, local microservices и registry удалённых сервисов.
+
 ```c
 #include <libchttpx/libchttpx.h>
 
@@ -55,31 +57,74 @@ static void health(chttpx_request_t* req, chttpx_response_t* res)
 
 int main(void)
 {
-    chttpx_serv_t server;
-    chttpx_config_t config = cHTTPX_DefaultConfig();
-    config.port = 8080;
-    config.max_clients = 256;
-
-    if (cHTTPX_InitWithConfig(&server, &config) != CHTTPX_OK)
+    chttpx_app_t app;
+    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
         return 1;
 
-    chttpx_router_t root = cHTTPX_RoutePathPrefix("");
+    chttpx_serv_t* server =
+        cHTTPX_AppMicroserver(&app, "main", 8080);
+    if (!server)
+    {
+        cHTTPX_AppShutdown(&app);
+        return 1;
+    }
+
+    chttpx_router_t root =
+        cHTTPX_RoutePathPrefix(server, "");
+
     cHTTPX_Get(&root, "/health", health);
 
-    cHTTPX_Listen();
-    cHTTPX_Shutdown();
-    return 0;
+    int result = cHTTPX_AppRun(&app);
+    cHTTPX_AppShutdown(&app);
+    return result == CHTTPX_OK ? 0 : 1;
 }
 ```
 
-Старый initializer сохранён:
+### Microserver и Microservice
+
+**Microserver** — полноценный network server со своим listener, routes, middleware, CORS, logger и лимитами.
+
+**Microservice** — изолированный server-like модуль внутри того же `App`. У него свои routes и middleware, но отдельный TCP listener не создаётся.
 
 ```c
-size_t max_clients = 256;
-cHTTPX_Init(&server, 8080, &max_clients);
+chttpx_serv_t* main_server =
+    cHTTPX_AppMicroserver(&app, "main", 8080);
+
+chttpx_serv_t* payments =
+    cHTTPX_AppMicroservice(&app, "payments");
 ```
 
-В новом коде рекомендуется `cHTTPX_InitWithConfig()`.
+Локальный microservice вызывается без TCP через тот же route/handler pipeline:
+
+```c
+if (cHTTPX_Call(
+        req,
+        "payments",
+        cHTTPX_MethodPost,
+        "/payments/create",
+        res
+    ) != CHTTPX_OK)
+{
+    *res = cHTTPX_ResError(
+        cHTTPX_StatusInternalServerError,
+        "payment service unavailable"
+    );
+}
+```
+
+`cHTTPX_Call()` автоматически передаёт текущий body, content type, request ID, language и нужные request headers. Если нужен другой body, используется `cHTTPX_CallWithBody()`.
+
+Сервис в другом процессе или Docker-контейнере регистрируется по URL:
+
+```c
+cHTTPX_AppRemote(
+    &app,
+    "payments",
+    "http://payment-server:8090"
+);
+```
+
+Код вызова остаётся тем же `cHTTPX_Call(req, "payments", ...)`: local target вызывается напрямую, remote target — по HTTP.
 
 ## Конфигурация сервера
 
@@ -96,12 +141,12 @@ config.max_upload_size = 500ULL * 1024 * 1024;
 config.request_id_enabled = true;
 ```
 
-`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_InitWithConfig()` возвращает `chttpx_error_t`; библиотека не завершает приложение.
+`Content-Length` проверяется до скачивания body. Превышение body/upload limit возвращает `413 Payload Too Large`, превышение header limit — `431 Request Header Fields Too Large`. `cHTTPX_AppMicroserverWithConfig()` возвращает `chttpx_error_t`; библиотека не завершает приложение.
 
 ## Routes и groups
 
 ```c
-chttpx_router_t api = cHTTPX_RoutePathPrefix("/api/v2");
+chttpx_router_t api = cHTTPX_RoutePathPrefix(server, "/api/v2");
 chttpx_router_t auth = cHTTPX_RouteGroup(&api, "/auth");
 
 cHTTPX_Post(&auth, "/login", login_handler);
@@ -139,14 +184,14 @@ chttpx_route_t* route = cHTTPX_Post(&private_api, "/admin/import", import_data);
 cHTTPX_RouteUse(route, require_admin);
 cHTTPX_RouteUseAfter(route, record_metrics);
 
-cHTTPX_MiddlewareUse(global_before);
-cHTTPX_MiddlewareUseAfter(global_after);
+cHTTPX_MiddlewareUse(server, global_before);
+cHTTPX_MiddlewareUseAfter(server, global_after);
 cHTTPX_RouterUseAfter(&private_api, trace_private_route);
 ```
 
 After middleware выполняются в обратном порядке после handler или route short-circuit, но до отправки response.
 
-`cHTTPX_MiddlewareRecovery()` оставлен как совместимый no-op. Продолжать процесс после `SIGSEGV` через `setjmp`/`longjmp` небезопасно; фатальные ошибки должны обрабатываться supervisor/restart-моделью.
+`cHTTPX_MiddlewareRecovery(server)` оставлен как совместимый no-op. Продолжать процесс после `SIGSEGV` через `setjmp`/`longjmp` небезопасно; фатальные ошибки должны обрабатываться supervisor/restart-моделью.
 
 ## Request и metadata
 
@@ -340,7 +385,7 @@ config.default_language = "en";
 
 ```c
 const char* origins[] = {"https://example.com"};
-cHTTPX_Cors(origins, CHTTPX_ARRAY_LEN(origins),
+cHTTPX_Cors(server, origins, CHTTPX_ARRAY_LEN(origins),
             "GET, POST, PATCH, OPTIONS",
             "Content-Type, Authorization, X-Request-ID");
 ```
@@ -357,15 +402,15 @@ static void logger(chttpx_log_level_t level, const char* request_id,
 }
 
 cHTTPX_SetLogger(logger, NULL, CHTTPX_LOG_INFO);
-cHTTPX_MiddlewareLogging();
-cHTTPX_MiddlewareRateLimiter(100, 1);
+cHTTPX_MiddlewareLogging(server);
+cHTTPX_MiddlewareRateLimiter(server, 100, 1);
 ```
 
 Путь `./logs` больше не захардкожен. Default logger пишет в stderr, приложение может подключить любой backend. Shared table rate limiter защищена mutex.
 
 ## Timeouts, shutdown и thread safety
 
-Timeouts задаются в `chttpx_config_t`. Для SIGINT/SIGTERM вызывайте `cHTTPX_Shutdown()` из control/signal thread: функция прекращает accept, закрывает listener, ждёт активные requests, освобождает routes и CORS state.
+Timeouts задаются в `chttpx_config_t`. Для SIGINT/SIGTERM вызывайте `cHTTPX_AppShutdown(&app)` из control/signal thread: функция прекращает accept, закрывает listener, ждёт активные requests, освобождает routes и CORS state.
 
 `current_clients` изменяется атомарно; busy-loop при достижении лимита удалён. Routes настраиваются до `Listen()` и затем только читаются. Один request и его allocator должны использоваться только его worker thread. Shared state приложения синхронизируется самим приложением.
 
