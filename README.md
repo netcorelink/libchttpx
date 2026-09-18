@@ -109,6 +109,30 @@ cHTTPX_Call(
 
 The current body, content type, request ID, language, and request headers are inherited automatically. Use `cHTTPX_CallWithBody()` when a different body is needed.
 
+For a server in another process or Docker Compose, register it with `cHTTPX_AppRemote()`:
+
+```c
+cHTTPX_AppRemote(
+    &app,
+    "payments",
+    "http://payment-server:8090"
+);
+```
+
+The call remains identical:
+
+```c
+cHTTPX_Call(
+    req,
+    "payments",
+    cHTTPX_MethodPost,
+    "/payments/create",
+    res
+);
+```
+
+If `payments` is a local `AppServer`, the call is direct without TCP. If it was registered with `AppRemote`, the library performs an HTTP request to the configured address.
+
 ## Server configuration
 
 ```c
