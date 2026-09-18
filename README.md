@@ -146,7 +146,7 @@ config.request_id_enabled = true;
 
 `Content-Length` is validated before a request body is downloaded. Oversized regular bodies and uploads receive `413 Payload Too Large`; oversized headers receive `431 Request Header Fields Too Large`.
 
-Initialization returns `chttpx_error_t`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
+`cHTTPX_AppInit()` returns `chttpx_error_t`. `cHTTPX_AppMicroserverWithConfig()` returns the created server pointer or `NULL`; the library does not call `exit()` for socket, bind, listen, or allocation failures.
 
 ## Routes and groups
 
@@ -411,7 +411,7 @@ static void logger(chttpx_log_level_t level, const char* request_id,
     fprintf(stderr, "request_id=%s %s\n", request_id, message);
 }
 
-cHTTPX_SetLogger(logger, NULL, CHTTPX_LOG_INFO);
+cHTTPX_SetLogger(server, logger, NULL, CHTTPX_LOG_INFO);
 cHTTPX_MiddlewareLogging(server);
 cHTTPX_MiddlewareRateLimiter(server, 100, 1);
 ```
@@ -428,9 +428,9 @@ Call `cHTTPX_AppShutdown(&app)` from a signal-control thread for SIGINT/SIGTERM 
 
 HTTP responses use the correct reason phrase. Socket and I/O helpers return errors. `cHTTPX_SendAll()` handles partial sends and interruptions. Server initialization returns `CHTTPX_ERR_*` codes instead of terminating the process.
 
-## Migration from the old API
+## Migration to the App API
 
-- `cHTTPX_Init(&server, port, &max_clients)` still works; prefer `cHTTPX_AppMicroserverWithConfig()`.
+- Standalone `cHTTPX_Init()`/`cHTTPX_Listen()`/`cHTTPX_Shutdown()` were removed; create and manage servers only through `cHTTPX_App`.
 - `cHTTPX_RegisterRoute()` still works; prefer method helpers.
 - `req->context` still works; prefer named contexts.
 - `req->filename` remains populated for the first upload; prefer `cHTTPX_RequestFile()`/`cHTTPX_FormFile()`.
