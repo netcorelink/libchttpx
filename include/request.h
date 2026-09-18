@@ -19,7 +19,9 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
-#define CHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))\n\n    struct chttpx_serv;
+#define CHTTPX_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+    struct chttpx_serv;
 
 #define MAX_BUFFER_BODY (1024ULL * 1024 * 1024) // 1GB
 #define BUFFER_SIZE 16384
