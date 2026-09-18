@@ -12,7 +12,7 @@ extern "C"
 {
 #endif
 
-#include "serv.h"
+#include "cHTTPX_serv.h"
 
 #include <stdbool.h>
 #include <stddef.h>

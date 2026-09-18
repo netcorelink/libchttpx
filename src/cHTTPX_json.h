@@ -6,8 +6,8 @@ extern "C"
 {
 #endif
 
-#include "request.h"
-#include "response.h"
+#include "cHTTPX_request.h"
+#include "cHTTPX_response.h"
 
     typedef struct chttpx_json chttpx_json_t;
 

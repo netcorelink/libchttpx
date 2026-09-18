@@ -13,7 +13,7 @@ extern "C"
 {
 #endif
 
-#include "request.h"
+#include "cHTTPX_request.h"
 
 #define MAX_BODY_IN_MEMORY 1048576 // 1 MB
 

@@ -6,8 +6,8 @@ extern "C"
 {
 #endif
 
-#include "request.h"
-#include "response.h"
+#include "cHTTPX_request.h"
+#include "cHTTPX_response.h"
 
     /* Parse cookie in request */
     void _parse_req_cookies(chttpx_request_t* req);

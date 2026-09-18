@@ -13,8 +13,8 @@ extern "C"
 {
 #endif
 
-#include "request.h"
-#include "response.h"
+#include "cHTTPX_request.h"
+#include "cHTTPX_response.h"
 
     /**
      * Get a request header by name.
