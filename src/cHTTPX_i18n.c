@@ -20,10 +20,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "i18n.h"
+#include "cHTTPX_i18n.h"
 
-#include "crosspltm.h"
-#include "serv.h"
+#include "cHTTPX_crosspltm.h"
+#include "cHTTPX_serv.h"
 
 #include <stdio.h>
 #include <stdlib.h>

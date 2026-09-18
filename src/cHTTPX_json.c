@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "json.h"
+#include "cHTTPX_json.h"
 
-#include "http.h"
+#include "cHTTPX_http.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "../lib/cjson/cJSON.h"

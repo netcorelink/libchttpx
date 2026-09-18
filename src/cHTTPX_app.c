@@ -4,13 +4,13 @@
  * cHTTPX application runtime for managing multiple HTTP servers.
  */
 
-#include "app.h"
+#include "cHTTPX_app.h"
 
-#include "cookies.h"
-#include "headers.h"
-#include "http.h"
-#include "queries.h"
-#include "utils.h"
+#include "cHTTPX_cookies.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_http.h"
+#include "cHTTPX_queries.h"
+#include "cHTTPX_utils.h"
 
 #include <errno.h>
 #include <stdio.h>

@@ -20,10 +20,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "cookies.h"
+#include "cHTTPX_cookies.h"
 
-#include "headers.h"
-#include "crosspltm.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_crosspltm.h"
 
 #include <time.h>
 #include <stdio.h>

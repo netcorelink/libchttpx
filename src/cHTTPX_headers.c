@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "headers.h"
+#include "cHTTPX_headers.h"
 
-#include "crosspltm.h"
+#include "cHTTPX_crosspltm.h"
 
 static int valid_header_name(const char* name, size_t length);
 static int valid_header_value(const char* value, size_t length);

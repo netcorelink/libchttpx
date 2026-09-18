@@ -20,9 +20,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "inet.h"
+#include "cHTTPX_inet.h"
 
-#include "crosspltm.h"
+#include "cHTTPX_crosspltm.h"
 
 /**
  * Get client IP address from the underlying socket connection.

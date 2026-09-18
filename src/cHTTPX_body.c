@@ -20,13 +20,13 @@
  * IN THE SOFTWARE.
  */
 
-#include "body.h"
+#include "cHTTPX_body.h"
 
-#include "utils.h"
-#include "headers.h"
-#include "crosspltm.h"
-#include "serv.h"
-#include "http.h"
+#include "cHTTPX_utils.h"
+#include "cHTTPX_headers.h"
+#include "cHTTPX_crosspltm.h"
+#include "cHTTPX_serv.h"
+#include "cHTTPX_http.h"
 
 #include <stdio.h>
 #include <errno.h>
