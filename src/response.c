@@ -35,6 +35,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <limits.h>
 
 int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
 {
@@ -52,7 +53,12 @@ int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
 #ifdef MSG_NOSIGNAL
         flags |= MSG_NOSIGNAL;
 #endif
-        ssize_t result = send(fd, (const char*)cursor + sent, size - sent, flags);
+        size_t wanted = size - sent;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+        if (wanted > INT_MAX)
+            wanted = INT_MAX;
+#endif
+        ssize_t result = send(fd, (const char*)cursor + sent, wanted, flags);
         if (result < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
