@@ -72,15 +72,22 @@ static void exchange(const char* request, char* response, size_t response_size)
 int main(void)
 {
     chttpx_serv_t server;
-    const char* languages[] = {"en", "ru"};
+    char language_en[] = "en";
+    char language_ru[] = "ru";
+    char fallback[] = "en";
+    const char* languages[] = {language_en, language_ru};
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 0;
     config.max_body_size = 16;
     config.languages = languages;
     config.languages_count = CHTTPX_ARRAY_LEN(languages);
-    config.default_language = "en";
+    config.default_language = fallback;
     assert(cHTTPX_InitWithConfig(&server, &config) == CHTTPX_OK);
     test_port = server.port;
+
+    /* The server must own its language configuration after Init returns. */
+    strcpy(language_ru, "xx");
+    strcpy(fallback, "xx");
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix("");
     cHTTPX_Post(&router, "/body", request_handler);
