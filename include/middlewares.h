@@ -114,7 +114,10 @@ extern "C"
      * information into a log file. If logging has not been initialized via
      * cHTTPX_LoggingInit, this middleware does not perform any logging.
      */
-    void cHTTPX_MiddlewareLogging(struct chttpx_serv* server);\n\n    /* Internal cleanup for per-server middleware state. */\n    void _chttpx_middleware_server_cleanup(struct chttpx_serv* server);
+    void cHTTPX_MiddlewareLogging(struct chttpx_serv* server);
+
+    /* Internal cleanup for per-server middleware state. */
+    void _chttpx_middleware_server_cleanup(struct chttpx_serv* server);
 
 #ifdef __cplusplus
     extern
