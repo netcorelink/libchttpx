@@ -284,7 +284,9 @@ static void parse_multipart_buffered(chttpx_request_t* req)
         size_t headers_size = (size_t)(headers_end - part);
         const unsigned char* data = headers_end + 4;
         const unsigned char* next = chttpx_memmem(data, (size_t)(end - data), boundary, boundary_size);
-        if (!next || next < data + 2 || next[-2] != '\r' || next[-1] != '\n')
+        if (!next)
+            goto bad_request;
+        if (next < data + 2 || next[-2] != '\r' || next[-1] != '\n')
             goto bad_request;
 
         size_t next_offset = (size_t)(next - data);\n        if (next_offset < 2)\n            goto bad_request;\n        size_t data_size = next_offset - 2;
