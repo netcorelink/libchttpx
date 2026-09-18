@@ -138,8 +138,7 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
                              .log_level = CHTTPX_LOG_INFO};
 }
 
-int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config,
-                        chttpx_component_kind_t kind, bool network_enabled)
+int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config)
 {
     if (!server || !app || !name || !*name || !config || config->max_clients == 0 ||
         (config->languages_count > 0 && !config->languages))
@@ -153,8 +152,6 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     if (!server->name)
         return CHTTPX_ERR_MEMORY;
 
-    server->kind = kind;
-    server->network_enabled = network_enabled;
     server->port = config->port;
     server->max_clients = config->max_clients;
     server->read_timeout_sec = config->read_timeout_sec;
@@ -178,12 +175,6 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     }
 
     _recovery_init();
-
-    if (!network_enabled)
-    {
-        server->initialized = true;
-        return CHTTPX_OK;
-    }
 
     server->server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (!socket_valid(server->server_fd))
@@ -457,7 +448,7 @@ static void* handle_client_wrapper(void* arg)
 
 void _chttpx_server_listen(chttpx_serv_t* server)
 {
-    if (!server || !server->initialized || !server->network_enabled || !socket_valid(server->server_fd))
+    if (!server || !server->initialized || !socket_valid(server->server_fd))
         return;
 
     bool expected = false;
@@ -530,7 +521,7 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
 
     __atomic_store_n(&server->shutdown_requested, true, __ATOMIC_RELEASE);
 
-    if (server->network_enabled && socket_valid(server->server_fd))
+    if (socket_valid(server->server_fd))
     {
 #ifdef CHTTPX_PLATFORM_WINDOWS
         shutdown(server->server_fd, SD_BOTH);
