@@ -106,6 +106,30 @@ cHTTPX_Call(
 
 Текущий body, content type, request ID, language и request headers наследуются автоматически. Для другого body есть `cHTTPX_CallWithBody()`.
 
+Для сервера в другом процессе или Docker Compose используется `cHTTPX_AppRemote()`:
+
+```c
+cHTTPX_AppRemote(
+    &app,
+    "payments",
+    "http://payment-server:8090"
+);
+```
+
+Вызов остаётся тем же:
+
+```c
+cHTTPX_Call(
+    req,
+    "payments",
+    cHTTPX_MethodPost,
+    "/payments/create",
+    res
+);
+```
+
+Если `payments` — local `AppServer`, вызов идёт напрямую без TCP. Если `payments` зарегистрирован через `AppRemote`, библиотека делает HTTP-запрос на указанный адрес.
+
 ## Конфигурация сервера
 
 ```c
