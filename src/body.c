@@ -22,25 +22,16 @@
 
 #include "body.h"
 
-#include "crosspltm.h"
-#include "headers.h"
-#include "http.h"
-#include "serv.h"
 #include "utils.h"
+#include "headers.h"
+#include "crosspltm.h"
+#include "serv.h"
+#include "http.h"
 
-#include <errno.h>
 #include <stdio.h>
-
-static void close_stream(void* resource)
-{
-    if (resource)
-        fclose((FILE*)resource);
-}
-
-static int is_multipart(const chttpx_request_t* req)
-{
-    return req && strstr(req->content_type, cHTTPX_CTYPE_MULTI) != NULL;
-}
+#include <errno.h>
+#include <string.h>
+#include <limits.h>
 
 static int parse_content_length(chttpx_request_t* req, size_t* content_length)
 {
@@ -52,193 +43,172 @@ static int parse_content_length(chttpx_request_t* req, size_t* content_length)
     }
     if (!*value || *value == '-')
         return 0;
-
     errno = 0;
     char* end = NULL;
     unsigned long long parsed = strtoull(value, &end, 10);
     if (errno == ERANGE || !end || *end || parsed > SIZE_MAX)
         return 0;
-
     *content_length = (size_t)parsed;
     return 1;
 }
 
 static int append_bytes(unsigned char** data, size_t* size, size_t* capacity, const unsigned char* bytes, size_t count, size_t limit)
 {
-    if (*size > limit || count > limit - *size || *size == SIZE_MAX || count > SIZE_MAX - *size - 1)
+    if (count > limit - *size)
         return 0;
-
-    size_t required = *size + count + 1;
-    if (required > *capacity)
+    if (*size + count + 1 > *capacity)
     {
-        size_t max_capacity = limit == SIZE_MAX ? SIZE_MAX : limit + 1;
+        size_t required = *size + count + 1;
+        size_t maximum = limit < SIZE_MAX ? limit + 1 : SIZE_MAX;
         size_t new_capacity = *capacity ? *capacity : 4096;
-
         while (new_capacity < required)
         {
-            if (new_capacity > max_capacity / 2)
+            if (new_capacity > maximum / 2)
             {
-                new_capacity = max_capacity;
+                new_capacity = maximum;
                 break;
             }
             new_capacity *= 2;
         }
-
         if (new_capacity < required)
             return 0;
-
         unsigned char* resized = realloc(*data, new_capacity);
         if (!resized)
             return 0;
         *data = resized;
         *capacity = new_capacity;
     }
-
     memcpy(*data + *size, bytes, count);
     *size += count;
     (*data)[*size] = '\0';
     return 1;
 }
 
-static int stream_write(FILE* stream, const unsigned char* data, size_t size, size_t* total, size_t limit)
+typedef struct
 {
-    if (size > limit - *total || (size && fwrite(data, 1, size, stream) != size))
-        return 0;
-    *total += size;
+    chttpx_socket_t client_fd;
+    const unsigned char* initial;
+    size_t initial_size;
+    size_t initial_offset;
+} chunked_reader_t;
+
+static int chunked_reader_read(chunked_reader_t* reader, unsigned char* output, size_t output_size)
+{
+    if (!reader || !output || output_size == 0)
+        return -1;
+
+    if (reader->initial_offset < reader->initial_size)
+    {
+        size_t available = reader->initial_size - reader->initial_offset;
+        size_t count = available < output_size ? available : output_size;
+        memcpy(output, reader->initial + reader->initial_offset, count);
+        reader->initial_offset += count;
+        return (int)count;
+    }
+
+    size_t wanted = output_size;
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    if (wanted > INT_MAX)
+        wanted = INT_MAX;
+#endif
+    return recv(reader->client_fd, (char*)output, wanted, 0);
+}
+
+static int chunked_reader_exact(chunked_reader_t* reader, unsigned char* output, size_t output_size)
+{
+    size_t offset = 0;
+    while (offset < output_size)
+    {
+        int received = chunked_reader_read(reader, output + offset, output_size - offset);
+        if (received <= 0)
+            return 0;
+        offset += (size_t)received;
+    }
     return 1;
 }
 
-static int receive_fixed_multipart(chttpx_request_t* req, chttpx_socket_t client_fd, const unsigned char* initial, size_t initial_size)
+static int chunked_reader_line(chunked_reader_t* reader, char* line, size_t line_size)
 {
-    FILE* stream = tmpfile();
-    if (!stream || cHTTPX_Defer(req, stream, close_stream) != 0)
-    {
-        if (stream)
-            fclose(stream);
-        req->_parse_status = cHTTPX_StatusInternalServerError;
-        return 0;
-    }
+    if (!reader || !line || line_size < 2)
+        return -1;
 
-    size_t total = initial_size > req->content_length ? req->content_length : initial_size;
-    if (total && fwrite(initial, 1, total, stream) != total)
+    size_t length = 0;
+    bool saw_cr = false;
+    for (;;)
     {
-        req->_parse_status = cHTTPX_StatusInternalServerError;
-        return 0;
-    }
+        unsigned char byte;
+        if (!chunked_reader_exact(reader, &byte, 1))
+            return -1;
 
-    unsigned char buffer[BUFFER_SIZE];
-    while (total < req->content_length)
-    {
-        size_t wanted = req->content_length - total;
-        if (wanted > sizeof(buffer))
-            wanted = sizeof(buffer);
-
-        int received = recv(client_fd, (char*)buffer, wanted, 0);
-        if (received <= 0)
+        if (saw_cr)
         {
-            req->_parse_status = cHTTPX_StatusBadRequest;
-            return 0;
+            if (byte != '\n')
+                return -1;
+            line[length] = '\0';
+            return (int)length;
         }
 
-        if (fwrite(buffer, 1, (size_t)received, stream) != (size_t)received)
+        if (byte == '\r')
         {
-            req->_parse_status = cHTTPX_StatusInternalServerError;
-            return 0;
+            saw_cr = true;
+            continue;
         }
-        total += (size_t)received;
-    }
 
-    if (fflush(stream) != 0 || fseek(stream, 0, SEEK_SET) != 0)
-    {
-        req->_parse_status = cHTTPX_StatusInternalServerError;
-        return 0;
+        if (length + 1 >= line_size)
+            return -1;
+        line[length++] = (char)byte;
     }
+}
 
-    req->_multipart_stream = stream;
-    req->body = NULL;
-    req->body_size = 0;
-    return 1;
+static void close_stream(void* resource)
+{
+    if (resource)
+        fclose((FILE*)resource);
 }
 
 static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, const unsigned char* initial, size_t initial_size, size_t limit,
-                          int spool_to_disk)
+                          bool spool_to_disk)
 {
-    unsigned char* wire = NULL;
-    size_t wire_size = 0;
-    size_t wire_capacity = 0;
     unsigned char* decoded = NULL;
     size_t decoded_size = 0;
     size_t decoded_capacity = 0;
-    size_t cursor = 0;
-    FILE* stream = NULL;
-
-    size_t wire_limit = limit > SIZE_MAX - BUFFER_SIZE ? SIZE_MAX : limit + BUFFER_SIZE;
-    if (!append_bytes(&wire, &wire_size, &wire_capacity, initial, initial_size, wire_limit))
-        goto fail;
+    FILE* spool = NULL;
 
     if (spool_to_disk)
     {
-        stream = tmpfile();
-        if (!stream || cHTTPX_Defer(req, stream, close_stream) != 0)
+        spool = tmpfile();
+        if (!spool)
         {
-            if (stream)
-                fclose(stream);
-            stream = NULL;
             req->_parse_status = cHTTPX_StatusInternalServerError;
-            goto fail;
+            return 0;
         }
     }
 
+    chunked_reader_t reader = {
+        .client_fd = client_fd,
+        .initial = initial,
+        .initial_size = initial_size,
+        .initial_offset = 0,
+    };
+
     for (;;)
     {
-        unsigned char* line_end = chttpx_memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
-        while (!line_end)
-        {
-            unsigned char incoming[BUFFER_SIZE];
-            int received = recv(client_fd, (char*)incoming, sizeof(incoming), 0);
-            if (received <= 0 || !append_bytes(&wire, &wire_size, &wire_capacity, incoming, (size_t)received, wire_limit))
-                goto fail;
-            line_end = chttpx_memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
-        }
+        char line[64];
+        int line_length = chunked_reader_line(&reader, line, sizeof(line));
+        if (line_length < 0)
+            goto bad_request;
 
-        size_t line_size = (size_t)(line_end - (wire + cursor));
-        if (line_size == 0 || line_size >= 32)
-            goto fail;
-
-        char line[32];
-        memcpy(line, wire + cursor, line_size);
-        line[line_size] = '\0';
         char* extension = strchr(line, ';');
         if (extension)
             *extension = '\0';
+        if (!*line)
+            goto bad_request;
 
         errno = 0;
         char* end = NULL;
-        unsigned long long parsed = strtoull(line, &end, 16);
-        if (errno == ERANGE || !end || *end || parsed > SIZE_MAX)
-            goto fail;
-        size_t chunk_size = (size_t)parsed;
-        cursor = (size_t)(line_end - wire) + 2;
-
-        if (chunk_size == 0)
-        {
-            for (;;)
-            {
-                unsigned char* trailer_end = chttpx_memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
-                while (!trailer_end)
-                {
-                    unsigned char incoming[BUFFER_SIZE];
-                    int received = recv(client_fd, (char*)incoming, sizeof(incoming), 0);
-                    if (received <= 0 || !append_bytes(&wire, &wire_size, &wire_capacity, incoming, (size_t)received, wire_limit))
-                        goto fail;
-                    trailer_end = chttpx_memmem(wire + cursor, wire_size - cursor, "\r\n", 2);
-                }
-                if (trailer_end == wire + cursor)
-                    break;
-                cursor = (size_t)(trailer_end - wire) + 2;
-            }
-            break;
-        }
+        unsigned long long chunk_size = strtoull(line, &end, 16);
+        if (errno == ERANGE || !end || *end || chunk_size > SIZE_MAX)
+            goto bad_request;
 
         if (chunk_size > limit - decoded_size)
         {
@@ -246,54 +216,60 @@ static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, cons
             goto fail;
         }
 
-        while (wire_size - cursor < chunk_size + 2)
+        if (chunk_size == 0)
         {
-            unsigned char incoming[BUFFER_SIZE];
-            int received = recv(client_fd, (char*)incoming, sizeof(incoming), 0);
-            if (received <= 0 || !append_bytes(&wire, &wire_size, &wire_capacity, incoming, (size_t)received, wire_limit))
-                goto fail;
+            for (;;)
+            {
+                int trailer_length = chunked_reader_line(&reader, line, sizeof(line));
+                if (trailer_length < 0)
+                    goto bad_request;
+                if (trailer_length == 0)
+                    break;
+            }
+            break;
         }
 
-        if (wire[cursor + chunk_size] != '\r' || wire[cursor + chunk_size + 1] != '\n')
-            goto fail;
-
-        if (spool_to_disk)
+        size_t remaining = (size_t)chunk_size;
+        unsigned char buffer[BUFFER_SIZE];
+        while (remaining > 0)
         {
-            if (!stream_write(stream, wire + cursor, chunk_size, &decoded_size, limit))
+            size_t wanted = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+            if (!chunked_reader_exact(&reader, buffer, wanted))
+                goto bad_request;
+
+            if (spool)
+            {
+                if (fwrite(buffer, 1, wanted, spool) != wanted)
+                {
+                    req->_parse_status = cHTTPX_StatusInternalServerError;
+                    goto fail;
+                }
+            }
+            else if (!append_bytes(&decoded, &decoded_size, &decoded_capacity, buffer, wanted, limit))
             {
                 req->_parse_status = cHTTPX_StatusInternalServerError;
                 goto fail;
             }
-        }
-        else if (!append_bytes(&decoded, &decoded_size, &decoded_capacity, wire + cursor, chunk_size, limit))
-        {
-            req->_parse_status = cHTTPX_StatusPayloadTooLarge;
-            goto fail;
+
+            if (spool)
+                decoded_size += wanted;
+            remaining -= wanted;
         }
 
-        cursor += chunk_size + 2;
-        if (cursor)
-        {
-            size_t left = wire_size - cursor;
-            memmove(wire, wire + cursor, left);
-            wire_size = left;
-            if (wire)
-                wire[wire_size] = '\0';
-            cursor = 0;
-        }
+        unsigned char crlf[2];
+        if (!chunked_reader_exact(&reader, crlf, sizeof(crlf)) || crlf[0] != '\r' || crlf[1] != '\n')
+            goto bad_request;
     }
 
-    free(wire);
     req->content_length = decoded_size;
-
-    if (spool_to_disk)
+    if (spool)
     {
-        if (fflush(stream) != 0 || fseek(stream, 0, SEEK_SET) != 0)
+        if (fflush(spool) != 0 || fseek(spool, 0, SEEK_SET) != 0 || cHTTPX_Defer(req, spool, close_stream) != 0)
         {
             req->_parse_status = cHTTPX_StatusInternalServerError;
-            return 0;
+            goto fail;
         }
-        req->_multipart_stream = stream;
+        req->_multipart_stream = spool;
         req->body = NULL;
         req->body_size = 0;
     }
@@ -304,14 +280,74 @@ static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, cons
     }
     return 1;
 
+bad_request:
+    req->_parse_status = cHTTPX_StatusBadRequest;
 fail:
-    free(wire);
     free(decoded);
-    if (!req->_parse_status)
-        req->_parse_status = cHTTPX_StatusBadRequest;
+    if (spool)
+        fclose(spool);
     return 0;
 }
 
+static int spool_multipart_body(chttpx_request_t* req, chttpx_socket_t client_fd, const unsigned char* initial, size_t initial_size)
+{
+    FILE* spool = tmpfile();
+    if (!spool)
+    {
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+        return 0;
+    }
+
+    size_t buffered = initial_size;
+    if (buffered > req->content_length)
+        buffered = req->content_length;
+
+    if (buffered > 0 && fwrite(initial, 1, buffered, spool) != buffered)
+    {
+        fclose(spool);
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+        return 0;
+    }
+
+    size_t total = buffered;
+    unsigned char chunk[BUFFER_SIZE];
+    while (total < req->content_length)
+    {
+        size_t wanted = req->content_length - total;
+        if (wanted > sizeof(chunk))
+            wanted = sizeof(chunk);
+
+        int received = recv(client_fd, (char*)chunk, wanted, 0);
+        if (received <= 0)
+        {
+            fclose(spool);
+            req->_parse_status = cHTTPX_StatusBadRequest;
+            return 0;
+        }
+
+        if (fwrite(chunk, 1, (size_t)received, spool) != (size_t)received)
+        {
+            fclose(spool);
+            req->_parse_status = cHTTPX_StatusInternalServerError;
+            return 0;
+        }
+        total += (size_t)received;
+    }
+
+    if (fflush(spool) != 0 || fseek(spool, 0, SEEK_SET) != 0 || cHTTPX_Defer(req, spool, close_stream) != 0)
+    {
+        fclose(spool);
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+        return 0;
+    }
+
+    req->_multipart_stream = spool;
+    req->body = NULL;
+    req->body_size = 0;
+    return 1;
+}
+
+/* Parse body in request */
 void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buffer, size_t buffer_len)
 {
     req->client_fd = client_fd;
@@ -324,9 +360,8 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     }
     req->content_length = content_length;
 
-    const int multipart = is_multipart(req);
-    const int memory_body = strstr(req->content_type, cHTTPX_CTYPE_JSON) || strstr(req->content_type, "text/") ||
-                            strstr(req->content_type, cHTTPX_CTYPE_FORM);
+    bool multipart_body = strstr(req->content_type, cHTTPX_CTYPE_MULTI) != NULL;
+    int memory_body = strstr(req->content_type, cHTTPX_CTYPE_JSON) || strstr(req->content_type, "text/") || strstr(req->content_type, cHTTPX_CTYPE_FORM);
 
     const char* body_start = chttpx_memmem(buffer, buffer_len, "\r\n\r\n", 4);
     if (!body_start)
@@ -337,7 +372,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     }
 
     body_start += 4;
-    size_t body_in_buffer = buffer_len - (size_t)(body_start - buffer);
+    size_t body_in_buffer = buffer_len - (body_start - buffer);
 
     const char* transfer_encoding = cHTTPX_HeaderGet(req, "Transfer-Encoding");
     if (transfer_encoding && strcasecmp(transfer_encoding, "chunked") == 0)
@@ -347,9 +382,8 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
             req->_parse_status = cHTTPX_StatusBadRequest;
             return;
         }
-
-        size_t limit = multipart ? serv->max_upload_size : (memory_body ? serv->max_body_size : serv->max_upload_size);
-        decode_chunked(req, client_fd, (const unsigned char*)body_start, body_in_buffer, limit, multipart);
+        size_t limit = multipart_body ? serv->max_upload_size : (memory_body ? serv->max_body_size : serv->max_upload_size);
+        decode_chunked(req, client_fd, (const unsigned char*)body_start, body_in_buffer, limit, multipart_body);
         return;
     }
 
@@ -360,16 +394,16 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         return;
     }
 
-    size_t limit = multipart ? serv->max_upload_size : (memory_body ? serv->max_body_size : serv->max_upload_size);
+    size_t limit = multipart_body ? serv->max_upload_size : (memory_body ? serv->max_body_size : serv->max_upload_size);
     if (req->content_length > limit)
     {
         req->_parse_status = cHTTPX_StatusPayloadTooLarge;
         return;
     }
 
-    if (multipart)
+    if (multipart_body)
     {
-        receive_fixed_multipart(req, client_fd, (const unsigned char*)body_start, body_in_buffer);
+        spool_multipart_body(req, client_fd, (const unsigned char*)body_start, body_in_buffer);
         return;
     }
 
@@ -380,10 +414,18 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         return;
     }
 
+    if (req->content_length == SIZE_MAX)
+    {
+        req->_parse_status = cHTTPX_StatusPayloadTooLarge;
+        return;
+    }
+
     req->body = malloc(req->content_length + 1);
     if (!req->body)
     {
+        perror("malloc failed");
         req->_parse_status = cHTTPX_StatusInternalServerError;
+        req->body_size = 0;
         return;
     }
 
@@ -404,16 +446,16 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         tv.tv_sec = 5;
         tv.tv_usec = 0;
 
-        int ready = select((int)client_fd + 1, &fds, NULL, NULL, &tv);
-        if (ready <= 0)
+        int r = select(client_fd + 1, &fds, NULL, NULL, &tv);
+        if (r <= 0)
             break;
 
-        int received = recv(client_fd, (char*)req->body + total_read, remaining, 0);
-        if (received <= 0)
+        ssize_t n = recv(client_fd, (char*)req->body + total_read, remaining, 0);
+        if (n <= 0)
             break;
 
-        total_read += (size_t)received;
-        remaining -= (size_t)received;
+        total_read += (size_t)n;
+        remaining -= (size_t)n;
     }
 
     if (total_read != req->content_length)
@@ -426,5 +468,5 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     }
 
     req->body_size = total_read;
-    req->body[req->body_size] = '\0';
+    ((char*)req->body)[req->body_size] = '\0';
 }
