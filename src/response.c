@@ -284,14 +284,15 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
 
     for (size_t i = 0; i < serv->routes_count; i++)
     {
-        if (strcmp(serv->routes[i].method, req->method) != 0)
+        chttpx_route_t* registered = serv->routes[i];
+        if (!registered || strcmp(registered->method, req->method) != 0)
             continue;
 
         int count = 0;
-        if (match_route(serv->routes[i].path, req->path, req->params, &count))
+        if (match_route(registered->path, req->path, req->params, &count))
         {
             req->params_count = count;
-            return &serv->routes[i];
+            return registered;
         }
     }
 
