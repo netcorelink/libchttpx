@@ -24,7 +24,8 @@
 
 #include "crosspltm.h"
 
-#include <ctype.h>
+static int valid_header_name(const char* name, size_t length);
+static int valid_header_value(const char* value, size_t length);
 
 /**
  * Get a request header by name.
@@ -67,14 +68,15 @@ int cHTTPX_HeaderAdd(chttpx_response_t* res, const char* name, const char* value
     if (res->headers_count >= MAX_HEADERS)
         return -1;
 
+    size_t name_length = strlen(name);
+    size_t value_length = strlen(value);
+    if (name_length >= MAX_HEADER_NAME || value_length >= MAX_HEADER_VALUE || !valid_header_name(name, name_length) ||
+        !valid_header_value(value, value_length))
+        return -1;
+
     chttpx_header_t* h = &res->headers[res->headers_count];
-
-    strncpy(h->name, name, MAX_HEADER_NAME - 1);
-    h->name[MAX_HEADER_NAME - 1] = '\0';
-
-    strncpy(h->value, value, MAX_HEADER_VALUE - 1);
-    h->value[MAX_HEADER_VALUE - 1] = '\0';
-
+    memcpy(h->name, name, name_length + 1);
+    memcpy(h->value, value, value_length + 1);
     res->headers_count++;
 
     return 0;
@@ -95,12 +97,17 @@ int cHTTPX_HeaderSet(chttpx_request_t* req, const char* name, const char* value)
     if (!req || !name || !value)
         return -1;
 
+    size_t name_length = strlen(name);
+    size_t value_length = strlen(value);
+    if (name_length >= MAX_HEADER_NAME || value_length >= MAX_HEADER_VALUE || !valid_header_name(name, name_length) ||
+        !valid_header_value(value, value_length))
+        return -1;
+
     for (size_t i = 0; i < req->headers_count; i++)
     {
         if (strcasecmp(req->headers[i].name, name) == 0)
         {
-            strncpy(req->headers[i].value, value, MAX_HEADER_VALUE - 1);
-            req->headers[i].value[MAX_HEADER_VALUE - 1] = '\0';
+            memcpy(req->headers[i].value, value, value_length + 1);
             return 0;
         }
     }
@@ -108,12 +115,8 @@ int cHTTPX_HeaderSet(chttpx_request_t* req, const char* name, const char* value)
     if (req->headers_count >= MAX_HEADERS)
         return -1;
 
-    strncpy(req->headers[req->headers_count].name, name, MAX_HEADER_NAME - 1);
-    req->headers[req->headers_count].name[MAX_HEADER_NAME - 1] = '\0';
-
-    strncpy(req->headers[req->headers_count].value, value, MAX_HEADER_VALUE - 1);
-    req->headers[req->headers_count].value[MAX_HEADER_VALUE - 1] = '\0';
-
+    memcpy(req->headers[req->headers_count].name, name, name_length + 1);
+    memcpy(req->headers[req->headers_count].value, value, value_length + 1);
     req->headers_count++;
 
     return 0;
@@ -166,7 +169,7 @@ static int valid_header_name(const char* name, size_t length)
     for (size_t i = 0; i < length; i++)
     {
         unsigned char ch = (unsigned char)name[i];
-        if (isalnum(ch))
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
             continue;
 
         switch (ch)
@@ -190,6 +193,21 @@ static int valid_header_name(const char* name, size_t length)
         default:
             return 0;
         }
+    }
+
+    return 1;
+}
+
+static int valid_header_value(const char* value, size_t length)
+{
+    if (!value)
+        return 0;
+
+    for (size_t i = 0; i < length; i++)
+    {
+        unsigned char ch = (unsigned char)value[i];
+        if ((ch < 0x20 && ch != '\t') || ch == 0x7f)
+            return 0;
     }
 
     return 1;
@@ -266,14 +284,10 @@ void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len)
             return;
         }
 
-        for (size_t i = 0; i < value_len; i++)
+        if (!valid_header_value(value_start, value_len))
         {
-            unsigned char ch = (unsigned char)value_start[i];
-            if ((ch < 0x20 && ch != '\t') || ch == 0x7f)
-            {
-                req->_parse_status = 400;
-                return;
-            }
+            req->_parse_status = 400;
+            return;
         }
 
         char name_buf[MAX_HEADER_NAME];
