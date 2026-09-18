@@ -48,6 +48,12 @@ static void proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "internal server call failed");
 }
 
+static void remote_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
+{
+    if (cHTTPX_Call(req, "remote-payments", cHTTPX_MethodPost, "/process", res) != CHTTPX_OK)
+        *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote server call failed");
+}
+
 static void exchange(uint16_t port, const char* request, char* response, size_t response_size)
 {
     chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -100,6 +106,18 @@ static void wait_until_listening(chttpx_serv_t* server)
 
 int main(void)
 {
+    chttpx_app_t remote_app;
+    assert(cHTTPX_AppInit(&remote_app) == CHTTPX_OK);
+
+    chttpx_serv_t* remote_server = cHTTPX_AppServer(&remote_app, "payments", 0);
+    assert(remote_server);
+
+    chttpx_router_t remote_router = cHTTPX_RoutePathPrefix(remote_server, "");
+    assert(cHTTPX_Post(&remote_router, "/process", internal_handler));
+
+    assert(cHTTPX_AppStart(&remote_app) == CHTTPX_OK);
+    wait_until_listening(remote_server);
+
     chttpx_app_t app;
     assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
 
@@ -131,9 +149,14 @@ int main(void)
     assert(cHTTPX_Options(&public_router, "/body", options_handler));
     assert(cHTTPX_Get(&public_router, "/empty", empty_handler));
     assert(cHTTPX_Post(&public_router, "/proxy", proxy_handler));
+    assert(cHTTPX_Post(&public_router, "/proxy-remote", remote_proxy_handler));
 
     chttpx_router_t internal_router = cHTTPX_RoutePathPrefix(internal_api, "");
     assert(cHTTPX_Post(&internal_router, "/process", internal_handler));
+
+    char remote_url[128];
+    snprintf(remote_url, sizeof(remote_url), "http://127.0.0.1:%u", remote_server->port);
+    assert(cHTTPX_AppRemote(&app, "remote-payments", remote_url) == CHTTPX_OK);
 
     const char* cors_origins[] = {"https://example.com"};
     cHTTPX_Cors(public_api, cors_origins, CHTTPX_ARRAY_LEN(cors_origins), NULL, NULL);
@@ -198,6 +221,17 @@ int main(void)
     assert(strstr(response, "\"server\":\"internal\"") != NULL);
     assert(strcmp(internal_observed_body, "{\"plan\":\"premium\"}") == 0);
 
+    exchange(public_port,
+             "POST /proxy-remote HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: 18\r\n"
+             "\r\n"
+             "{\"plan\":\"premium\"}",
+             response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "\"server\":\"internal\"") != NULL);
+
     exchange(internal_port,
              "POST /process HTTP/1.1\r\n"
              "Host: localhost\r\n"
@@ -219,6 +253,7 @@ int main(void)
     assert(strstr(response, "HTTP/1.1 413 Payload Too Large") != NULL);
 
     cHTTPX_AppShutdown(&app);
+    cHTTPX_AppShutdown(&remote_app);
 
     puts("multi-server App integration tests passed");
     return 0;
