@@ -577,6 +577,52 @@ internal_error:
     req->_parse_status = cHTTPX_StatusInternalServerError;
 }
 
+static void save_raw_upload_stream(chttpx_request_t* req, FILE* stream)
+{
+    if (!req || !stream || fseek(stream, 0, SEEK_SET) != 0)
+    {
+        if (req)
+            req->_parse_status = cHTTPX_StatusInternalServerError;
+        return;
+    }
+
+    char path[512];
+    FILE* file = create_temporary_file(path, sizeof(path));
+    if (!file)
+    {
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+        return;
+    }
+
+    size_t total = 0;
+    unsigned char chunk[FILE_BUFFER];
+    size_t received = 0;
+    while ((received = fread(chunk, 1, sizeof(chunk), stream)) > 0)
+    {
+        if (fwrite(chunk, 1, received, file) != received)
+            goto internal_error;
+        if (total > SIZE_MAX - received)
+            goto internal_error;
+        total += received;
+    }
+
+    if (ferror(stream) || total != req->content_length)
+        goto internal_error;
+
+    fclose(file);
+    if (!track_file(req, path, "file", "upload.bin", req->content_type, total))
+    {
+        remove(path);
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+    }
+    return;
+
+internal_error:
+    fclose(file);
+    remove(path);
+    req->_parse_status = cHTTPX_StatusInternalServerError;
+}
+
 static void save_raw_upload(chttpx_request_t* req, char* initial_buffer, size_t initial_len)
 {
     char path[512];
@@ -643,7 +689,9 @@ void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
         parse_urlencoded(req);
     else if (req->content_length > 0 && !strstr(req->content_type, cHTTPX_CTYPE_JSON) && !strstr(req->content_type, "text/"))
     {
-        if (req->body)
+        if (req->_multipart_stream)
+            save_raw_upload_stream(req, (FILE*)req->_multipart_stream);
+        else if (req->body)
         {
             char path[512];
             FILE* file = create_temporary_file(path, sizeof(path));
