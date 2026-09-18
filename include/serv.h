@@ -50,12 +50,6 @@ extern "C"
         CHTTPX_LOG_OFF
     } chttpx_log_level_t;
 
-    typedef enum
-    {
-        CHTTPX_COMPONENT_MICROSERVER = 1,
-        CHTTPX_COMPONENT_MICROSERVICE = 2
-    } chttpx_component_kind_t;
-
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef struct
@@ -101,8 +95,6 @@ extern "C"
     {
         struct chttpx_app* app;
         char* name;
-        chttpx_component_kind_t kind;
-        bool network_enabled;
         bool initialized;
 
         uint16_t port;
@@ -159,7 +151,7 @@ extern "C"
     /** Return a server configuration initialized with library defaults. */
     chttpx_config_t cHTTPX_DefaultConfig(void);
 
-    /** Create a router bound to one App-managed microserver or microservice. */
+    /** Create a router bound to one App-managed server. */
     chttpx_router_t cHTTPX_RoutePathPrefix(chttpx_serv_t* server, const char* prefix);
 
     void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler);
@@ -185,8 +177,7 @@ extern "C"
 
     /* Internal App/runtime helpers. */
     int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback);
-    int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config,
-                            chttpx_component_kind_t kind, bool network_enabled);
+    int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config);
     void _chttpx_server_listen(chttpx_serv_t* server);
     void _chttpx_server_shutdown(chttpx_serv_t* server);
 
