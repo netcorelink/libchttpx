@@ -40,9 +40,19 @@ int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
 {
     const unsigned char* cursor = data;
     size_t sent = 0;
+
+#ifdef SO_NOSIGPIPE
+    int no_sigpipe = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
+
     while (sent < size)
     {
-        ssize_t result = send(fd, (const char*)cursor + sent, size - sent, 0);
+        int flags = 0;
+#ifdef MSG_NOSIGNAL
+        flags |= MSG_NOSIGNAL;
+#endif
+        ssize_t result = send(fd, (const char*)cursor + sent, size - sent, flags);
         if (result < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
