@@ -25,6 +25,9 @@ jobs:
       - name: Build binary
         run: make lin
 
+      - name: Build examples
+        run: make examples
+
       - name: Build shared library
         run: make libchttpx.so
 
@@ -76,5 +79,6 @@ jobs:
             --suppress=missingIncludeSystem \
             --inline-suppr \
             -I include \
+            -I src \
             --error-exitcode=1 \
-            src/ include/
+            src/ include/ example/

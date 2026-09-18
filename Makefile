@@ -4,7 +4,7 @@ RELEASE_DIR = libchttpx-dev
 TAR = $(RELEASE_DIR).tar.gz
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -Iinclude
+CFLAGS = -Wall -Wextra -O2 -Iinclude -Isrc
 TARGET_DLL = libchttpx.dll
 CLANG_FORMAT = clang-format
 
@@ -23,8 +23,11 @@ TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
 TEST_SERVER_SANITIZE_TARGET = $(BINDIR)/test_server_sanitize
-EXAMPLE_SRC = examples.c
-EXAMPLE_OBJ = $(OBJDIR)/examples.o
+EXAMPLE_SRC = example/basic.c
+EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
+
+EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload
+EXAMPLE_TARGETS = $(addprefix $(BINDIR)/example-,$(EXAMPLE_NAMES))
 
 LIN_SRCS = $(wildcard src/*.c)
 WIN_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
@@ -44,6 +47,15 @@ $(BINDIR)/$(TARGET): $(LIN_OBJS) $(EXAMPLE_OBJ)
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+
+# Examples
+# -
+
+examples: $(EXAMPLE_TARGETS)
+
+$(BINDIR)/example-%: example/%.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 $< $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 # WINdows build
 # -
