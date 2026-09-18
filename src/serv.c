@@ -64,12 +64,10 @@ static void free_server_languages(chttpx_serv_t* server)
         return;
 
     for (size_t i = 0; i < server->languages_count; i++)
-        free(server->_owned_languages ? server->_owned_languages[i] : NULL);
-    free(server->_owned_languages);
-    free(server->_owned_default_language);
+        free((void*)server->languages[i]);
+    free((void*)server->languages);
+    free((void*)server->default_language);
 
-    server->_owned_languages = NULL;
-    server->_owned_default_language = NULL;
     server->languages = NULL;
     server->languages_count = 0;
     server->default_language = NULL;
@@ -112,8 +110,6 @@ int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, 
     }
 
     free_server_languages(server);
-    server->_owned_languages = owned_languages;
-    server->_owned_default_language = owned_fallback;
     server->languages = (const char**)owned_languages;
     server->languages_count = count;
     server->default_language = owned_fallback;
