@@ -54,6 +54,19 @@ static void remote_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote server call failed");
 }
 
+static void custom_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
+{
+    static const char custom_body[] = "{\"custom\":true}";
+    chttpx_call_options_t options = {
+        .body = custom_body,
+        .body_size = sizeof(custom_body) - 1,
+        .content_type = cHTTPX_CTYPE_JSON,
+    };
+
+    if (cHTTPX_CallEx(req, "internal", cHTTPX_MethodPost, "/process", &options, res) != CHTTPX_OK)
+        *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "custom internal call failed");
+}
+
 static void exchange(uint16_t port, const char* request, char* response, size_t response_size)
 {
     chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -109,7 +122,10 @@ int main(void)
     chttpx_app_t remote_app;
     assert(cHTTPX_AppInit(&remote_app) == CHTTPX_OK);
 
-    chttpx_serv_t* remote_server = cHTTPX_AppServer(&remote_app, "payments", 0);
+    chttpx_config_t remote_config = cHTTPX_DefaultConfig();
+    remote_config.port = 0;
+
+    chttpx_serv_t* remote_server = cHTTPX_AppServer(&remote_app, "payments", &remote_config);
     assert(remote_server);
 
     chttpx_router_t remote_router = cHTTPX_RoutePathPrefix(remote_server, "");
@@ -133,11 +149,14 @@ int main(void)
     public_config.languages_count = CHTTPX_ARRAY_LEN(languages);
     public_config.default_language = fallback;
 
-    chttpx_serv_t* public_api = cHTTPX_AppServerWithConfig(&app, "public", &public_config);
+    chttpx_serv_t* public_api = cHTTPX_AppServer(&app, "public", &public_config);
     assert(public_api);
     public_port = public_api->port;
 
-    chttpx_serv_t* internal_api = cHTTPX_AppServer(&app, "internal", 0);
+    chttpx_config_t internal_config = cHTTPX_DefaultConfig();
+    internal_config.port = 0;
+
+    chttpx_serv_t* internal_api = cHTTPX_AppServer(&app, "internal", &internal_config);
     assert(internal_api);
     internal_port = internal_api->port;
 
@@ -150,6 +169,7 @@ int main(void)
     assert(cHTTPX_Get(&public_router, "/empty", empty_handler));
     assert(cHTTPX_Post(&public_router, "/proxy", proxy_handler));
     assert(cHTTPX_Post(&public_router, "/proxy-remote", remote_proxy_handler));
+    assert(cHTTPX_Post(&public_router, "/proxy-custom", custom_proxy_handler));
 
     chttpx_router_t internal_router = cHTTPX_RoutePathPrefix(internal_api, "");
     assert(cHTTPX_Post(&internal_router, "/process", internal_handler));
@@ -231,6 +251,17 @@ int main(void)
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\"server\":\"internal\"") != NULL);
+
+    exchange(public_port,
+             "POST /proxy-custom HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: 18\r\n"
+             "\r\n"
+             "{\"plan\":\"premium\"}",
+             response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strcmp(internal_observed_body, "{\"custom\":true}") == 0);
 
     exchange(internal_port,
              "POST /process HTTP/1.1\r\n"
