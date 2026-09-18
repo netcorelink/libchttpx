@@ -15,7 +15,9 @@ extern "C"
 
 #include "request.h"
 
-#include <time.h>\n\n    struct chttpx_serv;
+#include <time.h>
+
+    struct chttpx_serv;
 
     // RESponse
     typedef enum
