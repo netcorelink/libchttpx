@@ -25,7 +25,7 @@ extern "C"
 
 #include "middlewares.h"
 
-#include "serv.h"
+#include "serv.h"\n\n#include "app.h"
 
 #include "params.h"
 
