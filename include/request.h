@@ -233,6 +233,8 @@ extern "C"
         void* _contexts;
         chttpx_body_chunk_fn _body_chunk_fn;
         void* _body_chunk_data;
+        /* Disk-backed multipart body awaiting form parsing. */
+        void* _multipart_stream;
         int _parse_status;
     } chttpx_request_t;
 
