@@ -160,6 +160,14 @@ cHTTPX_Call(
 
 If `payments` is a local `AppServer`, the call is direct without TCP. If it was registered with `AppRemote`, the library performs an HTTP request to the configured address.
 
+Remote calls use a fixed 30-second connect/send/receive timeout. It is intentionally not configurable through `CallEx`.
+
+Call result semantics:
+- `CHTTPX_OK`: the remote server returned a valid HTTP response, including HTTP 4xx/5xx; inspect `res->status`.
+- `CHTTPX_ERR_UNAVAILABLE`: the remote server could not be reached or the connection was lost before a valid response.
+- `CHTTPX_ERR_TIMEOUT`: a remote connect/send/receive operation exceeded 30 seconds.
+- `CHTTPX_ERR_PROTOCOL`: the peer returned an invalid HTTP response.
+
 ## Server configuration
 
 ```c
