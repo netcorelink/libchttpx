@@ -683,28 +683,111 @@ static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t
     return req;
 }
 
+int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_response_t* res)
+{
+    if (!server || !server->initialized || !req || !res || !req->method || !req->path)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    req->_server = server;
+    chttpx_route_t* route = find_route(req);
+    memset(res, 0, sizeof(*res));
+    clock_gettime(CLOCK_MONOTONIC, &res->start_ts);
+
+    if (route)
+    {
+        for (size_t i = 0; i < server->middleware.middleware_count; i++)
+        {
+            if (!server->middleware.middlewares[i](req, res))
+                goto after_route_middlewares;
+        }
+
+        if (route->has_upload_policy && req->files_count > 0)
+        {
+            for (size_t file_index = 0; file_index < req->files_count; file_index++)
+            {
+                const chttpx_file_t* file = &req->files[file_index];
+                if (route->upload_policy.max_size && file->size > route->upload_policy.max_size)
+                {
+                    *res = cHTTPX_ResError(cHTTPX_StatusPayloadTooLarge, "upload is too large");
+                    goto after_route_middlewares;
+                }
+
+                if (route->upload_policy.allowed_types_count > 0)
+                {
+                    bool allowed = false;
+                    for (size_t type_index = 0; type_index < route->upload_policy.allowed_types_count; type_index++)
+                    {
+                        if (cHTTPX_MimeMatch(file->content_type, route->upload_policy.allowed_types[type_index]))
+                        {
+                            allowed = true;
+                            break;
+                        }
+                    }
+
+                    if (!allowed)
+                    {
+                        *res = cHTTPX_ResError(cHTTPX_StatusUnsupportedMediaType, "unsupported upload media type");
+                        goto after_route_middlewares;
+                    }
+                }
+            }
+        }
+
+        for (size_t i = 0; i < route->middleware_count; i++)
+        {
+            if (!route->middlewares[i](req, res))
+                goto after_route_middlewares;
+        }
+
+        route->handler(req, res);
+
+    after_route_middlewares:
+        for (size_t i = route->after_middleware_count; i > 0; i--)
+            route->after_middlewares[i - 1](req, res);
+    }
+    else
+    {
+        *res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
+    }
+
+    for (size_t i = server->middleware.after_middleware_count; i > 0; i--)
+        server->middleware.after_middlewares[i - 1](req, res);
+
+    if (res->status < 100 || res->status > 599)
+    {
+        cHTTPX_ResponseCleanup(res);
+        *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "handler did not produce a valid response");
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &res->end_ts);
+    postmiddleware_logging_write(req, res);
+    return CHTTPX_OK;
+}
+
 /**
- * Handle a single client connection.
- * @param client_fd The file descriptor of the accepted client socket.
- * This function reads the request, parses it, calls the matching route handler,
- * and sends the response back to the client.
+ * Handle one accepted socket. The argument is a chttpx_client_ctx_t carrying
+ * both the socket and the exact App-managed server that accepted it.
  */
 void* chttpx_handle(void* arg)
 {
-    chttpx_socket_t client_sock = *(chttpx_socket_t*)arg;
-    free(arg);
+    chttpx_client_ctx_t* context = arg;
+    if (!context)
+        return NULL;
 
-    if (!serv)
+    chttpx_serv_t* server = context->server;
+    chttpx_socket_t client_sock = context->client_fd;
+    free(context);
+
+    if (!server || !server->initialized)
     {
-        fprintf(stderr, "Error: server is not initialized\n");
+        chttpx_close(client_sock);
         return NULL;
     }
 
-    /* Timeouts */
-    set_client_timeout(client_sock);
+    set_client_timeout(server, client_sock);
 
     char buf[BUFFER_SIZE];
-    ssize_t received = read_req(client_sock, buf, BUFFER_SIZE);
+    ssize_t received = read_req(server, client_sock, buf, BUFFER_SIZE);
     if (received == -2)
     {
         static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -718,8 +801,7 @@ void* chttpx_handle(void* arg)
         return NULL;
     }
 
-    /* REQUEST */
-    chttpx_request_t* req = parse_req_buffer(client_sock, buf, received);
+    chttpx_request_t* req = parse_req_buffer(server, client_sock, buf, (size_t)received);
     if (!req)
     {
         chttpx_close(client_sock);
@@ -737,97 +819,18 @@ void* chttpx_handle(void* arg)
         goto cleanup_request;
     }
 
-    /* Automatic handling is limited to actual CORS preflight requests. */
     if (is_cors_preflight(req))
         goto cleanup_request;
 
-    chttpx_route_t* r = find_route(req);
     chttpx_response_t res = {0};
-
-    /* Start time for logging */
-    clock_gettime(CLOCK_MONOTONIC, &res.start_ts);
-
-    if (r)
+    if (_chttpx_dispatch(server, req, &res) == CHTTPX_OK)
     {
-        /* Use middlewares */
-        for (size_t i = 0; i < serv->middleware.middleware_count; i++)
-        {
-            if (!serv->middleware.middlewares[i](req, &res))
-                goto after_middlewares;
-        }
-
-        if (r->has_upload_policy && req->files_count > 0)
-        {
-            for (size_t file_index = 0; file_index < req->files_count; file_index++)
-            {
-                const chttpx_file_t* file = &req->files[file_index];
-                if (r->upload_policy.max_size && file->size > r->upload_policy.max_size)
-                {
-                    res = cHTTPX_ResError(cHTTPX_StatusPayloadTooLarge, "upload is too large");
-                    goto after_middlewares;
-                }
-                if (r->upload_policy.allowed_types_count > 0)
-                {
-                    bool allowed = false;
-                    for (size_t type_index = 0; type_index < r->upload_policy.allowed_types_count; type_index++)
-                    {
-                        if (cHTTPX_MimeMatch(file->content_type, r->upload_policy.allowed_types[type_index]))
-                        {
-                            allowed = true;
-                            break;
-                        }
-                    }
-                    if (!allowed)
-                    {
-                        res = cHTTPX_ResError(cHTTPX_StatusUnsupportedMediaType, "unsupported upload media type");
-                        goto after_middlewares;
-                    }
-                }
-            }
-        }
-
-        for (size_t i = 0; i < r->middleware_count; i++)
-        {
-            if (!r->middlewares[i](req, &res))
-                goto after_middlewares;
-        }
-
-        /* Handler */
-        r->handler(req, &res);
-
-    after_middlewares:
-        for (size_t i = r->after_middleware_count; i > 0; i--)
-            r->after_middlewares[i - 1](req, &res);
-    }
-
-    else
-    {
-        res = cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"not found\"}");
-    }
-
-    for (size_t i = serv->middleware.after_middleware_count; i > 0; i--)
-        serv->middleware.after_middlewares[i - 1](req, &res);
-
-    if (res.status < 100 || res.status > 599)
-    {
+        send_response(req, res);
         cHTTPX_ResponseCleanup(&res);
-        res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "handler did not produce a valid response");
     }
-
-    /* End time for logging */
-    clock_gettime(CLOCK_MONOTONIC, &res.end_ts);
-
-    send_response(req, res);
-
-    /* Logging response */
-    postmiddleware_logging_write(req, &res);
-
-    cHTTPX_ResponseCleanup(&res);
 
 cleanup_request:
     cHTTPX_RequestCleanup(req);
-
-    /* Free REQuest cookie */
     chttpx_free_req_cookie(req);
 
     free(req->method);
