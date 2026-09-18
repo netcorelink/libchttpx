@@ -19,7 +19,7 @@ extern "C"
 #include <stdio.h>
 #include <pthread.h>
 
-#define MAX_MIDDLEWARES 128
+#define MAX_MIDDLEWARES 128\n\n    struct chttpx_serv;
 
     /* Enum for result all middlewares */
     typedef enum
@@ -53,10 +53,10 @@ extern "C"
      *
      * @param mw Middleware function pointer.
      */
-    void cHTTPX_MiddlewareUse(chttpx_middleware_t mw);
+    void cHTTPX_MiddlewareUse(struct chttpx_serv* server, chttpx_middleware_t mw);
 
     /** Register a global middleware that runs after the route handler. */
-    void cHTTPX_MiddlewareUseAfter(chttpx_middleware_t mw);
+    void cHTTPX_MiddlewareUseAfter(struct chttpx_serv* server, chttpx_middleware_t mw);
 
 #define MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE 4096
 
@@ -78,7 +78,7 @@ extern "C"
      * @param max_requests maximum number of requests
      * @param window_sec time window in seconds
      */
-    void cHTTPX_MiddlewareRateLimiter(uint32_t max_requests, uint32_t window_sec);
+    void cHTTPX_MiddlewareRateLimiter(struct chttpx_serv* server, uint32_t max_requests, uint32_t window_sec);
 
     /**
      * Compatibility hook. Fatal signal recovery is deliberately disabled:
@@ -90,7 +90,7 @@ extern "C"
      * Register the compatibility recovery middleware. It is a no-op; use a
      * process supervisor to restart after fatal signals.
      */
-    void cHTTPX_MiddlewareRecovery();
+    void cHTTPX_MiddlewareRecovery(struct chttpx_serv* server);
 
     /**
      * Writes the HTTP request and response log to a file.
@@ -112,7 +112,7 @@ extern "C"
      * information into a log file. If logging has not been initialized via
      * cHTTPX_LoggingInit, this middleware does not perform any logging.
      */
-    void cHTTPX_MiddlewareLogging();
+    void cHTTPX_MiddlewareLogging(struct chttpx_serv* server);\n\n    /* Internal cleanup for per-server middleware state. */\n    void _chttpx_middleware_server_cleanup(struct chttpx_serv* server);
 
 #ifdef __cplusplus
     extern
