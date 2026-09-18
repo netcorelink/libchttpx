@@ -94,21 +94,36 @@ static void custom_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "custom internal call failed");
 }
 
-static void exchange(uint16_t port, const char* request, char* response, size_t response_size)
+static void exchange_family(uint16_t port, int family, const char* request, char* response, size_t response_size)
 {
-    chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    chttpx_socket_t socket_fd = socket(family, SOCK_STREAM, 0);
 #ifdef CHTTPX_PLATFORM_WINDOWS
     assert(socket_fd != INVALID_SOCKET);
 #else
     assert(socket_fd >= 0);
 #endif
 
-    struct sockaddr_in address = {0};
-    address.sin_family = AF_INET;
-    address.sin_port = htons(port);
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    struct sockaddr_storage storage = {0};
+    socklen_t address_size = 0;
 
-    assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
+    if (family == AF_INET)
+    {
+        struct sockaddr_in* address = (struct sockaddr_in*)&storage;
+        address->sin_family = AF_INET;
+        address->sin_port = htons(port);
+        address->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address_size = sizeof(*address);
+    }
+    else
+    {
+        struct sockaddr_in6* address = (struct sockaddr_in6*)&storage;
+        address->sin6_family = AF_INET6;
+        address->sin6_port = htons(port);
+        assert(inet_pton(AF_INET6, "::1", &address->sin6_addr) == 1);
+        address_size = sizeof(*address);
+    }
+
+    assert(connect(socket_fd, (struct sockaddr*)&storage, address_size) == 0);
     assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == CHTTPX_OK);
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -128,6 +143,16 @@ static void exchange(uint16_t port, const char* request, char* response, size_t 
 
     response[total] = '\0';
     chttpx_close(socket_fd);
+}
+
+static void exchange(uint16_t port, const char* request, char* response, size_t response_size)
+{
+    exchange_family(port, AF_INET, request, response, response_size);
+}
+
+static void exchange_ipv6(uint16_t port, const char* request, char* response, size_t response_size)
+{
+    exchange_family(port, AF_INET6, request, response, response_size);
 }
 
 static void wait_until_listening(chttpx_serv_t* server)
@@ -150,6 +175,7 @@ int main(void)
     assert(cHTTPX_AppInit(&remote_app) == CHTTPX_OK);
 
     chttpx_config_t remote_config = cHTTPX_DefaultConfig();
+    assert(remote_config.network_mode == CHTTPX_NETWORK_DUAL);
     remote_config.port = 0;
 
     chttpx_serv_t* remote_server = cHTTPX_AppServer(&remote_app, "payments", &remote_config);
@@ -217,6 +243,13 @@ int main(void)
     wait_until_listening(internal_api);
 
     char response[4096];
+
+    exchange_ipv6(public_port,
+                  "GET /missing HTTP/1.1\r\n"
+                  "Host: localhost\r\n"
+                  "\r\n",
+                  response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 404 Not Found") != NULL);
 
     exchange(public_port,
              "OPTIONS /body HTTP/1.1\r\n"
