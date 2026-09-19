@@ -1,0 +1,87 @@
+name: libchttpx-dev
+arch: ${ARCH}
+platform: linux
+version: ${LIBCHTTPX_PACKAGE_VERSION}
+version_schema: semver
+release: "1"
+section: devel
+priority: optional
+maintainer: netcorelink
+vendor: netcorelink
+homepage: https://github.com/netcorelink/libchttpx
+license: BSD-3-Clause
+description: |
+  Development package for libchttpx, a compact cross-platform HTTP/1.1
+  server library for C/C++ with routing, middleware, JSON, uploads,
+  request-scoped memory, CORS, cookies, i18n, logging and graceful shutdown.
+
+provides:
+  - libchttpx
+
+contents:
+  - src: include/libchttpx.h
+    dst: /usr/include/libchttpx/libchttpx.h
+    file_info:
+      mode: 0644
+  - src: LICENSE
+    dst: /usr/share/licenses/libchttpx-dev/LICENSE
+    file_info:
+      mode: 0644
+
+  - src: dist/deb/libchttpx.so
+    dst: /usr/lib/libchttpx.so
+    packager: deb
+    file_info:
+      mode: 0755
+  - src: dist/deb/libchttpx.pc
+    dst: /usr/lib/pkgconfig/libchttpx.pc
+    packager: deb
+    file_info:
+      mode: 0644
+
+  - src: dist/rpm/libchttpx.so
+    dst: /usr/lib64/libchttpx.so
+    packager: rpm
+    file_info:
+      mode: 0755
+  - src: dist/rpm/libchttpx.pc
+    dst: /usr/lib64/pkgconfig/libchttpx.pc
+    packager: rpm
+    file_info:
+      mode: 0644
+
+  - src: dist/archlinux/libchttpx.so
+    dst: /usr/lib/libchttpx.so
+    packager: archlinux
+    file_info:
+      mode: 0755
+  - src: dist/archlinux/libchttpx.pc
+    dst: /usr/lib/pkgconfig/libchttpx.pc
+    packager: archlinux
+    file_info:
+      mode: 0644
+
+  - src: dist/apk/libchttpx.so
+    dst: /usr/lib/libchttpx.so
+    packager: apk
+    file_info:
+      mode: 0755
+  - src: dist/apk/libchttpx.pc
+    dst: /usr/lib/pkgconfig/libchttpx.pc
+    packager: apk
+    file_info:
+      mode: 0644
+
+overrides:
+  deb:
+    depends:
+      - libcjson1
+  rpm:
+    depends:
+      - cjson
+  archlinux:
+    depends:
+      - cjson
+  apk:
+    depends:
+      - cjson
