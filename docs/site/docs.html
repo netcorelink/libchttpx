@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation — libchttpx</title>
+  <meta name="description" content="Getting started and module documentation for libchttpx.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="index.html">libchttpx</a>
+      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
+      <nav class="nav-links" data-nav-links aria-label="Main navigation">
+        <a href="docs.html" data-nav-link>Docs</a>
+        <a href="examples.html" data-nav-link>Examples</a>
+        <a href="blog.html" data-nav-link>Blog</a>
+        <a href="support.html" data-nav-link>Support</a>
+        <a href="about.html" data-nav-link>About</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
+        <a class="btn btn-primary btn-small" href="support.html">Support ♥</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <p class="eyebrow">Documentation</p>
+        <h1>Start small, add features when you need them</h1>
+        <p class="page-lead">
+          A short guide to installation, the first server and the full libchttpx module documentation.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container docs-layout">
+        <aside class="sidebar">
+          <strong>On this page</strong>
+          <a href="#install">Installation</a>
+          <a href="#first-server">First server</a>
+          <a href="#modules">Modules</a>
+          <a href="#compile">Compile</a>
+          <a href="#full-docs">Full documentation</a>
+        </aside>
+
+        <div class="docs-content">
+          <section id="install">
+            <h2>Installation</h2>
+            <p>On Linux you can build and install from source with the existing Makefile.</p>
+            <div class="code-card">
+              <div class="code-card-header">
+                <span>Terminal</span>
+                <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
+              </div>
+              <pre id="install-code"><code>sudo apt update
+sudo apt install -y build-essential pkg-config libcjson-dev
+
+git clone https://github.com/netcorelink/libchttpx.git
+cd libchttpx
+
+make lin-lib
+sudo make lib-install PREFIX=/usr/local DESTDIR=</code></pre>
+            </div>
+          </section>
+
+          <section id="first-server">
+            <h2>Your first server</h2>
+            <p>Create an app, configure a server, add a route, then run the app.</p>
+            <div class="code-card">
+              <div class="code-card-header">
+                <span>server.c</span>
+                <button class="copy-button" type="button" data-copy-target="first-server-code">Copy</button>
+              </div>
+              <pre id="first-server-code"><code>#include &lt;libchttpx.h&gt;
+
+static void health(chttpx_request_t* req,
+                   chttpx_response_t* res)
+{
+    (void)req;
+    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
+}
+
+int main(void)
+{
+    chttpx_app_t app;
+    if (cHTTPX_AppInit(&amp;app) != CHTTPX_OK)
+        return 1;
+
+    chttpx_config_t config = cHTTPX_DefaultConfig();
+    config.port = 8080;
+
+    chttpx_serv_t* server =
+        cHTTPX_AppServer(&amp;app, "main", &amp;config);
+
+    chttpx_router_t router =
+        cHTTPX_RoutePathPrefix(server, "");
+
+    cHTTPX_Get(&amp;router, "/health", health);
+
+    int result = cHTTPX_AppRun(&amp;app);
+    cHTTPX_AppShutdown(&amp;app);
+    return result == CHTTPX_OK ? 0 : 1;
+}</code></pre>
+            </div>
+          </section>
+
+          <section id="modules">
+            <h2>Modules</h2>
+            <p>Filter the list or open the detailed module guide on GitHub.</p>
+            <input class="search-box" type="search" placeholder="Filter documentation…" aria-label="Filter documentation" data-doc-filter>
+
+            <div class="module-grid">
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/app"><strong>App runtime</strong><span>Multiple servers, local and remote calls.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/server"><strong>Server</strong><span>Configuration, lifecycle, limits and shutdown.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/routing"><strong>Routing</strong><span>Routers, route groups, methods and parameters.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/middleware"><strong>Middleware</strong><span>Global, router and route middleware.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/request"><strong>Request</strong><span>Headers, params, query, bearer and body helpers.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/responses"><strong>Responses</strong><span>Status codes, response helpers, files and ownership.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/json"><strong>JSON</strong><span>Binding, validation, normalization and builders.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/memory"><strong>Memory</strong><span>Request-scoped allocation, defer and contexts.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/uploads"><strong>Uploads</strong><span>Multipart forms, files and upload policies.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/cors"><strong>CORS</strong><span>Origins, headers, methods and preflight.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/cookies"><strong>Cookies</strong><span>Read and write cookies and attributes.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/logging"><strong>Logging</strong><span>Logger callbacks and request logging.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/rate-limiting"><strong>Rate limiting</strong><span>Per-server fixed-window limiting.</span></a>
+              <a class="module-link" data-doc-item href="https://github.com/netcorelink/libchttpx/tree/main/docs/websocket"><strong>WebSocket</strong><span>Experimental WebSocket API and limitations.</span></a>
+            </div>
+          </section>
+
+          <section id="compile">
+            <h2>Compile your application</h2>
+            <p>After installation, use pkg-config to get include and linker flags.</p>
+            <div class="code-card">
+              <div class="code-card-header">
+                <span>Terminal</span>
+                <button class="copy-button" type="button" data-copy-target="compile-code">Copy</button>
+              </div>
+              <pre id="compile-code"><code>gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
+./server</code></pre>
+            </div>
+          </section>
+
+          <section id="full-docs">
+            <h2>Full documentation</h2>
+            <p>The complete source documentation remains versioned together with the library in the repository.</p>
+            <a class="btn btn-primary" href="https://github.com/netcorelink/libchttpx/tree/main/docs">Open full docs on GitHub ↗</a>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-row">
+      <div><a class="brand" href="index.html">libchttpx</a><div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div></div>
+      <div class="footer-links">
+        <a href="docs.html">Docs</a><a href="examples.html">Examples</a><a href="support.html">Support</a><a href="about.html">About</a><a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
