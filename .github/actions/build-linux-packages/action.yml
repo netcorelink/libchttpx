@@ -102,7 +102,7 @@ runs:
         for directory, libdir in variants.items():
             content = "\n".join([
                 "prefix=/usr",
-                f"libdir=${{prefix}}/{libdir}",
+                "libdir=${prefix}/" + libdir,
                 "includedir=${prefix}/include",
                 "",
                 "Name: libchttpx",
