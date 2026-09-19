@@ -23,15 +23,49 @@
 
 ## Установка
 
-### Linux: нативные пакеты (рекомендуется)
+### Debian / Ubuntu через APT (рекомендуется)
 
-В Linux-релизах публикуются нативные пакеты для основных семейств дистрибутивов. Скачайте нужный файл из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases), после чего установите его штатным пакетным менеджером.
-
-**Debian / Ubuntu**
+Для Debian/Ubuntu на **amd64** репозиторий libchttpx нужно добавить один раз:
 
 ```bash
-sudo apt install ./libchttpx-dev_*.deb
+curl -fsSL https://netcorelink.github.io/libchttpx/apt/libchttpx.sources \
+  | sudo tee /etc/apt/sources.list.d/libchttpx.sources >/dev/null
+
+sudo apt update
+sudo apt install libchttpx-dev
 ```
+
+После этого новые версии libchttpx устанавливаются обычным обновлением APT:
+
+```bash
+sudo apt update
+sudo apt upgrade
+```
+
+Удалить библиотеку:
+
+```bash
+sudo apt remove libchttpx-dev
+```
+
+Удалить сам репозиторий из системы:
+
+```bash
+sudo rm /etc/apt/sources.list.d/libchttpx.sources
+sudo apt update
+```
+
+Сейчас репозиторий использует `Trusted: yes`, поэтому отдельный GPG-ключ добавлять не требуется. Позже репозиторий можно перевести на подпись пакетов.
+
+После установки приложение можно собрать через `pkg-config`:
+
+```bash
+gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
+```
+
+### Другие Linux-дистрибутивы
+
+Нативные пакеты также прикладываются к GitHub Releases.
 
 **Fedora / RHEL и совместимые RPM-дистрибутивы**
 
@@ -51,19 +85,11 @@ sudo pacman -U ./libchttpx-dev-*.pkg.tar.zst
 sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 ```
 
-Пакет устанавливает shared library, публичный header, pkg-config metadata, лицензию и зависимость от runtime cJSON. Обновление и удаление библиотеки после этого выполняются тем же пакетным менеджером.
-
-Компиляция приложения:
-
-```bash
-gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
-```
-
-> Пока это установка скачанного пакета из GitHub Release. Отдельный APT/RPM-репозиторий, который позволит выполнять просто `apt install libchttpx-dev` без предварительного скачивания файла, является следующим отдельным этапом публикации.
+Нужный пакет можно скачать из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
 ### Старые install-скрипты
 
-Существующие Bash- и PowerShell-скрипты пока оставлены как запасной вариант для обратной совместимости.
+Bash- и PowerShell-скрипты пока остаются как запасной способ установки.
 
 Linux:
 
@@ -77,11 +103,9 @@ Windows:
 iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
 ```
 
-После установки в Windows перезапустите терминал, чтобы применились переменные окружения.
+После установки в Windows перезапустите терминал.
 
 ### Docker
-
-Скачать опубликованный runtime image:
 
 ```bash
 docker pull noneandundefined/libchttpx:latest
@@ -95,8 +119,6 @@ FROM noneandundefined/libchttpx:latest
 COPY my-server /usr/local/bin/my-server
 CMD ["/usr/local/bin/my-server"]
 ```
-
-Опубликованный image не является полноценным compiler toolchain. Приложение лучше собирать в отдельном build stage, а готовый binary копировать в runtime image, либо отдельно установить build tools.
 
 ### Самостоятельная сборка на Linux
 
