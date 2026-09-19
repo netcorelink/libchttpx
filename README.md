@@ -23,13 +23,35 @@ The library is designed so handlers contain application logic instead of repetit
 
 ## Installation
 
-### Linux: install script
+### Linux: native packages (recommended)
 
-The installer downloads the latest GitHub release, installs cJSON when supported by the package manager, and copies the shared library, headers, and pkg-config file into `/usr/local`.
+Linux releases include native development packages for the major distribution families. Download the package for your distribution from [GitHub Releases](https://github.com/netcorelink/libchttpx/releases), then install it with the system package manager:
+
+**Debian / Ubuntu**
 
 ```bash
-curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+sudo apt install ./libchttpx-dev_*.deb
 ```
+
+**Fedora / RHEL and compatible RPM distributions**
+
+```bash
+sudo dnf install ./libchttpx-dev-*.rpm
+```
+
+**Arch Linux**
+
+```bash
+sudo pacman -U ./libchttpx-dev-*.pkg.tar.zst
+```
+
+**Alpine Linux**
+
+```sh
+sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
+```
+
+The native package installs the shared library, public header, pkg-config metadata, license, and the appropriate cJSON runtime dependency. Uninstallation and upgrades are then handled by the same package manager.
 
 Compile an application with:
 
@@ -37,13 +59,25 @@ Compile an application with:
 gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
 ```
 
-### Windows: PowerShell installer
+> These commands install a downloaded release package. Publishing dedicated APT/RPM repositories, so that `apt install libchttpx-dev` works without downloading the file first, is a separate distribution step.
+
+### Legacy installer scripts
+
+The existing shell and PowerShell installers are kept as a compatibility fallback for now.
+
+Linux:
+
+```bash
+curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+```
+
+Windows:
 
 ```powershell
 iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
 ```
 
-Restart the terminal after installation so the environment changes are visible.
+Restart the terminal after the Windows installation so the environment changes are visible.
 
 ### Docker
 
@@ -123,4 +157,4 @@ Detailed documentation is split by functionality:
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+BSD 3-Clause. See [LICENSE](LICENSE).
