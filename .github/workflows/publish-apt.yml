@@ -31,18 +31,14 @@ jobs:
           ref: packages
           fetch-depth: 0
 
-      - name: Checkout libchttpx source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag }}
-          path: source
-
       - name: Resolve version
         id: version
         shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          INPUT_TAG="${{ inputs.tag }}"
+
           if [ -n "${INPUT_TAG}" ]; then
             TAG="${INPUT_TAG}"
           else
@@ -63,6 +59,12 @@ jobs:
 
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout libchttpx source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          path: source
 
       - name: Build Debian package
         shell: bash
@@ -112,33 +114,33 @@ jobs:
               cp /work/source/LICENSE \
                 "${PKGROOT}/usr/share/doc/libchttpx-dev/copyright"
 
-              cat > "${LIBDIR}/pkgconfig/libchttpx.pc" <<EOF
-prefix=/usr
-exec_prefix=${prefix}
-libdir=${prefix}/lib/x86_64-linux-gnu
-includedir=${prefix}/include
+              printf "%s\n" \
+                "prefix=/usr" \
+                "exec_prefix=\${prefix}" \
+                "libdir=\${prefix}/lib/x86_64-linux-gnu" \
+                "includedir=\${prefix}/include" \
+                "" \
+                "Name: libchttpx" \
+                "Description: A compact cross-platform HTTP/1.1 server library for C/C++." \
+                "Version: ${VERSION}" \
+                "Libs: -L\${libdir} -lchttpx" \
+                "Cflags: -I\${includedir}/libchttpx" \
+                > "${LIBDIR}/pkgconfig/libchttpx.pc"
 
-Name: libchttpx
-Description: A compact cross-platform HTTP/1.1 server library for C/C++.
-Version: ${VERSION}
-Libs: -L${libdir} -lchttpx
-Cflags: -I${includedir}/libchttpx
-EOF
-
-              cat > "${PKGROOT}/DEBIAN/control" <<EOF
-Package: libchttpx-dev
-Version: ${VERSION}
-Section: libdevel
-Priority: optional
-Architecture: amd64
-Maintainer: netcorelink <aworkprogramm@gmail.com>
-Depends: libcjson1 (>= 1.7)
-Provides: libchttpx
-Homepage: https://github.com/netcorelink/libchttpx
-Description: Development files for libchttpx
- libchttpx is a compact HTTP/1.1 server library for C/C++ with routing,
- middleware, JSON helpers, uploads, request-scoped memory and graceful shutdown.
-EOF
+              printf "%s\n" \
+                "Package: libchttpx-dev" \
+                "Version: ${VERSION}" \
+                "Section: libdevel" \
+                "Priority: optional" \
+                "Architecture: amd64" \
+                "Maintainer: netcorelink <aworkprogramm@gmail.com>" \
+                "Depends: libcjson1 (>= 1.7)" \
+                "Provides: libchttpx" \
+                "Homepage: https://github.com/netcorelink/libchttpx" \
+                "Description: Development files for libchttpx" \
+                " libchttpx is a compact HTTP/1.1 server library for C/C++ with routing," \
+                " middleware, JSON helpers, uploads, request-scoped memory and graceful shutdown." \
+                > "${PKGROOT}/DEBIAN/control"
 
               dpkg-deb --root-owner-group --build \
                 "${PKGROOT}" \
@@ -166,6 +168,7 @@ EOF
 
           (
             cd apt
+
             dpkg-scanpackages --arch amd64 pool /dev/null \
               > dists/stable/main/binary-amd64/Packages
 
@@ -211,6 +214,7 @@ EOF
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
+
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" \
               "build/libchttpx-dev_${VERSION}_amd64.deb" \
