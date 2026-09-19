@@ -23,13 +23,35 @@
 
 ## Установка
 
-### Linux: install script
+### Linux: нативные пакеты (рекомендуется)
 
-Скрипт скачивает последний GitHub Release, при необходимости устанавливает cJSON и копирует библиотеку, headers и pkg-config файл в `/usr/local`.
+В Linux-релизах публикуются нативные пакеты для основных семейств дистрибутивов. Скачайте нужный файл из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases), после чего установите его штатным пакетным менеджером.
+
+**Debian / Ubuntu**
 
 ```bash
-curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+sudo apt install ./libchttpx-dev_*.deb
 ```
+
+**Fedora / RHEL и совместимые RPM-дистрибутивы**
+
+```bash
+sudo dnf install ./libchttpx-dev-*.rpm
+```
+
+**Arch Linux**
+
+```bash
+sudo pacman -U ./libchttpx-dev-*.pkg.tar.zst
+```
+
+**Alpine Linux**
+
+```sh
+sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
+```
+
+Пакет устанавливает shared library, публичный header, pkg-config metadata, лицензию и зависимость от runtime cJSON. Обновление и удаление библиотеки после этого выполняются тем же пакетным менеджером.
 
 Компиляция приложения:
 
@@ -37,13 +59,25 @@ curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/ins
 gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
 ```
 
-### Windows: PowerShell installer
+> Пока это установка скачанного пакета из GitHub Release. Отдельный APT/RPM-репозиторий, который позволит выполнять просто `apt install libchttpx-dev` без предварительного скачивания файла, является следующим отдельным этапом публикации.
+
+### Старые install-скрипты
+
+Существующие Bash- и PowerShell-скрипты пока оставлены как запасной вариант для обратной совместимости.
+
+Linux:
+
+```bash
+curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+```
+
+Windows:
 
 ```powershell
 iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
 ```
 
-После установки перезапустите терминал, чтобы применились переменные окружения.
+После установки в Windows перезапустите терминал, чтобы применились переменные окружения.
 
 ### Docker
 
@@ -122,4 +156,4 @@ DLL, import library и headers копируются в `tools/`.
 
 ## Лицензия
 
-MIT. См. [LICENSE](LICENSE).
+BSD 3-Clause. См. [LICENSE](LICENSE).

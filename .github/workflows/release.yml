@@ -35,12 +35,19 @@ jobs:
       - name: Build release archive
         run: make lin-lib
 
+      - name: Build native Linux packages
+        uses: ./.github/actions/build-linux-packages
+        with:
+          version: ${{ github.event.inputs.tag || github.ref_name }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: libchttpx ${{ github.event.inputs.tag || github.ref_name }}
-          files: libchttpx-dev.tar.gz
+          files: |
+            libchttpx-dev.tar.gz
+            dist/packages/*
           body: |
             <p align="center">
               <img alt="golangci-lint logo" src="https://avatars.githubusercontent.com/u/252895549?s=400&u=6c747c431c2844620af7772fcd716ef423a6ab1d&v=4" height="150" />
@@ -52,7 +59,25 @@ jobs:
 
             > :warning: **Warning:** Use the `linux environment` for stable library operation.
 
-            ## Linux
+            ## Linux native packages
+
+            Download the package for your distribution from this release, then install it with the system package manager:
+
+            ```bash
+            # Debian / Ubuntu
+            sudo apt install ./libchttpx-dev_*.deb
+
+            # Fedora / RHEL
+            sudo dnf install ./libchttpx-dev-*.rpm
+
+            # Arch Linux
+            sudo pacman -U ./libchttpx-dev-*.pkg.tar.zst
+
+            # Alpine Linux
+            sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
+            ```
+
+            The legacy install script remains available as a fallback:
 
             ```bash
             curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
