@@ -28,6 +28,6 @@ dependencies:
 packaging:
   - changed-files:
       - any-glob-to-any-file:
-          - DEBIAN/**
+          - packaging/**
           - Makefile
           - libchttpx.pc

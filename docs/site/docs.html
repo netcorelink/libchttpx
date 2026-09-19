@@ -75,7 +75,16 @@ sudo apt install libchttpx-dev</code></pre>
 sudo apt upgrade</code></pre>
             </div>
 
-            <p class="notice">The current repository uses APT <code>Trusted: yes</code>, so there is no separate GPG-key setup. Package signing can be added later without changing the package name.</p>
+            <p>To remove libchttpx:</p>
+            <div class="code-card">
+              <div class="code-card-header">
+                <span>Remove</span>
+                <button class="copy-button" type="button" data-copy-target="remove-code">Copy</button>
+              </div>
+              <pre id="remove-code"><code>sudo apt remove libchttpx-dev</code></pre>
+            </div>
+
+            <p class="notice">The APT repository currently targets Debian/Ubuntu on <code>amd64</code> and uses <code>Trusted: yes</code>, so there is no separate GPG-key setup. Package signing can be added later.</p>
 
             <h3>Build from source</h3>
             <p>If you do not want to use the APT repository, the existing source installation remains available.</p>
