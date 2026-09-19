@@ -23,15 +23,49 @@ The library is designed so handlers contain application logic instead of repetit
 
 ## Installation
 
-### Linux: native packages (recommended)
+### Debian / Ubuntu via APT (recommended)
 
-Linux releases include native development packages for the major distribution families. Download the package for your distribution from [GitHub Releases](https://github.com/netcorelink/libchttpx/releases), then install it with the system package manager:
-
-**Debian / Ubuntu**
+For Debian/Ubuntu on **amd64**, add the libchttpx APT repository once:
 
 ```bash
-sudo apt install ./libchttpx-dev_*.deb
+curl -fsSL https://netcorelink.github.io/libchttpx/apt/libchttpx.sources \
+  | sudo tee /etc/apt/sources.list.d/libchttpx.sources >/dev/null
+
+sudo apt update
+sudo apt install libchttpx-dev
 ```
+
+After that, libchttpx updates are installed through the normal APT flow:
+
+```bash
+sudo apt update
+sudo apt upgrade
+```
+
+Remove the package:
+
+```bash
+sudo apt remove libchttpx-dev
+```
+
+Remove the repository itself:
+
+```bash
+sudo rm /etc/apt/sources.list.d/libchttpx.sources
+sudo apt update
+```
+
+The current repository uses `Trusted: yes`, so users do not need to install a separate GPG key. Package signing can be added later.
+
+Compile an application after installation:
+
+```bash
+gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
+```
+
+### Other Linux distributions
+
+Native packages are also attached to GitHub Releases:
 
 **Fedora / RHEL and compatible RPM distributions**
 
@@ -51,19 +85,11 @@ sudo pacman -U ./libchttpx-dev-*.pkg.tar.zst
 sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 ```
 
-The native package installs the shared library, public header, pkg-config metadata, license, and the appropriate cJSON runtime dependency. Uninstallation and upgrades are then handled by the same package manager.
-
-Compile an application with:
-
-```bash
-gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
-```
-
-> These commands install a downloaded release package. Publishing dedicated APT/RPM repositories, so that `apt install libchttpx-dev` works without downloading the file first, is a separate distribution step.
+Download the package for your distribution from [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
 ### Legacy installer scripts
 
-The existing shell and PowerShell installers are kept as a compatibility fallback for now.
+The existing shell and PowerShell installers are kept as compatibility fallbacks.
 
 Linux:
 
@@ -77,7 +103,7 @@ Windows:
 iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
 ```
 
-Restart the terminal after the Windows installation so the environment changes are visible.
+Restart the terminal after the Windows installation so environment changes are visible.
 
 ### Docker
 
@@ -87,7 +113,7 @@ Pull the published runtime image:
 docker pull noneandundefined/libchttpx:latest
 ```
 
-The image contains the installed shared library, headers, pkg-config metadata, and the cJSON runtime. It is useful as a base/runtime image for applications using libchttpx.
+The image contains the installed shared library, headers, pkg-config metadata, and the cJSON runtime.
 
 ```dockerfile
 FROM noneandundefined/libchttpx:latest
@@ -95,8 +121,6 @@ FROM noneandundefined/libchttpx:latest
 COPY my-server /usr/local/bin/my-server
 CMD ["/usr/local/bin/my-server"]
 ```
-
-The published image is not a complete compiler toolchain. Build your application in a build stage and copy the resulting binary into the runtime image, or install build tools explicitly.
 
 ### Build from source on Linux
 
