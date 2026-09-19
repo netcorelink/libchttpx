@@ -100,16 +100,18 @@ runs:
         }
 
         for directory, libdir in variants.items():
-            content = f"""prefix=/usr
-libdir=${{prefix}}/{libdir}
-includedir=${{prefix}}/include
-
-Name: libchttpx
-Description: A compact cross-platform HTTP/1.1 server library for C/C++.
-Version: {version}
-Libs: -L${{libdir}} -lchttpx
-Cflags: -I${{includedir}}/libchttpx
-"""
+            content = "\n".join([
+                "prefix=/usr",
+                f"libdir=${{prefix}}/{libdir}",
+                "includedir=${prefix}/include",
+                "",
+                "Name: libchttpx",
+                "Description: A compact cross-platform HTTP/1.1 server library for C/C++.",
+                f"Version: {version}",
+                "Libs: -L${libdir} -lchttpx",
+                "Cflags: -I${includedir}/libchttpx",
+                "",
+            ])
             path = Path("dist") / directory / "libchttpx.pc"
             path.write_text(content, encoding="utf-8")
 
