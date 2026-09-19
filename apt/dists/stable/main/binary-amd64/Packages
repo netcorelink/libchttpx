@@ -1,18 +1,19 @@
 Package: libchttpx-dev
-Version: 1.5.21
+Version: 1.5.24-1
 Architecture: amd64
-Maintainer: netcorelink <aworkprogramm@gmail.com>
-Depends: libcjson1 (>= 1.7)
+Maintainer: netcorelink
+Installed-Size: 176
+Depends: libcjson1
 Provides: libchttpx
-Filename: pool/main/l/libchttpx/libchttpx-dev_1.5.21_amd64.deb
-Size: 56642
-MD5sum: f909ad2ab7d05015476cb3411277f6cb
-SHA1: 0a08e59dd9419384cfc2cd90bb8ce69153f56a8c
-SHA256: ffff63d6083ff13fbee631356dd44809156e17b6d666b0ecb8c0ad0a9f5fb6d9
-Section: libdevel
+Filename: pool/main/l/libchttpx/libchttpx-dev_1.5.24-1_amd64.deb
+Size: 63388
+MD5sum: 68ee4007efcafac1bf3752e763448182
+SHA1: c2ff7e5b190574a0eb0a63f6a5b6008e08e85389
+SHA256: 05b45c09382690f263113ca12a51f382df1eca88d67f9255a2b387d1030fdae5
+Section: devel
 Priority: optional
 Homepage: https://github.com/netcorelink/libchttpx
-Description: Development files for libchttpx
- libchttpx is a compact HTTP/1.1 server library for C/C++ with routing,
- middleware, JSON helpers, uploads, request-scoped memory and graceful shutdown.
+Description: Development package for libchttpx, a compact cross-platform HTTP/1.1
+ server library for C/C++ with routing, middleware, JSON, uploads,
+ request-scoped memory, CORS, cookies, i18n, logging and graceful shutdown.
 
