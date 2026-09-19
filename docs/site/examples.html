@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Examples — libchttpx</title>
+  <meta name="description" content="Small examples for libchttpx routing, middleware and JSON APIs.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="index.html">libchttpx</a>
+      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
+      <nav class="nav-links" data-nav-links aria-label="Main navigation">
+        <a href="docs.html" data-nav-link>Docs</a>
+        <a href="examples.html" data-nav-link>Examples</a>
+        <a href="blog.html" data-nav-link>Blog</a>
+        <a href="support.html" data-nav-link>Support</a>
+        <a href="about.html" data-nav-link>About</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
+        <a class="btn btn-primary btn-small" href="support.html">Support ♥</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <p class="eyebrow">Examples</p>
+        <h1>Copy a small example and start building</h1>
+        <p class="page-lead">These examples use API calls that already exist in the repository.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container example-stack">
+        <article class="example-card">
+          <span class="tag">Routing</span>
+          <h2>Health endpoint</h2>
+          <p class="muted">Create an app, register a GET route and run the server.</p>
+          <div class="code-card">
+            <div class="code-card-header"><span>basic.c</span><button class="copy-button" type="button" data-copy-target="example-basic">Copy</button></div>
+            <pre id="example-basic"><code>#include &lt;libchttpx.h&gt;
+
+static void health(chttpx_request_t* req, chttpx_response_t* res)
+{
+    (void)req;
+    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
+}
+
+int main(void)
+{
+    chttpx_app_t app;
+    if (cHTTPX_AppInit(&amp;app) != CHTTPX_OK)
+        return 1;
+
+    chttpx_config_t config = cHTTPX_DefaultConfig();
+    config.port = 8080;
+
+    chttpx_serv_t* server = cHTTPX_AppServer(&amp;app, "main", &amp;config);
+    chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
+    cHTTPX_Get(&amp;router, "/health", health);
+
+    int result = cHTTPX_AppRun(&amp;app);
+    cHTTPX_AppShutdown(&amp;app);
+    return result == CHTTPX_OK ? 0 : 1;
+}</code></pre>
+          </div>
+          <a class="btn" href="https://github.com/netcorelink/libchttpx/blob/main/example/basic.c">Open source example ↗</a>
+        </article>
+
+        <article class="example-card">
+          <span class="tag">Middleware</span>
+          <h2>Bearer authentication</h2>
+          <p class="muted">Protect a route group with a small middleware function.</p>
+          <div class="code-card">
+            <div class="code-card-header"><span>middleware.c</span><button class="copy-button" type="button" data-copy-target="example-middleware">Copy</button></div>
+            <pre id="example-middleware"><code>static chttpx_middleware_result_t authenticate(
+    chttpx_request_t* req,
+    chttpx_response_t* res)
+{
+    if (!cHTTPX_BearerToken(req))
+    {
+        *res = cHTTPX_ResError(
+            cHTTPX_StatusUnauthorized,
+            "bearer token required"
+        );
+        return out;
+    }
+
+    return next;
+}
+
+chttpx_router_t api = cHTTPX_RoutePathPrefix(server, "/api");
+chttpx_router_t private_api = cHTTPX_RouteGroup(&amp;api, "");
+cHTTPX_RouterUse(&amp;private_api, authenticate);</code></pre>
+          </div>
+          <a class="btn" href="https://github.com/netcorelink/libchttpx/blob/main/example/middleware.c">Open source example ↗</a>
+        </article>
+
+        <article class="example-card">
+          <span class="tag">JSON</span>
+          <h2>Bind and validate JSON</h2>
+          <p class="muted">Describe fields once, validate the request and build a JSON response.</p>
+          <div class="code-card">
+            <div class="code-card-header"><span>json.c</span><button class="copy-button" type="button" data-copy-target="example-json">Copy</button></div>
+            <pre id="example-json"><code>create_user_t payload = {0};
+
+chttpx_validation_t fields[] = {
+    cHTTPX_StringField(
+        "email",
+        &amp;payload.email,
+        true,
+        3,
+        254,
+        CHTTPX_TRIM | CHTTPX_LOWERCASE,
+        NULL
+    )
+};
+
+if (!cHTTPX_BindJSON(req, res, fields, CHTTPX_ARRAY_LEN(fields)))
+    return;
+
+chttpx_json_t* json = cHTTPX_JsonObject(req);
+cHTTPX_JsonString(json, "email", payload.email);
+*res = cHTTPX_ResJsonObject(cHTTPX_StatusCreated, json);</code></pre>
+          </div>
+          <a class="btn" href="https://github.com/netcorelink/libchttpx/blob/main/example/json.c">Open source example ↗</a>
+        </article>
+
+        <div>
+          <a class="btn btn-primary" href="https://github.com/netcorelink/libchttpx/tree/main/example">See all examples on GitHub ↗</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-row">
+      <div><a class="brand" href="index.html">libchttpx</a><div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div></div>
+      <div class="footer-links">
+        <a href="docs.html">Docs</a><a href="examples.html">Examples</a><a href="support.html">Support</a><a href="about.html">About</a><a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
