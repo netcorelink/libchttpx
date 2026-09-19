@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: apt-packages
@@ -205,6 +206,14 @@ jobs:
             git commit -m "packages: publish libchttpx-dev ${VERSION}"
             git push origin HEAD:packages
           fi
+
+      - name: Refresh GitHub Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run pages.yml --ref main
 
       - name: Attach package to GitHub Release
         shell: bash
