@@ -1,0 +1,204 @@
+name: Publish APT Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to package, for example v1.6.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apt-packages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout packages branch
+        uses: actions/checkout@v4
+        with:
+          ref: packages
+          fetch-depth: 0
+
+      - name: Checkout libchttpx source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          path: source
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          VERSION="${TAG#v}"
+
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+~-][A-Za-z0-9.+~-]+)?$ ]]; then
+            echo "Unsupported package version: ${VERSION}" >&2
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build Debian package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf build
+          mkdir -p build
+
+          docker run --rm \
+            -e VERSION="${VERSION}" \
+            -v "${PWD}:/work" \
+            -w /work \
+            ubuntu:22.04 \
+            bash -euc '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential \
+                libcjson-dev \
+                pkg-config \
+                dpkg-dev
+
+              PKGROOT=/work/build/pkg
+              LIBDIR="${PKGROOT}/usr/lib/x86_64-linux-gnu"
+
+              mkdir -p \
+                "${PKGROOT}/DEBIAN" \
+                "${PKGROOT}/usr/include/libchttpx" \
+                "${LIBDIR}/pkgconfig" \
+                "${PKGROOT}/usr/share/doc/libchttpx-dev"
+
+              gcc \
+                -Wall -Wextra -O2 -fPIC \
+                -I/work/source/include \
+                -I/work/source/src \
+                -shared \
+                /work/source/src/*.c \
+                -o "${LIBDIR}/libchttpx.so" \
+                -lcjson \
+                -pthread
+
+              cp /work/source/include/libchttpx.h \
+                "${PKGROOT}/usr/include/libchttpx/libchttpx.h"
+
+              cp /work/source/LICENSE \
+                "${PKGROOT}/usr/share/doc/libchttpx-dev/copyright"
+
+              cat > "${LIBDIR}/pkgconfig/libchttpx.pc" <<EOF
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/x86_64-linux-gnu
+includedir=${prefix}/include
+
+Name: libchttpx
+Description: A compact cross-platform HTTP/1.1 server library for C/C++.
+Version: ${VERSION}
+Libs: -L${libdir} -lchttpx
+Cflags: -I${includedir}/libchttpx
+EOF
+
+              cat > "${PKGROOT}/DEBIAN/control" <<EOF
+Package: libchttpx-dev
+Version: ${VERSION}
+Section: libdevel
+Priority: optional
+Architecture: amd64
+Maintainer: netcorelink <aworkprogramm@gmail.com>
+Depends: libcjson1 (>= 1.7)
+Provides: libchttpx
+Homepage: https://github.com/netcorelink/libchttpx
+Description: Development files for libchttpx
+ libchttpx is a compact HTTP/1.1 server library for C/C++ with routing,
+ middleware, JSON helpers, uploads, request-scoped memory and graceful shutdown.
+EOF
+
+              dpkg-deb --root-owner-group --build \
+                "${PKGROOT}" \
+                "/work/build/libchttpx-dev_${VERSION}_amd64.deb"
+            '
+
+          dpkg-deb --info "build/libchttpx-dev_${VERSION}_amd64.deb"
+          dpkg-deb --contents "build/libchttpx-dev_${VERSION}_amd64.deb"
+
+      - name: Update APT repository
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils
+
+          POOL="apt/pool/main/l/libchttpx"
+          INDEX="apt/dists/stable/main/binary-amd64"
+
+          mkdir -p "${POOL}" "${INDEX}"
+          cp "build/libchttpx-dev_${VERSION}_amd64.deb" "${POOL}/"
+
+          (
+            cd apt
+            dpkg-scanpackages --arch amd64 pool /dev/null \
+              > dists/stable/main/binary-amd64/Packages
+
+            gzip -9c dists/stable/main/binary-amd64/Packages \
+              > dists/stable/main/binary-amd64/Packages.gz
+
+            apt-ftparchive \
+              -o APT::FTPArchive::Release::Origin="netcorelink" \
+              -o APT::FTPArchive::Release::Label="libchttpx" \
+              -o APT::FTPArchive::Release::Suite="stable" \
+              -o APT::FTPArchive::Release::Codename="stable" \
+              -o APT::FTPArchive::Release::Architectures="amd64" \
+              -o APT::FTPArchive::Release::Components="main" \
+              -o APT::FTPArchive::Release::Description="libchttpx APT repository" \
+              release dists/stable \
+              > dists/stable/Release
+          )
+
+      - name: Commit repository metadata and package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add apt
+
+          if git diff --cached --quiet; then
+            echo "APT repository is already up to date."
+          else
+            git commit -m "packages: publish libchttpx-dev ${VERSION}"
+            git push origin HEAD:packages
+          fi
+
+      - name: Attach package to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" \
+              "build/libchttpx-dev_${VERSION}_amd64.deb" \
+              --clobber
+          else
+            echo "Release ${TAG} does not exist; package remains available from the APT branch."
+          fi
