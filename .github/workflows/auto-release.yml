@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: auto-release
@@ -139,8 +140,11 @@ jobs:
             Download the package for your distribution from this release, then install it with the system package manager:
 
             ```bash
-            # Debian / Ubuntu
-            sudo apt install ./libchttpx-dev_*.deb
+            # Debian / Ubuntu (APT repository)
+            curl -fsSL https://netcorelink.github.io/libchttpx/apt/libchttpx.sources \
+              | sudo tee /etc/apt/sources.list.d/libchttpx.sources >/dev/null
+            sudo apt update
+            sudo apt install libchttpx-dev
 
             # Fedora / RHEL
             sudo dnf install ./libchttpx-dev-*.rpm
@@ -163,3 +167,79 @@ jobs:
             ```powershell
             iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
             ```
+
+      - name: Checkout APT repository
+        uses: actions/checkout@v4
+        with:
+          ref: packages
+          path: .apt-repository
+          fetch-depth: 0
+
+      - name: Publish Debian package to APT repository
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.tag.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${RELEASE_TAG#v}"
+          DEB_PACKAGE="$(find dist/packages -maxdepth 1 -type f -name 'libchttpx-dev_*_amd64.deb' -print -quit)"
+
+          if [ -z "${DEB_PACKAGE}" ]; then
+            echo "Debian package was not found in dist/packages." >&2
+            exit 1
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils
+
+          REPO="${GITHUB_WORKSPACE}/.apt-repository"
+          POOL="${REPO}/apt/pool/main/l/libchttpx"
+          INDEX="${REPO}/apt/dists/stable/main/binary-amd64"
+
+          mkdir -p "${POOL}" "${INDEX}"
+          cp "${DEB_PACKAGE}" "${POOL}/"
+
+          (
+            cd "${REPO}/apt"
+
+            dpkg-scanpackages --arch amd64 pool /dev/null \
+              > dists/stable/main/binary-amd64/Packages
+
+            gzip -9c dists/stable/main/binary-amd64/Packages \
+              > dists/stable/main/binary-amd64/Packages.gz
+
+            apt-ftparchive \
+              -o APT::FTPArchive::Release::Origin="netcorelink" \
+              -o APT::FTPArchive::Release::Label="libchttpx" \
+              -o APT::FTPArchive::Release::Suite="stable" \
+              -o APT::FTPArchive::Release::Codename="stable" \
+              -o APT::FTPArchive::Release::Architectures="amd64" \
+              -o APT::FTPArchive::Release::Components="main" \
+              -o APT::FTPArchive::Release::Description="libchttpx APT repository" \
+              release dists/stable \
+              > dists/stable/Release
+          )
+
+          printf '%s\n' "${RELEASE_TAG}" > "${REPO}/publish/version.txt"
+
+          cd "${REPO}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apt publish/version.txt
+
+          if git diff --cached --quiet; then
+            echo "APT repository is already up to date."
+          else
+            git commit -m "packages: publish libchttpx-dev ${VERSION}"
+            git push origin HEAD:packages
+          fi
+
+      - name: Refresh GitHub Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run pages.yml --ref main
+
