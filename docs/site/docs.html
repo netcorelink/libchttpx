@@ -52,13 +52,39 @@
         <div class="docs-content">
           <section id="install">
             <h2>Installation</h2>
-            <p>On Linux you can build and install from source with the existing Makefile.</p>
+            <p>For Debian and Ubuntu on amd64, add the libchttpx APT repository once and install the development package normally.</p>
             <div class="code-card">
               <div class="code-card-header">
-                <span>Terminal</span>
+                <span>Debian / Ubuntu</span>
                 <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
               </div>
-              <pre id="install-code"><code>sudo apt update
+              <pre id="install-code"><code>curl -fsSL https://netcorelink.github.io/libchttpx/apt/libchttpx.sources \
+  | sudo tee /etc/apt/sources.list.d/libchttpx.sources >/dev/null
+
+sudo apt update
+sudo apt install libchttpx-dev</code></pre>
+            </div>
+
+            <p>After that, future versions are installed through the normal APT update flow:</p>
+            <div class="code-card">
+              <div class="code-card-header">
+                <span>Update</span>
+                <button class="copy-button" type="button" data-copy-target="update-code">Copy</button>
+              </div>
+              <pre id="update-code"><code>sudo apt update
+sudo apt upgrade</code></pre>
+            </div>
+
+            <p class="notice">The current repository uses APT <code>Trusted: yes</code>, so there is no separate GPG-key setup. Package signing can be added later without changing the package name.</p>
+
+            <h3>Build from source</h3>
+            <p>If you do not want to use the APT repository, the existing source installation remains available.</p>
+            <div class="code-card">
+              <div class="code-card-header">
+                <span>Source build</span>
+                <button class="copy-button" type="button" data-copy-target="source-install-code">Copy</button>
+              </div>
+              <pre id="source-install-code"><code>sudo apt update
 sudo apt install -y build-essential pkg-config libcjson-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
