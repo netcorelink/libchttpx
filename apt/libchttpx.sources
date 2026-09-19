@@ -1,0 +1,6 @@
+Types: deb
+URIs: https://raw.githubusercontent.com/netcorelink/libchttpx/packages/apt
+Suites: stable
+Components: main
+Architectures: amd64
+Trusted: yes
