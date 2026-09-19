@@ -1,1 +1,84 @@
-(function () {\n  "use strict";\n\n  var modules = [\n    ["app", "App runtime"],\n    ["server", "Server"],\n    ["routing", "Routing"],\n    ["middleware", "Middleware"],\n    ["request", "Request"],\n    ["responses", "Responses"],\n    ["json", "JSON"],\n    ["memory", "Memory"],\n    ["uploads", "Uploads"],\n    ["cors", "CORS"],\n    ["cookies", "Cookies"],\n    ["i18n", "Request IDs & i18n"],\n    ["logging", "Logging"],\n    ["rate-limiting", "Rate limiting"],\n    ["websocket", "WebSocket"]\n  ];\n\n  var allowed = {};\n  modules.forEach(function (item) { allowed[item[0]] = item[1]; });\n\n  var params = new URLSearchParams(window.location.search);\n  var name = params.get("name") || "app";\n  if (!allowed[name]) name = "app";\n\n  var container = document.querySelector("[data-module-content]");\n  var breadcrumb = document.querySelector("[data-module-breadcrumb]");\n  var nav = document.querySelector("[data-module-nav]");\n\n  document.title = allowed[name] + " — libchttpx";\n  if (breadcrumb) breadcrumb.textContent = allowed[name];\n\n  if (nav) {\n    modules.forEach(function (item) {\n      var link = document.createElement("a");\n      link.href = "module.html?name=" + encodeURIComponent(item[0]);\n      link.textContent = item[1];\n      if (item[0] === name) link.classList.add("active");\n      nav.appendChild(link);\n    });\n  }\n\n  function rewriteLinks(root) {\n    root.querySelectorAll("a[href]").forEach(function (link) {\n      var href = link.getAttribute("href") || "";\n      var match = href.match(/^\.\.\/([^/]+)\/README\.md(?:#(.*))?$/);\n      if (match && allowed[match[1]]) {\n        link.href = "module.html?name=" + encodeURIComponent(match[1]) + (match[2] ? "#" + match[2] : "");\n        return;\n      }\n      if (href === "../README.md" || href === "README.md") {\n        link.href = "docs.html";\n        return;\n      }\n      if (/^https?:\/\//.test(href)) {\n        link.target = "_blank";\n        link.rel = "noopener noreferrer";\n      }\n    });\n  }\n\n  fetch("content/" + encodeURIComponent(name) + ".md")\n    .then(function (response) {\n      if (!response.ok) throw new Error("Documentation file not found");\n      return response.text();\n    })\n    .then(function (markdown) {\n      if (!window.marked) throw new Error("Markdown renderer failed to load");\n      container.innerHTML = window.marked.parse(markdown, { gfm: true, breaks: false });\n      rewriteLinks(container);\n      if (window.location.hash) {\n        window.requestAnimationFrame(function () {\n          var target = document.querySelector(window.location.hash);\n          if (target) target.scrollIntoView();\n        });\n      }\n    })\n    .catch(function () {\n      container.innerHTML = '<div class="doc-error">Could not load this documentation. <a href="docs.html">Return to documentation</a>.</div>';\n    });\n})();
+(function () {
+  "use strict";
+
+  var modules = [
+    ["app", "App runtime"],
+    ["server", "Server"],
+    ["routing", "Routing"],
+    ["middleware", "Middleware"],
+    ["request", "Request"],
+    ["responses", "Responses"],
+    ["json", "JSON"],
+    ["memory", "Memory"],
+    ["uploads", "Uploads"],
+    ["cors", "CORS"],
+    ["cookies", "Cookies"],
+    ["i18n", "Request IDs & i18n"],
+    ["logging", "Logging"],
+    ["rate-limiting", "Rate limiting"],
+    ["websocket", "WebSocket"]
+  ];
+
+  var allowed = {};
+  modules.forEach(function (item) { allowed[item[0]] = item[1]; });
+
+  var params = new URLSearchParams(window.location.search);
+  var name = params.get("name") || "app";
+  if (!allowed[name]) name = "app";
+
+  var container = document.querySelector("[data-module-content]");
+  var breadcrumb = document.querySelector("[data-module-breadcrumb]");
+  var nav = document.querySelector("[data-module-nav]");
+
+  document.title = allowed[name] + " — libchttpx";
+  if (breadcrumb) breadcrumb.textContent = allowed[name];
+
+  if (nav) {
+    modules.forEach(function (item) {
+      var link = document.createElement("a");
+      link.href = "module.html?name=" + encodeURIComponent(item[0]);
+      link.textContent = item[1];
+      if (item[0] === name) link.classList.add("active");
+      nav.appendChild(link);
+    });
+  }
+
+  function rewriteLinks(root) {
+    root.querySelectorAll("a[href]").forEach(function (link) {
+      var href = link.getAttribute("href") || "";
+      var match = href.match(/^\.\.\/([^/]+)\/README\.md(?:#(.*))?$/);
+      if (match && allowed[match[1]]) {
+        link.href = "module.html?name=" + encodeURIComponent(match[1]) + (match[2] ? "#" + match[2] : "");
+        return;
+      }
+      if (href === "../README.md" || href === "README.md") {
+        link.href = "docs.html";
+        return;
+      }
+      if (/^https?:\/\//.test(href)) {
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+      }
+    });
+  }
+
+  fetch("content/" + encodeURIComponent(name) + ".md")
+    .then(function (response) {
+      if (!response.ok) throw new Error("Documentation file not found");
+      return response.text();
+    })
+    .then(function (markdown) {
+      if (!window.marked) throw new Error("Markdown renderer failed to load");
+      container.innerHTML = window.marked.parse(markdown, { gfm: true, breaks: false });
+      rewriteLinks(container);
+      if (window.location.hash) {
+        window.requestAnimationFrame(function () {
+          var target = document.querySelector(window.location.hash);
+          if (target) target.scrollIntoView();
+        });
+      }
+    })
+    .catch(function () {
+      container.innerHTML = '<div class="doc-error">Could not load this documentation. <a href="docs.html">Return to documentation</a>.</div>';
+    });
+})();
