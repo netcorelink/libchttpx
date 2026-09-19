@@ -17,6 +17,7 @@ chttpx_serv_t* server =
 | Поле | Default |
 | --- | ---: |
 | `port` | 8080 |
+| `network_mode` | `CHTTPX_NETWORK_DUAL` |
 | `max_clients` | 255 |
 | `read_timeout_sec` | 30 |
 | `write_timeout_sec` | 30 |
@@ -27,6 +28,25 @@ chttpx_serv_t* server =
 | `request_id_enabled` | true |
 | `default_language` | `"en"` |
 | `log_level` | `CHTTPX_LOG_INFO` |
+
+## Сетевой режим
+
+По умолчанию server работает в dual-stack режиме. Один IPv6 listener, привязанный к `::`, принимает как обычные IPv6 connections, так и IPv4 connections через IPv4-mapped IPv6 addresses.
+
+```c
+chttpx_config_t config = cHTTPX_DefaultConfig();
+
+/* Default: IPv4 + IPv6. */
+config.network_mode = CHTTPX_NETWORK_DUAL;
+
+/* Только IPv4. */
+// config.network_mode = CHTTPX_NETWORK_IPV4;
+
+/* Только IPv6. */
+// config.network_mode = CHTTPX_NETWORK_IPV6;
+```
+
+При `CHTTPX_NETWORK_DUAL` один server доступен и через `http://127.0.0.1:8080`, и через `http://[::1]:8080`. IPv4-mapped адреса нормализуются перед записью в `req->client_ip`, поэтому IPv4 client будет иметь адрес `127.0.0.1`, а не `::ffff:127.0.0.1`.
 
 ## Собственные лимиты
 

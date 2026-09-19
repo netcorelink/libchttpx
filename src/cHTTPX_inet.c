@@ -30,8 +30,8 @@
  * This function retrieves the real network-level IP address of the client
  * using the TCP socket (`getpeername`). It supports both IPv4 and IPv6.
  *
- * The returned value is a pointer to a static buffer, so it will be
- * overwritten on subsequent calls and is NOT thread-safe.
+ * The returned value is stored in a thread-local buffer and remains valid
+ * until the next call on the same thread.
  *
  * This IP cannot be spoofed by HTTP headers, but if the server is behind
  * a reverse proxy (Nginx, CDN, load balancer), the returned address will
@@ -50,32 +50,33 @@ const char* cHTTPX_ClientInetIP(chttpx_socket_t client_fd)
     if (getpeername(client_fd, (struct sockaddr*)&addr, &len) == -1)
         return "-";
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DWORD ip_size = sizeof(ip);
-    if (WSAAddressToStringA((struct sockaddr*)&addr, len, NULL, ip, &ip_size) != 0)
-        return "-";
-#else
     if (addr.ss_family == AF_INET)
     {
         struct sockaddr_in* s = (struct sockaddr_in*)&addr;
         if (!inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip)))
-        {
             return "-";
-        }
+        return ip;
     }
-    else if (addr.ss_family == AF_INET6)
+
+    if (addr.ss_family == AF_INET6)
     {
         struct sockaddr_in6* s = (struct sockaddr_in6*)&addr;
-        if (!inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip)))
-        {
-            return "-";
-        }
-    }
-    else
-    {
-        strncpy(ip, "-", sizeof(ip));
-    }
-#endif
 
-    return ip;
+        if (IN6_IS_ADDR_V4MAPPED(&s->sin6_addr))
+        {
+            struct in_addr ipv4;
+            const unsigned char* raw = (const unsigned char*)&s->sin6_addr;
+            memcpy(&ipv4, raw + 12, sizeof(ipv4));
+
+            if (!inet_ntop(AF_INET, &ipv4, ip, sizeof(ip)))
+                return "-";
+            return ip;
+        }
+
+        if (!inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip)))
+            return "-";
+        return ip;
+    }
+
+    return "-";
 }

@@ -1195,9 +1195,17 @@ extern "C"
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
+    typedef enum
+    {
+        CHTTPX_NETWORK_IPV4 = 0,
+        CHTTPX_NETWORK_IPV6,
+        CHTTPX_NETWORK_DUAL
+    } chttpx_network_mode_t;
+
     typedef struct
     {
         uint16_t port;
+        chttpx_network_mode_t network_mode;
         size_t max_clients;
         uint16_t read_timeout_sec;
         uint16_t write_timeout_sec;
@@ -1241,6 +1249,7 @@ extern "C"
         bool initialized;
 
         uint16_t port;
+        chttpx_network_mode_t network_mode;
         chttpx_socket_t server_fd;
 
         size_t max_clients;
