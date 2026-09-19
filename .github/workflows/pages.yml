@@ -28,6 +28,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout package repository
+        uses: actions/checkout@v4
+        with:
+          ref: packages
+          path: .package-repository
+          fetch-depth: 1
+
+      - name: Add APT repository to site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf docs/site/apt
+          cp -a .package-repository/apt docs/site/apt
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
