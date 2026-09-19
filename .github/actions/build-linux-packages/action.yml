@@ -1,0 +1,137 @@
+name: Build Linux packages
+description: Build native deb, rpm, Arch Linux and Alpine packages for libchttpx
+
+inputs:
+  version:
+    description: Package version or git tag (v prefix is accepted)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare package directories
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.version }}"
+        VERSION="${VERSION#v}"
+        echo "LIBCHTTPX_PACKAGE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+        echo "ARCH=amd64" >> "${GITHUB_ENV}"
+
+        rm -rf dist/deb dist/rpm dist/archlinux dist/apk dist/packages
+        mkdir -p dist/deb dist/rpm dist/archlinux dist/apk dist/packages
+
+    - name: Build Debian/Ubuntu library
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker run --rm \
+          -v "${PWD}:/work" \
+          -w /work \
+          ubuntu:24.04 \
+          bash -euc '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends build-essential libcjson-dev
+            make clean
+            make libchttpx.so
+            cp libchttpx.so dist/deb/libchttpx.so
+          '
+
+    - name: Build Fedora/RHEL library
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker run --rm \
+          -v "${PWD}:/work" \
+          -w /work \
+          fedora:42 \
+          bash -euc '
+            dnf install -y gcc make cjson-devel
+            make clean
+            make libchttpx.so
+            cp libchttpx.so dist/rpm/libchttpx.so
+          '
+
+    - name: Build Arch Linux library
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker run --rm \
+          -v "${PWD}:/work" \
+          -w /work \
+          archlinux:base-devel \
+          bash -euc '
+            pacman -Sy --noconfirm cjson
+            make clean
+            make libchttpx.so
+            cp libchttpx.so dist/archlinux/libchttpx.so
+          '
+
+    - name: Build Alpine Linux library
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker run --rm \
+          -v "${PWD}:/work" \
+          -w /work \
+          alpine:3.22 \
+          sh -euc '
+            apk add --no-cache build-base cjson-dev
+            make clean
+            make libchttpx.so
+            cp libchttpx.so dist/apk/libchttpx.so
+          '
+
+    - name: Generate pkg-config metadata
+      shell: python
+      env:
+        PACKAGE_VERSION: ${{ inputs.version }}
+      run: |
+        import os
+        from pathlib import Path
+
+        version = os.environ["PACKAGE_VERSION"].removeprefix("v")
+        variants = {
+            "deb": "lib",
+            "rpm": "lib64",
+            "archlinux": "lib",
+            "apk": "lib",
+        }
+
+        for directory, libdir in variants.items():
+            content = f"""prefix=/usr
+libdir=${{prefix}}/{libdir}
+includedir=${{prefix}}/include
+
+Name: libchttpx
+Description: A compact cross-platform HTTP/1.1 server library for C/C++.
+Version: {version}
+Libs: -L${{libdir}} -lchttpx
+Cflags: -I${{includedir}}/libchttpx
+"""
+            path = Path("dist") / directory / "libchttpx.pc"
+            path.write_text(content, encoding="utf-8")
+
+    - name: Build native packages with nFPM
+      shell: bash
+      run: |
+        set -euo pipefail
+        for PACKAGER in deb rpm archlinux apk; do
+          docker run --rm \
+            -v "${PWD}:/tmp/pkg" \
+            -w /tmp/pkg \
+            -e LIBCHTTPX_PACKAGE_VERSION \
+            -e ARCH \
+            goreleaser/nfpm:v2.47.0 \
+            package \
+            --config packaging/nfpm.yaml \
+            --packager "${PACKAGER}" \
+            --target dist/packages/
+        done
+
+    - name: Show package artifacts
+      shell: bash
+      run: |
+        set -euo pipefail
+        ls -lh dist/packages
