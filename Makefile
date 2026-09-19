@@ -68,7 +68,7 @@ win:
 # -
 
 libchttpx.so: $(LIN_OBJS)
-	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS)
+	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS) $(LIN_LDFLAGS) -pthread
 
 # LINux lib install
 # -
