@@ -5,6 +5,18 @@ TAR = $(RELEASE_DIR).tar.gz
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -Iinclude -Isrc
+
+# Native TLS is opt-in so plain HTTP builds keep zero OpenSSL dependency.
+TLS ?= 0
+TLS_CFLAGS =
+TLS_LDFLAGS =
+
+ifeq ($(TLS),1)
+TLS_CFLAGS += -DCHTTPX_ENABLE_TLS
+TLS_LDFLAGS += -lssl -lcrypto
+endif
+
+CFLAGS += $(TLS_CFLAGS)
 TARGET_DLL = libchttpx.dll
 CLANG_FORMAT = clang-format
 
@@ -17,12 +29,13 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS = -lcjson
-WIN_LDFLAGS = -lws2_32
+LIN_LDFLAGS = -lcjson $(TLS_LDFLAGS)
+WIN_LDFLAGS = -lws2_32 $(TLS_LDFLAGS)
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
 TEST_SERVER_SANITIZE_TARGET = $(BINDIR)/test_server_sanitize
+TEST_TLS_TARGET = $(BINDIR)/test_tls
 EXAMPLE_SRC = example/basic.c
 EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
 
@@ -57,6 +70,9 @@ $(BINDIR)/example-%: example/%.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 $< $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
+examples-tls:
+	@$(MAKE) TLS=1 $(BINDIR)/example-tls
+
 # WINdows build
 # -
 
@@ -80,7 +96,11 @@ lib-install: libchttpx.so
 
 	cp include/*.h $(DESTDIR)$(PREFIX)/include/libchttpx
 	cp libchttpx.so $(DESTDIR)$(PREFIX)/lib
-	cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig
+	@if [ "$(TLS)" = "1" ]; then \
+		cp libchttpx-tls.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
+	else \
+		cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
+	fi
 
 # WINdows lib compile
 # -
@@ -127,6 +147,18 @@ test-sanitize:
 	ASAN_OPTIONS=detect_leaks=1 $(TEST_SANITIZE_TARGET)
 	$(CC) $(CFLAGS) -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined tests/test_server.c $(LIN_SRCS) -o $(TEST_SERVER_SANITIZE_TARGET) $(LIN_LDFLAGS) -pthread
 	ASAN_OPTIONS=detect_leaks=1 $(TEST_SERVER_SANITIZE_TARGET)
+
+test-tls:
+	@mkdir -p $(BINDIR)/tls
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+		-keyout $(BINDIR)/tls/server.key -out $(BINDIR)/tls/server.crt \
+		-subj "/CN=localhost" -addext "subjectAltName=DNS:localhost" >/dev/null 2>&1
+	@$(MAKE) TLS=1 $(TEST_TLS_TARGET)
+	$(TEST_TLS_TARGET) $(BINDIR)/tls/server.crt $(BINDIR)/tls/server.key
+
+$(TEST_TLS_TARGET): tests/test_tls.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_tls.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 # LINux lib compile
 # -
