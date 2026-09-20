@@ -4,6 +4,9 @@
   var modules = [
     ["app", "App runtime"],
     ["server", "Server"],
+    ["tls", "TLS / HTTPS"],
+    ["compression", "Compression"],
+    ["metrics", "Metrics"],
     ["routing", "Routing"],
     ["middleware", "Middleware"],
     ["request", "Request"],
