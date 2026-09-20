@@ -34,6 +34,28 @@ fi
 
 echo "cjson installed successfully!"
 
+# zlib
+if pkg-config --exists zlib 2>/dev/null; then
+    echo "zlib already installed."
+else
+    echo "zlib not found. Installing...."
+
+    if command -v apt >/dev/null 2>&1; then
+        sudo apt install -y zlib1g-dev
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm zlib
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y zlib-devel
+    elif command -v zypper >/dev/null 2>&1; then
+        sudo zypper install -y zlib-devel
+    else
+        echo "Unsupported package manager. Install zlib manually."
+        exit 1
+    fi
+fi
+
+echo "zlib installed successfully!"
+
 TMPDIR=$(mktemp -d)
 
 echo "Bulding in $TMPDIR"
