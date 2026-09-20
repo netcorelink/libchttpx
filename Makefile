@@ -37,11 +37,11 @@ TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
 TEST_SERVER_SANITIZE_TARGET = $(BINDIR)/test_server_sanitize
 TEST_TLS_TARGET = $(BINDIR)/test_tls
 TEST_COMPRESSION_TARGET = $(BINDIR)/test_compression
-COMPRESSION_BENCHMARK_TARGET = $(BINDIR)/benchmark-compression
+TEST_METRICS_TARGET = $(BINDIR)/test_metrics
 EXAMPLE_SRC = example/basic.c
 EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
 
-EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload
+EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics
 EXAMPLE_TARGETS = $(addprefix $(BINDIR)/example-,$(EXAMPLE_NAMES))
 
 LIN_SRCS = $(wildcard src/*.c)
@@ -134,9 +134,10 @@ test-win:
 # LINux tests
 # -
 
-test: $(TEST_TARGET) $(TEST_SERVER_TARGET)
+test: $(TEST_TARGET) $(TEST_SERVER_TARGET) $(TEST_METRICS_TARGET)
 	$(TEST_TARGET)
 	$(TEST_SERVER_TARGET)
+	$(TEST_METRICS_TARGET)
 
 $(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
@@ -172,12 +173,12 @@ $(TEST_COMPRESSION_TARGET): tests/test_compression.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_compression.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
-benchmark-compression: $(COMPRESSION_BENCHMARK_TARGET)
-	$(COMPRESSION_BENCHMARK_TARGET)
+test-metrics: $(TEST_METRICS_TARGET)
+	$(TEST_METRICS_TARGET)
 
-$(COMPRESSION_BENCHMARK_TARGET): benchmarks/compression.c $(LIN_SRCS)
+$(TEST_METRICS_TARGET): tests/test_metrics.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) -std=gnu11 -O2 benchmarks/compression.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+	$(CC) $(CFLAGS) -std=gnu11 -O2 -g tests/test_metrics.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 # LINux lib compile
 # -
