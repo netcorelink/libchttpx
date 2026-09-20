@@ -1,15 +1,15 @@
 Package: libchttpx-dev
-Version: 1.5.25-1
+Version: 1.5.26-1
 Architecture: amd64
 Maintainer: netcorelink
-Installed-Size: 178
-Depends: libcjson1
+Installed-Size: 189
+Depends: libcjson1, zlib1g
 Provides: libchttpx
-Filename: pool/main/l/libchttpx/libchttpx-dev_1.5.25-1_amd64.deb
-Size: 65936
-MD5sum: 7bd365787a97eb89b9a35288fc6794f8
-SHA1: 037aabae89c9aae7e546b4834f3223542b9d4ffd
-SHA256: 0d9da1f4fa40f38b23a7a311e5714023d6122247327cdd60e5b9178e4700840b
+Filename: pool/main/l/libchttpx/libchttpx-dev_1.5.26-1_amd64.deb
+Size: 71970
+MD5sum: a758cfc18b9bc5a2fb0d338040a63c2a
+SHA1: df6216a0d528d5eccb33bce4621d223e23d26408
+SHA256: 1b2da67866c71530b10685e6fcebb3d15992e45e143e8546e60060df197037da
 Section: devel
 Priority: optional
 Homepage: https://github.com/netcorelink/libchttpx
