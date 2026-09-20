@@ -1408,8 +1408,6 @@ extern "C"
     /** Enable or disable compression for one response. */
     void cHTTPX_ResponseCompression(chttpx_response_t* response, bool enabled);
 
-    /** Return true when the built-in gzip provider is available. */
-    bool cHTTPX_CompressionGzipAvailable(void);
 
 #ifdef __cplusplus
 }
