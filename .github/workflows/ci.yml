@@ -58,6 +58,35 @@ jobs:
       - name: Run HTTPS integration test
         run: make test-tls
 
+  build-linux-compression:
+    name: Build + compression integration (Linux, zlib)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev
+
+      - name: Build compression-enabled shared library
+        run: make COMPRESSION=1 libchttpx.so
+
+      - name: Build compression example
+        run: make examples-compression
+
+      - name: Run compression integration tests
+        run: make test-compression
+
+      - name: Run compression benchmark
+        run: make benchmark-compression
+
+      - name: Verify TLS and compression can be enabled together
+        run: |
+          make clean
+          make TLS=1 COMPRESSION=1 libchttpx.so
+
   build-windows:
     name: Build (Windows)
     runs-on: windows-latest
