@@ -76,12 +76,16 @@ overrides:
   deb:
     depends:
       - libcjson1
+      - zlib1g
   rpm:
     depends:
       - cjson
+      - zlib
   archlinux:
     depends:
       - cjson
+      - zlib
   apk:
     depends:
       - cjson
+      - zlib
