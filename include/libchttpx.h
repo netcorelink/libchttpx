@@ -840,6 +840,9 @@ extern "C"
 
         chttpx_body_ownership_t body_ownership;
 
+        /* Set when response compression must be bypassed. */
+        bool compression_disabled;
+
         /* Times for logging */
         struct timespec start_ts;
         struct timespec end_ts;
@@ -1185,7 +1188,8 @@ extern "C"
         CHTTPX_ERR_STATE = -10,
         CHTTPX_ERR_UNAVAILABLE = -11,
         CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13
+        CHTTPX_ERR_TLS = -13,
+        CHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
 
     typedef enum
@@ -1251,7 +1255,7 @@ extern "C"
         size_t allowed_types_count;
     } chttpx_upload_policy_t;
 
-    typedef struct
+    typedef struct chttpx_route
     {
         const char* method;
         const char* path;
@@ -1262,6 +1266,7 @@ extern "C"
         size_t after_middleware_count;
         chttpx_upload_policy_t upload_policy;
         bool has_upload_policy;
+        bool compression_disabled;
     } chttpx_route_t;
 
     typedef struct chttpx_serv
@@ -1305,6 +1310,7 @@ extern "C"
         chttpx_middleware_stack_t middleware;
         bool logging_enabled;
         void* rate_limiter_state;
+        void* compression_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
@@ -1357,6 +1363,53 @@ extern "C"
     int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config);
     void _chttpx_server_listen(chttpx_serv_t* server);
     void _chttpx_server_shutdown(chttpx_serv_t* server);
+
+    /**
+     * Encode one complete buffered response body.
+     *
+     * The provider allocates *output with malloc-compatible ownership. The
+     * library owns that buffer after a successful compression operation.
+     */
+    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input,
+                                                size_t input_size,
+                                                int level,
+                                                unsigned char** output,
+                                                size_t* output_size,
+                                                void* user_data);
+
+    typedef struct
+    {
+        const char* encoding;
+        chttpx_compression_encode_fn encode_buffer;
+        void* user_data;
+    } chttpx_compression_provider_t;
+
+    typedef struct
+    {
+        size_t min_size;
+        int level;
+        const char** include_types;
+        size_t include_types_count;
+        const char** exclude_types;
+        size_t exclude_types_count;
+        const chttpx_compression_provider_t* providers;
+        size_t providers_count;
+    } chttpx_compression_config_t;
+
+    /** Return the default gzip-oriented response compression configuration. */
+    chttpx_compression_config_t cHTTPX_CompressionDefault(void);
+
+    /** Enable response compression for one server. */
+    int cHTTPX_CompressionUse(chttpx_serv_t* server, const chttpx_compression_config_t* config);
+
+    /** Enable or disable response compression for one route. */
+    int cHTTPX_RouteCompression(chttpx_route_t* route, bool enabled);
+
+    /** Enable or disable compression for one response. */
+    void cHTTPX_ResponseCompression(chttpx_response_t* response, bool enabled);
+
+    /** Return true when the built-in gzip provider is available. */
+    bool cHTTPX_CompressionGzipAvailable(void);
 
 #ifdef __cplusplus
 }
