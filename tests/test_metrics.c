@@ -34,7 +34,8 @@ static void user_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     const char* id = cHTTPX_Param(req, "id");
     assert(id && *id);
-    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "ok");
+    static const unsigned char body[] = "ok";
+    *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "text/plain", body, sizeof(body) - 1);
 }
 
 static void wait_until_listening(chttpx_serv_t* server)
