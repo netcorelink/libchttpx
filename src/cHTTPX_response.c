@@ -31,6 +31,7 @@
 #include "cHTTPX_cookies.h"
 #include "cHTTPX_queries.h"
 #include "cHTTPX_crosspltm.h"
+#include "cHTTPX_tls.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -39,39 +40,7 @@
 
 int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
 {
-    const unsigned char* cursor = data;
-    size_t sent = 0;
-
-#ifdef SO_NOSIGPIPE
-    int no_sigpipe = 1;
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
-#endif
-
-    while (sent < size)
-    {
-        int flags = 0;
-#ifdef MSG_NOSIGNAL
-        flags |= MSG_NOSIGNAL;
-#endif
-        size_t wanted = size - sent;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        if (wanted > INT_MAX)
-            wanted = INT_MAX;
-#endif
-        ssize_t result = send(fd, (const char*)cursor + sent, wanted, flags);
-        if (result < 0)
-        {
-#ifdef CHTTPX_PLATFORM_POSIX
-            if (errno == EINTR)
-                continue;
-#endif
-            return -1;
-        }
-        if (result == 0)
-            return -1;
-        sent += (size_t)result;
-    }
-    return 0;
+    return _chttpx_io_send_all(fd, NULL, data, size);
 }
 
 const char* cHTTPX_StatusReason(uint16_t status)
@@ -313,7 +282,7 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
     return NULL;
 }
 
-static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, char* buffer, size_t buffer_size)
+static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_session, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
     size_t limit = server && server->max_header_size && server->max_header_size < buffer_size ? server->max_header_size : buffer_size - 1;
@@ -323,7 +292,7 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, char* buffer,
         if (total >= buffer_size - 1)
             return -2;
 
-        ssize_t n = recv(fd, buffer + total, buffer_size - 1 - total, 0);
+        int n = _chttpx_io_recv(fd, tls_session, buffer + total, buffer_size - 1 - total);
         if (n < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
@@ -476,11 +445,11 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     if (!append_response_header(buffer, capacity, &length, "\r\n"))
         goto done;
 
-    if (cHTTPX_SendAll(req->client_fd, buffer, length) != 0)
+    if (_chttpx_io_send_all(req->client_fd, req->_tls_session, buffer, length) != CHTTPX_OK)
         goto done;
 
     if (res.body && res.body_size > 0)
-        cHTTPX_SendAll(req->client_fd, res.body, res.body_size);
+        _chttpx_io_send_all(req->client_fd, req->_tls_session, res.body, res.body_size);
 
 done:
     free(buffer);
@@ -595,7 +564,7 @@ static void set_request_language(chttpx_request_t* req)
     }
 }
 
-static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t client_fd, char* buffer, size_t received)
+static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* buffer, size_t received)
 {
     chttpx_request_t* req = calloc(1, sizeof(chttpx_request_t));
     if (!req)
@@ -628,6 +597,7 @@ static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t
     }
     req->client_fd = client_fd;
     req->_server = server;
+    req->_tls_session = tls_session;
 
     /* Client IP */
     const char* client_ip = cHTTPX_ClientInetIP(client_fd);
@@ -786,27 +756,28 @@ void* chttpx_handle(void* arg)
 
     set_client_timeout(server, client_sock);
 
-    char buf[BUFFER_SIZE];
-    ssize_t received = read_req(server, client_sock, buf, BUFFER_SIZE);
-    if (received == -2)
-    {
-        static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        cHTTPX_SendAll(client_sock, too_large, sizeof(too_large) - 1);
-        chttpx_close(client_sock);
-        return NULL;
-    }
-    if (received <= 0)
+    void* tls_session = NULL;
+    if (_chttpx_tls_accept(server, client_sock, &tls_session) != CHTTPX_OK)
     {
         chttpx_close(client_sock);
         return NULL;
     }
 
-    chttpx_request_t* req = parse_req_buffer(server, client_sock, buf, (size_t)received);
-    if (!req)
+    chttpx_request_t* req = NULL;
+    char buf[BUFFER_SIZE];
+    ssize_t received = read_req(server, client_sock, tls_session, buf, BUFFER_SIZE);
+    if (received == -2)
     {
-        chttpx_close(client_sock);
-        return NULL;
+        static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        _chttpx_io_send_all(client_sock, tls_session, too_large, sizeof(too_large) - 1);
+        goto cleanup_connection;
     }
+    if (received <= 0)
+        goto cleanup_connection;
+
+    req = parse_req_buffer(server, client_sock, tls_session, buf, (size_t)received);
+    if (!req)
+        goto cleanup_connection;
 
     if (req->_parse_status)
     {
@@ -846,6 +817,8 @@ cleanup_request:
     free(req->query);
     free(req);
 
+cleanup_connection:
+    _chttpx_tls_session_close(tls_session);
     chttpx_close(client_sock);
     return NULL;
 }
