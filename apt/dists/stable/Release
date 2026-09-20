@@ -1,24 +1,24 @@
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Sat, 19 Sep 2026 23:01:55 +0000
+Date: Sun, 20 Sep 2026 13:26:35 +0000
 Description: libchttpx APT repository
 Label: libchttpx
 Origin: netcorelink
 Suite: stable
 MD5Sum:
- d6432f1b71162eaf54af50a75420f0fc              182 Release
- 20c8d4610c1f22a8a6e81c6cdf854f67              693 main/binary-amd64/Packages
- ff83afa0011822fb1a4c6fcdef5240bf              497 main/binary-amd64/Packages.gz
+ 105dc13450c2afeb608c7126c2c0a614              182 Release
+ 0004297d5f6ba558b04e9948b4af2832              693 main/binary-amd64/Packages
+ 20067bbf0d75592c5e28bbb9114caf37              498 main/binary-amd64/Packages.gz
 SHA1:
- 91eaece4492ecc77fae85127387d3a27fee86a93              182 Release
- 009f394eafee4c3315a7697c40b4f2317bad8b8b              693 main/binary-amd64/Packages
- f67a62f87038cc7e627e6bf7bc24de0c0f4393b8              497 main/binary-amd64/Packages.gz
+ fe6fe6b4c3e5cc0c1bed24b793a645deffb8eadd              182 Release
+ 22f31251eef2ef0b289d128667e3a99870a6e38e              693 main/binary-amd64/Packages
+ 8831625dba61a0d774be9f71bb83c7108a7eaaa9              498 main/binary-amd64/Packages.gz
 SHA256:
- e9824b410bb50e207c05ca5d880cc50f063ca0ae5b8fa6460a8f288e155211f7              182 Release
- 67ba1f723d3b1fdfc6afc59dcaae15189e77df9f3b46a2ea3647898f6e1c4d75              693 main/binary-amd64/Packages
- 89235876869bd9ccdc2e1e73149df15e7c4d8dedc949e37f82c49ff25683c43e              497 main/binary-amd64/Packages.gz
+ 7a2795aa22062f0b0d5d2318c6abb9a7c1e5f86c303bc5b8abbca23156f6c524              182 Release
+ 0d7a4a9641872821356ba0dc3b7d3f94a29bc2ba152801b42d9acb24abb0c69c              693 main/binary-amd64/Packages
+ 780840b22eed1cf1ed6c21d112607a1d3b6ce41270b229260d64daf44ed4e243              498 main/binary-amd64/Packages.gz
 SHA512:
- 042c005b9f242e246f5c6aa149a19f6c9e39482f3f6c2df6d26df4748a644a6fa1f404813a39b6f8c9974afc06484a53e96d0a807bd53213c1c44e613a34a88c              182 Release
- 862be095022c01a4468417c1cea035595ae63adf997e0913508d58a49e6b42b2b51003d77633eee9cfd3fbeeef5b1858457f93e0b4095b1cb7dd8389c4f357c8              693 main/binary-amd64/Packages
- 1e5c3903126474ecc24fd809db81ba10c28e1efc351b419c197da0a4a4b63a193f9101be73af0d6251615ce40380cf6b0a3a147670374fef8592c204629493b5              497 main/binary-amd64/Packages.gz
+ de2e0493f21aa4fcdf8336e1e8bdcff28e971169661ba4f7d19b901152d1bdece3590d57e6cae21fe15721f4393ab7a4e080c58e1495282098bdc1072538315e              182 Release
+ 9a5d41272d3738f62e00786d2051a862aae9038eca0dc04fc05a90b1adad7e046916e04191758c138d6407a07c86b655a3d3809d0e44670ccae37c1975cf27f2              693 main/binary-amd64/Packages
+ b03f3728c3b233f3c5ed705c3cfbc847e5b303fb108288801d056d92c6049565432d753d9d065b52840588836570cf96a1fd294a916bc8bf4d2b7ae67544db27              498 main/binary-amd64/Packages.gz
