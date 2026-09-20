@@ -170,7 +170,11 @@ lin-lib: clean libchttpx.so
 
 	cp -r include $(RELEASE_DIR)/
 	cp libchttpx.so $(RELEASE_DIR)/
-	cp libchttpx.pc $(RELEASE_DIR)/
+	@if [ "$(TLS)" = "1" ]; then \
+		cp libchttpx-tls.pc $(RELEASE_DIR)/libchttpx.pc; \
+	else \
+		cp libchttpx.pc $(RELEASE_DIR)/libchttpx.pc; \
+	fi
 	cp Makefile $(RELEASE_DIR)/
 	cp README.md $(RELEASE_DIR)/
 
