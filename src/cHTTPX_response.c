@@ -769,7 +769,7 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
         (double)(res->end_ts.tv_nsec - request_start.tv_nsec) / 1000000000.0;
 
     _chttpx_metrics_request_end(server,
-                                req->method,
+                                route ? route->method : req->method,
                                 route ? route->path : NULL,
                                 res->status,
                                 res->body_size,
