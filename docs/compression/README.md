@@ -4,7 +4,7 @@ libchttpx can compress buffered HTTP responses after the route handler and befor
 
 ## Availability
 
-gzip support is part of the standard libchttpx build. zlib is a regular library dependency, so there is no separate compression build mode and no `COMPRESSION=1` flag.
+gzip support is part of the standard libchttpx build. zlib is a regular library dependency, so there is no separate compression build mode or compression-specific build flag.
 
 Compression itself is still optional at runtime: nothing is compressed until the application calls `cHTTPX_CompressionUse()`.
 
