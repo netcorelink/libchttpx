@@ -23,9 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef CHTTPX_ENABLE_GZIP
 #include <zlib.h>
-#endif
 
 typedef struct
 {
@@ -184,7 +182,6 @@ static void free_compression_state(chttpx_compression_state_t* state)
     free(state);
 }
 
-#ifdef CHTTPX_ENABLE_GZIP
 static int gzip_encode_buffer(const unsigned char* input,
                               size_t input_size,
                               int level,
@@ -282,15 +279,10 @@ compression_error:
     free(buffer);
     return CHTTPX_ERR_COMPRESSION;
 }
-#endif
 
 bool cHTTPX_CompressionGzipAvailable(void)
 {
-#ifdef CHTTPX_ENABLE_GZIP
     return true;
-#else
-    return false;
-#endif
 }
 
 chttpx_compression_config_t cHTTPX_CompressionDefault(void)
@@ -389,7 +381,6 @@ static int prepare_compression_state(const chttpx_compression_config_t* config, 
     }
     else
     {
-#ifdef CHTTPX_ENABLE_GZIP
         chttpx_compression_provider_t gzip_provider = {
             .encoding = "gzip",
             .encode_buffer = gzip_encode_buffer,
@@ -399,10 +390,6 @@ static int prepare_compression_state(const chttpx_compression_config_t* config, 
         if (result != CHTTPX_OK)
             goto error;
         state->config.providers_count = 1;
-#else
-        result = CHTTPX_ERR_UNAVAILABLE;
-        goto error;
-#endif
     }
 
     state->config.providers = state->providers;
