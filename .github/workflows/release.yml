@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev
 
       - name: Build release archive
         run: make lin-lib
