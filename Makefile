@@ -16,17 +16,7 @@ TLS_CFLAGS += -DCHTTPX_ENABLE_TLS
 TLS_LDFLAGS += -lssl -lcrypto
 endif
 
-# Built-in gzip is opt-in so proxy-only/plain builds keep zero zlib dependency.
-COMPRESSION ?= 0
-COMPRESSION_CFLAGS =
-COMPRESSION_LDFLAGS =
-
-ifeq ($(COMPRESSION),1)
-COMPRESSION_CFLAGS += -DCHTTPX_ENABLE_GZIP
-COMPRESSION_LDFLAGS += -lz
-endif
-
-CFLAGS += $(TLS_CFLAGS) $(COMPRESSION_CFLAGS)
+CFLAGS += $(TLS_CFLAGS)
 TARGET_DLL = libchttpx.dll
 CLANG_FORMAT = clang-format
 
@@ -39,8 +29,8 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS = -lcjson $(TLS_LDFLAGS) $(COMPRESSION_LDFLAGS)
-WIN_LDFLAGS = -lws2_32 $(TLS_LDFLAGS) $(COMPRESSION_LDFLAGS)
+LIN_LDFLAGS = -lcjson -lz $(TLS_LDFLAGS)
+WIN_LDFLAGS = -lws2_32 -lz $(TLS_LDFLAGS)
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
@@ -85,8 +75,7 @@ $(BINDIR)/example-%: example/%.c $(LIN_SRCS)
 examples-tls:
 	@$(MAKE) TLS=1 $(BINDIR)/example-tls
 
-examples-compression:
-	@$(MAKE) COMPRESSION=1 $(BINDIR)/example-compression
+examples-compression: $(BINDIR)/example-compression
 
 # WINdows build
 # -
@@ -111,12 +100,8 @@ lib-install: libchttpx.so
 
 	cp include/*.h $(DESTDIR)$(PREFIX)/include/libchttpx
 	cp libchttpx.so $(DESTDIR)$(PREFIX)/lib
-	@if [ "$(TLS)" = "1" ] && [ "$(COMPRESSION)" = "1" ]; then \
-		cp libchttpx-tls-compression.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
-	elif [ "$(TLS)" = "1" ]; then \
+	@if [ "$(TLS)" = "1" ]; then \
 		cp libchttpx-tls.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
-	elif [ "$(COMPRESSION)" = "1" ]; then \
-		cp libchttpx-compression.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
 	else \
 		cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
 	fi
@@ -127,7 +112,7 @@ lib-install: libchttpx.so
 win-lib:
 	@echo "Building Windows DLL..."
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -std=c11 -D_WIN32 -shared -o $(BINDIR)/$(TARGET_DLL) $(WIN_SRCS) -Wl,--out-implib,$(BINDIR)/libchttpx.a -lws2_32
+	$(CC) $(CFLAGS) -std=c11 -D_WIN32 -shared -o $(BINDIR)/$(TARGET_DLL) $(WIN_SRCS) -Wl,--out-implib,$(BINDIR)/libchttpx.a $(WIN_LDFLAGS)
 
 	@echo "Copying files to $(WIN_LIB_DIR)..."
 	if not exist $(WIN_LIB_DIR) mkdir $(WIN_LIB_DIR)
@@ -179,16 +164,14 @@ $(TEST_TLS_TARGET): tests/test_tls.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_tls.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
-test-compression:
-	@$(MAKE) COMPRESSION=1 $(TEST_COMPRESSION_TARGET)
+test-compression: $(TEST_COMPRESSION_TARGET)
 	$(TEST_COMPRESSION_TARGET)
 
 $(TEST_COMPRESSION_TARGET): tests/test_compression.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_compression.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
-benchmark-compression:
-	@$(MAKE) COMPRESSION=1 $(COMPRESSION_BENCHMARK_TARGET)
+benchmark-compression: $(COMPRESSION_BENCHMARK_TARGET)
 	$(COMPRESSION_BENCHMARK_TARGET)
 
 $(COMPRESSION_BENCHMARK_TARGET): benchmarks/compression.c $(LIN_SRCS)
@@ -205,12 +188,8 @@ lin-lib: clean libchttpx.so
 
 	cp -r include $(RELEASE_DIR)/
 	cp libchttpx.so $(RELEASE_DIR)/
-	@if [ "$(TLS)" = "1" ] && [ "$(COMPRESSION)" = "1" ]; then \
-		cp libchttpx-tls-compression.pc $(RELEASE_DIR)/libchttpx.pc; \
-	elif [ "$(TLS)" = "1" ]; then \
+	@if [ "$(TLS)" = "1" ]; then \
 		cp libchttpx-tls.pc $(RELEASE_DIR)/libchttpx.pc; \
-	elif [ "$(COMPRESSION)" = "1" ]; then \
-		cp libchttpx-compression.pc $(RELEASE_DIR)/libchttpx.pc; \
 	else \
 		cp libchttpx.pc $(RELEASE_DIR)/libchttpx.pc; \
 	fi
