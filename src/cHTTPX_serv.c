@@ -17,254 +17,9 @@
 #include "cHTTPX_tls.h"
 #include "cHTTPX_compression.h"
 #include "cHTTPX_metrics.h"
+#include "cHTTPX_runtime.h"
 
 #include <errno.h>
-
-#define CHTTPX_WORKER_THREADS 32
-
-static void* handle_client_wrapper(void* arg);
-
-typedef struct
-{
-    chttpx_client_ctx_t** queue;
-    size_t capacity;
-    size_t head;
-    size_t tail;
-    size_t count;
-    thread_t workers[CHTTPX_WORKER_THREADS];
-    size_t workers_started;
-    bool stopping;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    CRITICAL_SECTION mutex;
-    CONDITION_VARIABLE ready;
-#else
-    pthread_mutex_t mutex;
-    pthread_cond_t ready;
-#endif
-} chttpx_worker_pool_t;
-
-static void worker_pool_lock(chttpx_worker_pool_t* pool)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    EnterCriticalSection(&pool->mutex);
-#else
-    pthread_mutex_lock(&pool->mutex);
-#endif
-}
-
-static void worker_pool_unlock(chttpx_worker_pool_t* pool)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    LeaveCriticalSection(&pool->mutex);
-#else
-    pthread_mutex_unlock(&pool->mutex);
-#endif
-}
-
-static void worker_pool_wait(chttpx_worker_pool_t* pool)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    SleepConditionVariableCS(&pool->ready, &pool->mutex, INFINITE);
-#else
-    pthread_cond_wait(&pool->ready, &pool->mutex);
-#endif
-}
-
-static void worker_pool_signal(chttpx_worker_pool_t* pool)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WakeConditionVariable(&pool->ready);
-#else
-    pthread_cond_signal(&pool->ready);
-#endif
-}
-
-static void worker_pool_broadcast(chttpx_worker_pool_t* pool)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WakeAllConditionVariable(&pool->ready);
-#else
-    pthread_cond_broadcast(&pool->ready);
-#endif
-}
-
-static void worker_pool_sync_destroy(chttpx_worker_pool_t* pool)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DeleteCriticalSection(&pool->mutex);
-#else
-    pthread_cond_destroy(&pool->ready);
-    pthread_mutex_destroy(&pool->mutex);
-#endif
-}
-
-static void* worker_pool_worker(void* arg)
-{
-    chttpx_worker_pool_t* pool = arg;
-
-    for (;;)
-    {
-        worker_pool_lock(pool);
-
-        while (pool->count == 0 && !pool->stopping)
-            worker_pool_wait(pool);
-
-        if (pool->count == 0 && pool->stopping)
-        {
-            worker_pool_unlock(pool);
-            break;
-        }
-
-        chttpx_client_ctx_t* context = pool->queue[pool->head];
-        pool->queue[pool->head] = NULL;
-        pool->head = (pool->head + 1) % pool->capacity;
-        pool->count--;
-
-        worker_pool_unlock(pool);
-        handle_client_wrapper(context);
-    }
-
-    return NULL;
-}
-
-static int worker_pool_init(chttpx_serv_t* server)
-{
-    if (!server || server->max_clients == 0 ||
-        server->max_clients > SIZE_MAX / sizeof(chttpx_client_ctx_t*))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
-
-    chttpx_worker_pool_t* pool = calloc(1, sizeof(*pool));
-    if (!pool)
-        return CHTTPX_ERR_MEMORY;
-
-    pool->queue = calloc(server->max_clients, sizeof(*pool->queue));
-    if (!pool->queue)
-    {
-        free(pool);
-        return CHTTPX_ERR_MEMORY;
-    }
-
-    pool->capacity = server->max_clients;
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    InitializeCriticalSection(&pool->mutex);
-    InitializeConditionVariable(&pool->ready);
-#else
-    if (pthread_mutex_init(&pool->mutex, NULL) != 0)
-    {
-        free(pool->queue);
-        free(pool);
-        return CHTTPX_ERR_IO;
-    }
-
-    if (pthread_cond_init(&pool->ready, NULL) != 0)
-    {
-        pthread_mutex_destroy(&pool->mutex);
-        free(pool->queue);
-        free(pool);
-        return CHTTPX_ERR_IO;
-    }
-#endif
-
-    for (size_t i = 0; i < CHTTPX_WORKER_THREADS; i++)
-    {
-        if (_thread_create(&pool->workers[i], worker_pool_worker, pool) != 0)
-        {
-            worker_pool_lock(pool);
-            pool->stopping = true;
-            worker_pool_broadcast(pool);
-            worker_pool_unlock(pool);
-
-            for (size_t j = 0; j < pool->workers_started; j++)
-                _thread_join(pool->workers[j]);
-
-            worker_pool_sync_destroy(pool);
-            free(pool->queue);
-            free(pool);
-            return CHTTPX_ERR_IO;
-        }
-
-        pool->workers_started++;
-    }
-
-    server->worker_pool_state = pool;
-    return CHTTPX_OK;
-}
-
-static bool worker_pool_submit(chttpx_serv_t* server, chttpx_client_ctx_t* context)
-{
-    chttpx_worker_pool_t* pool = server ? server->worker_pool_state : NULL;
-    if (!pool || !context)
-        return false;
-
-    worker_pool_lock(pool);
-
-    if (pool->stopping || pool->count >= pool->capacity)
-    {
-        worker_pool_unlock(pool);
-        return false;
-    }
-
-    pool->queue[pool->tail] = context;
-    pool->tail = (pool->tail + 1) % pool->capacity;
-    pool->count++;
-
-    worker_pool_signal(pool);
-    worker_pool_unlock(pool);
-    return true;
-}
-
-static void worker_pool_stop(chttpx_serv_t* server)
-{
-    chttpx_worker_pool_t* pool = server ? server->worker_pool_state : NULL;
-    if (!pool)
-        return;
-
-    worker_pool_lock(pool);
-
-    if (!pool->stopping)
-    {
-        pool->stopping = true;
-
-        while (pool->count > 0)
-        {
-            chttpx_client_ctx_t* context = pool->queue[pool->head];
-            pool->queue[pool->head] = NULL;
-            pool->head = (pool->head + 1) % pool->capacity;
-            pool->count--;
-
-            if (!context)
-                continue;
-
-            chttpx_close(context->client_fd);
-            free(context);
-            _chttpx_metrics_connection_closed(server);
-            __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-        }
-
-        worker_pool_broadcast(pool);
-    }
-
-    worker_pool_unlock(pool);
-}
-
-static void worker_pool_cleanup(chttpx_serv_t* server)
-{
-    chttpx_worker_pool_t* pool = server ? server->worker_pool_state : NULL;
-    if (!pool)
-        return;
-
-    worker_pool_stop(server);
-
-    for (size_t i = 0; i < pool->workers_started; i++)
-        _thread_join(pool->workers[i]);
-
-    worker_pool_sync_destroy(pool);
-    free(pool->queue);
-    free(pool);
-    server->worker_pool_state = NULL;
-}
-
 
 static void default_logger(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data)
 {
@@ -551,8 +306,8 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         return metrics_result;
     }
 
-    int worker_pool_result = worker_pool_init(server);
-    if (worker_pool_result != CHTTPX_OK)
+    int runtime_result = _chttpx_runtime_init(server);
+    if (runtime_result != CHTTPX_OK)
     {
         _chttpx_metrics_server_cleanup(server);
         _chttpx_tls_server_cleanup(server);
@@ -561,7 +316,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         free_server_languages(server);
         free(server->name);
         server->name = NULL;
-        return worker_pool_result;
+        return runtime_result;
     }
 
     server->initialized = true;
@@ -791,69 +546,7 @@ void _chttpx_server_listen(chttpx_serv_t* server)
     if (!__atomic_compare_exchange_n(&server->listening, &expected, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
         return;
 
-    while (!__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
-    {
-        chttpx_socket_t client_fd = accept(server->server_fd, NULL, NULL);
-        if (!socket_valid(client_fd))
-        {
-            if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
-                break;
-#ifdef CHTTPX_PLATFORM_POSIX
-            if (errno == EINTR)
-                continue;
-#endif
-            server_sleep_ms(10);
-            continue;
-        }
-
-        _chttpx_metrics_connection_accepted(server);
-
-        if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
-        {
-            chttpx_close(client_fd);
-            break;
-        }
-
-        if (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
-        {
-            /*
-             * A TLS connection has not completed its handshake yet, so raw
-             * HTTP bytes must never be written to it here.
-             */
-            if (!server->tls.enabled)
-            {
-                static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
-            }
-            _chttpx_metrics_connection_rejected(server);
-            chttpx_close(client_fd);
-            continue;
-        }
-
-        chttpx_client_ctx_t* context = malloc(sizeof(*context));
-        if (!context)
-        {
-            _chttpx_metrics_connection_rejected(server);
-            chttpx_close(client_fd);
-            continue;
-        }
-
-        context->server = server;
-        context->client_fd = client_fd;
-        __atomic_fetch_add(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-        _chttpx_metrics_connection_opened(server);
-
-        if (!worker_pool_submit(server, context))
-        {
-            free(context);
-            chttpx_close(client_fd);
-            _chttpx_metrics_connection_closed(server);
-            _chttpx_metrics_connection_rejected(server);
-            __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-            continue;
-        }
-    }
-
+    _chttpx_runtime_listen(server);
     __atomic_store_n(&server->listening, false, __ATOMIC_RELEASE);
 }
 
@@ -863,6 +556,12 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
         return;
 
     __atomic_store_n(&server->shutdown_requested, true, __ATOMIC_RELEASE);
+    _chttpx_runtime_request_stop(server);
+
+    while (__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE))
+        server_sleep_ms(10);
+
+    _chttpx_runtime_cleanup(server);
 
     if (socket_valid(server->server_fd))
     {
@@ -874,21 +573,6 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
         chttpx_close(server->server_fd);
         invalidate_socket(server);
     }
-
-    while (__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE))
-        server_sleep_ms(10);
-
-    /*
-     * Stop dispatching queued sockets during shutdown. Requests already picked
-     * up by a worker are allowed to finish; queued sockets are closed so
-     * shutdown time is not multiplied by the queue length.
-     */
-    worker_pool_stop(server);
-
-    while (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) > 0)
-        server_sleep_ms(10);
-
-    worker_pool_cleanup(server);
 
     _chttpx_tls_server_cleanup(server);
     _chttpx_metrics_server_cleanup(server);
