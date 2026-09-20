@@ -118,6 +118,7 @@ win-lib:
 	if not exist $(WIN_LIB_DIR) mkdir $(WIN_LIB_DIR)
 	copy /Y $(BINDIR)\$(TARGET_DLL) $(WIN_LIB_DIR)\$(TARGET_DLL)
 	copy /Y $(BINDIR)\libchttpx.a $(WIN_LIB_DIR)\libchttpx.a
+	for /f "delims=" %%i in ('where zlib1.dll 2^>nul') do copy /Y "%%i" $(WIN_LIB_DIR)\zlib1.dll
 	if not exist $(WIN_LIB_DIR)\include mkdir $(WIN_LIB_DIR)\include
 	xcopy /E /I /Y include $(WIN_LIB_DIR)\include
 
