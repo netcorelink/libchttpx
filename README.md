@@ -8,7 +8,7 @@ The library is designed so handlers contain application logic instead of repetit
 
 - Linux and Windows support
 - multiple independent HTTP servers inside one `cHTTPX_App`
-- local direct server-to-server calls and remote HTTP calls
+- local direct server-to-server calls and remote HTTP/HTTPS calls
 - route groups and `{parameter}` paths
 - global, router, and route middleware with before/after phases
 - typed path/query accessors and URL decoding
@@ -144,6 +144,16 @@ make test
 make test-sanitize
 ```
 
+Optional native TLS/HTTPS support uses OpenSSL and does not affect the default plain HTTP build:
+
+```bash
+sudo apt install -y libssl-dev openssl
+make TLS=1 libchttpx.so
+make test-tls
+```
+
+See [Native TLS / HTTPS](docs/tls/README.md) for server certificates, HTTPS remote calls, custom CA verification, and mTLS.
+
 ### Build from source on Windows
 
 Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source.
@@ -165,6 +175,7 @@ Detailed documentation is split by functionality:
 - [Documentation index](docs/README.md)
 - [App runtime, multiple servers, AppRemote, Call and CallEx](docs/app/README.md)
 - [Server configuration, limits, lifecycle and error codes](docs/server/README.md)
+- [Native TLS / HTTPS](docs/tls/README.md)
 - [Routing and route groups](docs/routing/README.md)
 - [Middleware](docs/middleware/README.md)
 - [Requests, headers, params, queries and body access](docs/request/README.md)
