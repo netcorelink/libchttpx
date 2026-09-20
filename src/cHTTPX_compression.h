@@ -86,9 +86,6 @@ extern "C"
     /** Enable or disable compression for one response. */
     void cHTTPX_ResponseCompression(struct chttpx_response* response, bool enabled);
 
-    /** Return true when the built-in gzip provider is available. */
-    bool cHTTPX_CompressionGzipAvailable(void);
-
     /* Internal per-server compression cleanup. */
     void _chttpx_compression_server_cleanup(struct chttpx_serv* server);
 
