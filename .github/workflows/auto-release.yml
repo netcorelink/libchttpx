@@ -25,63 +25,85 @@ jobs:
           fetch-depth: 0
 
       - name: Determine next version
-        uses: paulhatch/semantic-version@v5.4.0
-        id: version
-        with:
-          tag_prefix: v
-          major_pattern: '/BREAKING CHANGE|^[a-z]+(\([^\r\n]+\))?!:/m'
-          minor_pattern: '/^feat(\([^\r\n]+\))?:/m'
-          version_format: "${major}.${minor}.${patch}"
-          bump_each_commit: false
-          search_commit_body: true
-
-      - name: Resolve version against all release tags
         id: release_version
         shell: python
-        env:
-          CANDIDATE_TAG: ${{ steps.version.outputs.version_tag }}
-          VERSION_TYPE: ${{ steps.version.outputs.version_type }}
         run: |
           import os
           import re
           import subprocess
 
+          SEMVER = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+          BREAKING_SUBJECT = re.compile(r"^[a-z]+(?:\([^\r\n]+\))?!:", re.IGNORECASE)
+          FEATURE_SUBJECT = re.compile(r"^feat(?:\([^\r\n]+\))?:", re.IGNORECASE)
+
           def git(*args):
               return subprocess.check_output(["git", *args], text=True).strip()
 
-          def version(tag):
-              match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+          def parse_version(tag):
+              match = SEMVER.fullmatch(tag)
               return tuple(map(int, match.groups())) if match else None
 
           git("fetch", "origin", "--tags")
           head = git("rev-parse", "HEAD")
-          tags = {tag: version(tag) for tag in git("tag", "--list").splitlines()
-                  if version(tag) is not None}
+
+          tags = {}
+          for tag in git("tag", "--list").splitlines():
+              parsed = parse_version(tag)
+              if parsed is not None:
+                  tags[tag] = parsed
+
           existing = [tag for tag in tags if git("rev-list", "-1", tag) == head]
           if existing:
-              tag = max(existing, key=version)
+              release_tag = max(existing, key=lambda tag: tags[tag])
               changed = "false"
-              print(f"Commit already released as {tag}; skipping tag creation.")
+              bump = "none"
+              print(f"Commit already released as {release_tag}; skipping tag creation.")
           else:
-              tag = os.environ["CANDIDATE_TAG"]
-              candidate = version(tag)
-              if candidate is None:
-                  raise ValueError(f"Invalid release tag: {tag}")
-              latest = max(tags.values(), default=(0, 0, 0))
-              if candidate <= latest:
-                  major, minor, patch = latest
-                  bump = os.environ["VERSION_TYPE"]
-                  if bump == "major":
-                      candidate = (major + 1, 0, 0)
-                  elif bump == "minor":
-                      candidate = (major, minor + 1, 0)
-                  else:
-                      candidate = (major, minor, patch + 1)
-                  tag = "v" + ".".join(map(str, candidate))
+              latest_tag = max(tags, key=lambda tag: tags[tag]) if tags else None
+              latest = tags[latest_tag] if latest_tag else (0, 0, 0)
+
+              revision_range = f"{latest_tag}..HEAD" if latest_tag else "HEAD"
+              log = git("log", revision_range, "--format=%s%x1f%b%x1e")
+
+              breaking = False
+              feature = False
+              for record in log.split("\x1e"):
+                  if not record.strip():
+                      continue
+                  subject, _, body = record.partition("\x1f")
+                  subject = subject.strip()
+                  body = body.strip()
+
+                  if BREAKING_SUBJECT.search(subject) or re.search(
+                      r"(^|\n)BREAKING(?: |-)?CHANGE:\s*",
+                      body,
+                      re.IGNORECASE,
+                  ):
+                      breaking = True
+                  if FEATURE_SUBJECT.search(subject):
+                      feature = True
+
+              major, minor, patch = latest
+              if breaking:
+                  next_version = (major + 1, 0, 0)
+                  bump = "major"
+              elif feature:
+                  next_version = (major, minor + 1, 0)
+                  bump = "minor"
+              else:
+                  next_version = (major, minor, patch + 1)
+                  bump = "patch"
+
+              release_tag = "v" + ".".join(map(str, next_version))
               changed = "true"
-              print(f"Release tag: {tag}")
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"changed={changed}\nversion_tag={tag}\n")
+              print(f"Latest release: {latest_tag or 'none'}")
+              print(f"Detected bump: {bump}")
+              print(f"Release tag: {release_tag}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"changed={changed}\n")
+              output.write(f"version_tag={release_tag}\n")
+              output.write(f"version_type={bump}\n")
 
       - name: Create and push tag
         if: steps.release_version.outputs.changed == 'true'
@@ -106,7 +128,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev
 
       - name: Build release archive
         run: make lin-lib
