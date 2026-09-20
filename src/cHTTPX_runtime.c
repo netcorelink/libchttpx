@@ -106,6 +106,11 @@ typedef struct chttpx_runtime
 
 int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size);
 
+static bool runtime_is_stopping(chttpx_runtime_t* runtime)
+{
+    return __atomic_load_n(&runtime_is_stopping(runtime), __ATOMIC_ACQUIRE);
+}
+
 static bool socket_valid(chttpx_socket_t fd)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -292,7 +297,7 @@ static void* runtime_worker(void* argument)
         connection->body = NULL;
         connection->body_stream = NULL;
 
-        if (runtime->stopping)
+        if (runtime_is_stopping(runtime))
         {
             free(body);
             if (stream)
@@ -848,9 +853,23 @@ static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* c
         return 1;
     }
     if (result == CHTTPX_IO_WANT_READ)
-        return _chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) == 0;
+    {
+        if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
+        {
+            connection_close(runtime, connection);
+            return 0;
+        }
+        return 1;
+    }
     if (result == CHTTPX_IO_WANT_WRITE)
-        return _chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) == 0;
+    {
+        if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
+        {
+            connection_close(runtime, connection);
+            return 0;
+        }
+        return 1;
+    }
     _chttpx_metrics_connection_rejected(connection->server);
     _chttpx_tls_log_error(connection->server, "-", "TLS handshake failed");
     connection_close(runtime, connection);
@@ -947,7 +966,7 @@ static void drain_completions(chttpx_runtime_t* runtime)
     {
         chttpx_connection_t* next = connection->completion_next;
         connection->completion_next = NULL;
-        if (runtime->stopping || connection->worker_result != CHTTPX_OK || !connection->write_buffer)
+        if (runtime_is_stopping(runtime) || connection->worker_result != CHTTPX_OK || !connection->write_buffer)
             connection_close(runtime, connection);
         else
         {
@@ -982,7 +1001,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
 
         _chttpx_metrics_connection_accepted(server);
 
-        if (runtime->stopping || __atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
+        if (runtime_is_stopping(runtime) || __atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
         {
             if (!server->tls.enabled)
             {
@@ -1161,7 +1180,7 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
     chttpx_event_t events[CHTTPX_RUNTIME_EVENTS];
     while (true)
     {
-        if (runtime->stopping || __atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
+        if (runtime_is_stopping(runtime) || __atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
             begin_shutdown(runtime);
 
         drain_completions(runtime);
@@ -1183,7 +1202,7 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
 
             if (events[i].data == runtime)
             {
-                if (!runtime->stopping)
+                if (!runtime_is_stopping(runtime))
                     accept_connections(runtime);
                 continue;
             }
@@ -1216,7 +1235,7 @@ void _chttpx_runtime_request_stop(chttpx_serv_t* server)
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;
     if (!runtime)
         return;
-    runtime->stopping = true;
+    __atomic_store_n(&runtime->stopping, true, __ATOMIC_RELEASE);
     _chttpx_event_wake(runtime->event_loop);
 }
 
@@ -1226,7 +1245,7 @@ void _chttpx_runtime_cleanup(chttpx_serv_t* server)
     if (!runtime)
         return;
 
-    runtime->stopping = true;
+    runtime_is_stopping(runtime) = true;
     begin_shutdown(runtime);
 
     job_lock(runtime);

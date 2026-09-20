@@ -123,13 +123,13 @@ cHTTPX_AppShutdown(&app);
 
 `cHTTPX_AppShutdown()` прекращает accept, закрывает listeners, ждёт активные requests, освобождает routes, CORS, middleware state, server objects и remote registrations.
 
-## Worker pool
+## Event-driven runtime и worker pool
 
-Каждый локальный server использует внутренний фиксированный пул из **32 worker threads**. Количество workers намеренно не добавлено в `chttpx_config_t` и не может изменяться кодом приложения.
+Sockets работают в non-blocking режиме и остаются на server event loop, поэтому worker thread больше не занят ожиданием сетевого I/O. На Linux используется `epoll`, на macOS/BSD — `kqueue`, на Windows — non-blocking backend на `WSAPoll`.
 
-После `accept()` socket помещается в bounded queue с ёмкостью, связанной с `max_clients`. Поэтому библиотека больше не создаёт отдельный OS thread для каждого connection. При shutdown уже выполняющиеся requests завершаются, а sockets, которые ещё находятся в очереди и не начали обработку, закрываются.
+Connection попадает во внутренний фиксированный пул из **32 worker threads** только после того, как HTTP request полностью принят. Worker выполняет middleware, routing и application handler и не вызывает `recv()` или `send()`. Готовый сериализованный response возвращается в event loop и отправляется только когда socket готов к записи.
 
-`max_clients` по-прежнему ограничивает общее число принятых/in-flight connections, но не изменяет число worker threads.
+Количество workers намеренно не добавлено в `chttpx_config_t` и не может изменяться кодом приложения. `max_clients` ограничивает число accepted/in-flight connections, а не количество OS threads. Большие multipart/chunked uploads во время приёма остаются disk-backed.
 
 ## Thread safety
 

@@ -134,13 +134,13 @@ cHTTPX_AppShutdown(&app);
 
 Trigger shutdown from an appropriate control thread for SIGINT/SIGTERM. Avoid complex work directly in an async-signal handler.
 
-## Worker pool
+## Event-driven runtime and worker pool
 
-Each local server uses an internal fixed pool of **32 worker threads**. The worker count is intentionally not part of `chttpx_config_t` and cannot be changed by application code.
+Sockets are non-blocking and stay on the server event loop instead of occupying worker threads while waiting for network I/O. Linux uses `epoll`, macOS/BSD uses `kqueue`, and Windows uses the non-blocking `WSAPoll` backend.
 
-Accepted sockets are placed into a bounded queue whose capacity follows `max_clients`. This prevents the previous thread-per-connection behavior from creating an unbounded number of OS threads. During shutdown, requests already running on workers are allowed to finish while queued sockets that have not started processing are closed.
+A connection is submitted to the internal fixed pool of **32 worker threads** only after the complete HTTP request has been received. Workers execute middleware, routing and the application handler; they do not call `recv()` or `send()`. The serialized response is returned to the event loop and written when the socket is ready.
 
-`max_clients` still controls the total number of accepted/in-flight connections; it does not change the number of worker threads.
+The worker count is intentionally not part of `chttpx_config_t` and cannot be changed by application code. `max_clients` limits accepted/in-flight connections, not the number of OS threads. Large multipart/chunked upload bodies remain disk-backed while they are received.
 
 ## Thread-safety model
 
