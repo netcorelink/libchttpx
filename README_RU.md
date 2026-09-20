@@ -17,6 +17,7 @@
 - multipart forms, несколько файлов, upload policy и автоматическое удаление временных файлов
 - request ID и `Accept-Language` negotiation
 - CORS, cookies, callback-based logging и rate limiting
+- optional gzip-сжатие ответов с `Accept-Encoding` negotiation
 - лимиты сервера и graceful shutdown
 
 > `cHTTPX_ResFile()` пока полностью читает файл в память. Streaming response, `sendfile()` и zero-copy output в текущем API не реализованы.
@@ -150,6 +151,17 @@ make test-tls
 
 Настройка server certificate, HTTPS remote calls, custom CA и mTLS описана в [Native TLS / HTTPS](docs/tls/README_RU.md).
 
+Встроенное gzip-сжатие ответов через zlib также включается отдельно:
+
+```bash
+sudo apt install -y zlib1g-dev
+make COMPRESSION=1 libchttpx.so
+make test-compression
+make benchmark-compression
+```
+
+TLS и gzip можно включить вместе: `make TLS=1 COMPRESSION=1 libchttpx.so`. Текущие нативные Linux-пакеты пока собираются в обычном режиме без встроенного gzip provider. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
+
 ### Самостоятельная сборка на Windows
 
 Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`.
@@ -172,6 +184,7 @@ DLL, import library и headers копируются в `tools/`.
 - [App runtime, несколько серверов, AppRemote, Call и CallEx](docs/app/README_RU.md)
 - [Конфигурация сервера, лимиты, lifecycle и error codes](docs/server/README_RU.md)
 - [Native TLS / HTTPS](docs/tls/README_RU.md)
+- [Сжатие HTTP-ответов](docs/compression/README_RU.md)
 - [Routing и route groups](docs/routing/README_RU.md)
 - [Middleware](docs/middleware/README_RU.md)
 - [Requests, headers, params, queries и body](docs/request/README_RU.md)
