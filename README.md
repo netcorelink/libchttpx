@@ -17,6 +17,7 @@ The library is designed so handlers contain application logic instead of repetit
 - multipart forms, multiple uploads, upload policies, and temporary-file cleanup
 - request IDs and `Accept-Language` negotiation
 - CORS, cookies, logging callbacks, and rate limiting
+- optional gzip response compression with `Accept-Encoding` negotiation
 - configurable server limits and graceful shutdown
 
 > `cHTTPX_ResFile()` currently reads the complete file into memory. Streaming responses, `sendfile()`, and zero-copy output are not implemented in the current API.
@@ -154,6 +155,17 @@ make test-tls
 
 See [Native TLS / HTTPS](docs/tls/README.md) for server certificates, HTTPS remote calls, custom CA verification, and mTLS.
 
+Optional built-in gzip response compression uses zlib:
+
+```bash
+sudo apt install -y zlib1g-dev
+make COMPRESSION=1 libchttpx.so
+make test-compression
+make benchmark-compression
+```
+
+TLS and gzip can be enabled together with `make TLS=1 COMPRESSION=1 libchttpx.so`. The current native Linux packages still use the default build without the built-in gzip provider. See [Response compression](docs/compression/README.md).
+
 ### Build from source on Windows
 
 Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source.
@@ -176,6 +188,7 @@ Detailed documentation is split by functionality:
 - [App runtime, multiple servers, AppRemote, Call and CallEx](docs/app/README.md)
 - [Server configuration, limits, lifecycle and error codes](docs/server/README.md)
 - [Native TLS / HTTPS](docs/tls/README.md)
+- [Response compression](docs/compression/README.md)
 - [Routing and route groups](docs/routing/README.md)
 - [Middleware](docs/middleware/README.md)
 - [Requests, headers, params, queries and body access](docs/request/README.md)
