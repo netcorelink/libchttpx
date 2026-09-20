@@ -40,7 +40,8 @@ extern "C"
         CHTTPX_ERR_PROTOCOL = -9,
         CHTTPX_ERR_STATE = -10,
         CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12
+        CHTTPX_ERR_TIMEOUT = -12,
+        CHTTPX_ERR_TLS = -13
     } chttpx_error_t;
 
     typedef enum
@@ -63,8 +64,26 @@ extern "C"
 
     typedef struct
     {
+        bool enabled;
+        const char* cert_file;
+        const char* key_file;
+        const char* client_ca_file;
+        bool require_client_cert;
+    } chttpx_tls_config_t;
+
+    typedef struct
+    {
+        bool verify_peer;
+        const char* ca_file;
+        const char* client_cert_file;
+        const char* client_key_file;
+    } chttpx_tls_client_config_t;
+
+    typedef struct
+    {
         uint16_t port;
         chttpx_network_mode_t network_mode;
+        chttpx_tls_config_t tls;
         size_t max_clients;
         uint16_t read_timeout_sec;
         uint16_t write_timeout_sec;
@@ -110,6 +129,9 @@ extern "C"
         uint16_t port;
         chttpx_network_mode_t network_mode;
         chttpx_socket_t server_fd;
+
+        chttpx_tls_config_t tls;
+        void* _tls_ctx;
 
         size_t max_clients;
         size_t current_clients;
