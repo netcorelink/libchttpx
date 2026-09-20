@@ -168,6 +168,7 @@ int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** 
         return CHTTPX_OK;
 
 #ifndef CHTTPX_ENABLE_TLS
+    (void)client_fd;
     return CHTTPX_ERR_UNAVAILABLE;
 #else
     SSL* ssl = SSL_new((SSL_CTX*)server->_tls_ctx);

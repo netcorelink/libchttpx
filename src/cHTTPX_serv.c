@@ -521,22 +521,6 @@ void cHTTPX_SetLogger(chttpx_serv_t* server, chttpx_logger_fn logger, void* user
     server->log_level = level;
 }
 
-static void* handle_client_wrapper(void* arg)
-{
-    chttpx_client_ctx_t* context = arg;
-    chttpx_serv_t* server = context ? context->server : NULL;
-    if (!context || !server)
-    {
-        free(context);
-        return NULL;
-    }
-
-    chttpx_handle(context);
-    _chttpx_metrics_connection_closed(server);
-    __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-    return NULL;
-}
-
 void _chttpx_server_listen(chttpx_serv_t* server)
 {
     if (!server || !server->initialized || !socket_valid(server->server_fd))

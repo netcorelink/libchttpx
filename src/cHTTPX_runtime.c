@@ -1219,7 +1219,7 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
             else if (connection->state == CHTTPX_CONN_WRITING)
                 alive = connection_write_ready(runtime, connection);
 
-            if (alive && (events[i].events & CHTTPX_EVENT_ERROR) && connection->state != CHTTPX_CONN_PROCESSING)
+            if (alive && (events[i].events & CHTTPX_EVENT_ERROR) && connection->state != CHTTPX_CONN_PROCESSING && connection->state != CHTTPX_CONN_WRITING)
                 connection_close(runtime, connection);
         }
 
