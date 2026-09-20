@@ -60,7 +60,7 @@ cHTTPX_AppRemote(
 );
 ```
 
-Сейчас встроенный transport поддерживает обычные `http://` URL.
+Встроенный transport поддерживает `http://` и `https://`. HTTPS доступен в сборке `TLS=1`; проверка сертификата и hostname включена по умолчанию. Для custom CA или client certificate используйте `cHTTPX_AppRemoteEx()`. Подробнее: [Native TLS / HTTPS](../tls/README_RU.md).
 
 В Docker Compose имя host может быть именем другого service в той же сети.
 
@@ -78,7 +78,7 @@ int result = cHTTPX_Call(
 
 Если `payments` — local AppServer, библиотека вызывает route напрямую внутри процесса без нового TCP connection.
 
-Если `payments` зарегистрирован через `AppRemote`, выполняется HTTP-запрос.
+Если `payments` зарегистрирован через `AppRemote`, выполняется HTTP- или HTTPS-запрос.
 
 Обычный `Call` наследует body, body size, content type, request ID, language и нужные headers текущего request.
 
@@ -117,6 +117,7 @@ Timeout через `CallEx` менять нельзя.
 | `CHTTPX_OK` | получен корректный HTTP response, даже если status 400/403/500 |
 | `CHTTPX_ERR_UNAVAILABLE` | DNS/connect failed или connection оборвался до HTTP response |
 | `CHTTPX_ERR_TIMEOUT` | connect/send/receive превысил 30 секунд |
+| `CHTTPX_ERR_TLS` | ошибка TLS handshake, certificate verification или encrypted read/write |
 | `CHTTPX_ERR_PROTOCOL` | remote сторона вернула некорректный HTTP response |
 
 HTTP 500 — не transport error:
