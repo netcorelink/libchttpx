@@ -37,6 +37,27 @@ jobs:
       - name: Run ASan and UBSan tests
         run: make test-sanitize
 
+  build-linux-tls:
+    name: Build + HTTPS integration (Linux, OpenSSL)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev libssl-dev openssl
+
+      - name: Build TLS-enabled shared library
+        run: make TLS=1 libchttpx.so
+
+      - name: Build HTTPS example
+        run: make examples-tls
+
+      - name: Run HTTPS integration test
+        run: make test-tls
+
   build-windows:
     name: Build (Windows)
     runs-on: windows-latest
