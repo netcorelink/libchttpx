@@ -64,7 +64,7 @@ int result = cHTTPX_AppRemote(
 );
 ```
 
-The built-in transport currently accepts plain `http://` URLs. In Docker Compose, the host can be another service name on the same network.
+The built-in transport accepts both `http://` and `https://` URLs. HTTPS is available in `TLS=1` builds and verifies the peer certificate and hostname by default. Use `cHTTPX_AppRemoteEx()` for a custom CA or client certificate. See [Native TLS / HTTPS](../tls/README.md). In Docker Compose, the host can be another service name on the same network.
 
 ## Call local or remote servers
 
@@ -81,7 +81,7 @@ int result = cHTTPX_Call(
 Resolution is by name:
 
 - local `AppServer` → direct in-process dispatch through the target route/middleware pipeline, without a new TCP connection;
-- `AppRemote` → outbound HTTP.
+- `AppRemote` → outbound HTTP or HTTPS.
 
 The normal call inherits body, body size, content type, request ID, language, and relevant request headers.
 
@@ -120,6 +120,7 @@ Connect/send/receive use a fixed 30-second timeout.
 | `CHTTPX_OK` | valid HTTP response received, including HTTP 4xx/5xx |
 | `CHTTPX_ERR_UNAVAILABLE` | DNS/connect failure or connection lost before a valid response |
 | `CHTTPX_ERR_TIMEOUT` | connect/send/receive exceeded 30 seconds |
+| `CHTTPX_ERR_TLS` | TLS handshake, certificate verification, encrypted read/write failure |
 | `CHTTPX_ERR_PROTOCOL` | peer returned invalid HTTP |
 
 A 400/403/500 response means the server responded successfully at the transport layer:

@@ -233,6 +233,9 @@ extern "C"
         /* App-managed server/microservice handling this request. */
         struct chttpx_serv* _server;
 
+        /* Internal transport state. NULL for plain HTTP. */
+        void* _tls_session;
+
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
         void* _contexts;

@@ -26,6 +26,7 @@
 #include "cHTTPX_headers.h"
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_serv.h"
+#include "cHTTPX_tls.h"
 #include "cHTTPX_http.h"
 
 #include <stdio.h>
@@ -152,6 +153,9 @@ static int append_bytes(unsigned char** data, size_t* size, size_t* capacity, co
 typedef struct
 {
     chttpx_socket_t client_fd;
+    void* tls_session;
+    chttpx_serv_t* server;
+    const char* request_id;
     const unsigned char* initial;
     size_t initial_size;
     size_t initial_offset;
@@ -176,7 +180,10 @@ static int chunked_reader_read(chunked_reader_t* reader, unsigned char* output, 
     if (wanted > INT_MAX)
         wanted = INT_MAX;
 #endif
-    return recv(reader->client_fd, (char*)output, wanted, 0);
+    int result = _chttpx_io_recv(reader->client_fd, reader->tls_session, output, wanted);
+    if (result == CHTTPX_ERR_TLS)
+        _chttpx_tls_log_error(reader->server, reader->request_id, "TLS chunked-body read failed");
+    return result;
 }
 
 static int chunked_reader_exact(chunked_reader_t* reader, unsigned char* output, size_t output_size)
@@ -251,6 +258,9 @@ static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, cons
 
     chunked_reader_t reader = {
         .client_fd = client_fd,
+        .tls_session = req->_tls_session,
+        .server = req->_server,
+        .request_id = req->request_id,
         .initial = initial,
         .initial_size = initial_size,
         .initial_offset = 0,
@@ -382,7 +392,9 @@ static int spool_multipart_body(chttpx_request_t* req, chttpx_socket_t client_fd
         if (wanted > sizeof(chunk))
             wanted = sizeof(chunk);
 
-        int received = recv(client_fd, (char*)chunk, wanted, 0);
+        int received = _chttpx_io_recv(client_fd, req->_tls_session, chunk, wanted);
+        if (received == CHTTPX_ERR_TLS)
+            _chttpx_tls_log_error(req->_server, req->request_id, "TLS multipart-body read failed");
         if (received <= 0)
         {
             fclose(spool);
@@ -514,7 +526,9 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
         if (wanted > INT_MAX)
             wanted = INT_MAX;
 #endif
-        ssize_t n = recv(client_fd, (char*)req->body + total_read, wanted, 0);
+        int n = _chttpx_io_recv(client_fd, req->_tls_session, (char*)req->body + total_read, wanted);
+        if (n == CHTTPX_ERR_TLS)
+            _chttpx_tls_log_error(req->_server, req->request_id, "TLS request-body read failed");
         if (n < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
