@@ -32,6 +32,7 @@
 #include "cHTTPX_queries.h"
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_metrics.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -282,6 +283,16 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
     return NULL;
 }
 
+static int socket_read_timed_out(void)
+{
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    int error = WSAGetLastError();
+    return error == WSAETIMEDOUT || error == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT;
+#endif
+}
+
 static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_session, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
@@ -301,6 +312,8 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_ses
             if (errno == EINTR)
                 continue;
 #endif
+            if (socket_read_timed_out())
+                return CHTTPX_ERR_TIMEOUT;
             return -1;
         }
         if (n == 0)
@@ -670,9 +683,14 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
     req->_server = server;
+
+    struct timespec request_start;
+    clock_gettime(CLOCK_MONOTONIC, &request_start);
+    _chttpx_metrics_request_begin(server, req->body_size);
+
     chttpx_route_t* route = find_route(req);
     memset(res, 0, sizeof(*res));
-    clock_gettime(CLOCK_MONOTONIC, &res->start_ts);
+    res->start_ts = request_start;
 
     if (route)
     {
@@ -743,7 +761,20 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "handler did not produce a valid response");
     }
 
+    res->start_ts = request_start;
     clock_gettime(CLOCK_MONOTONIC, &res->end_ts);
+
+    double duration_seconds =
+        (double)(res->end_ts.tv_sec - request_start.tv_sec) +
+        (double)(res->end_ts.tv_nsec - request_start.tv_nsec) / 1000000000.0;
+
+    _chttpx_metrics_request_end(server,
+                                req->method,
+                                route ? route->path : NULL,
+                                res->status,
+                                res->body_size,
+                                duration_seconds);
+
     postmiddleware_logging_write(req, res);
     return CHTTPX_OK;
 }
@@ -773,6 +804,7 @@ void* chttpx_handle(void* arg)
     void* tls_session = NULL;
     if (_chttpx_tls_accept(server, client_sock, &tls_session) != CHTTPX_OK)
     {
+        _chttpx_metrics_connection_rejected(server);
         chttpx_close(client_sock);
         return NULL;
     }
@@ -782,23 +814,33 @@ void* chttpx_handle(void* arg)
     ssize_t received = read_req(server, client_sock, tls_session, buf, BUFFER_SIZE);
     if (received == -2)
     {
+        _chttpx_metrics_parser_failure(server);
         static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         _chttpx_io_send_all(client_sock, tls_session, too_large, sizeof(too_large) - 1);
         goto cleanup_connection;
     }
     if (received <= 0)
     {
-        if (received == CHTTPX_ERR_TLS)
+        if (received == CHTTPX_ERR_TIMEOUT)
+            _chttpx_metrics_timeout_failure(server);
+        else if (received == CHTTPX_ERR_TLS)
+        {
+            _chttpx_metrics_connection_rejected(server);
             _chttpx_tls_log_error(server, "-", "TLS request-header read failed");
+        }
         goto cleanup_connection;
     }
 
     req = parse_req_buffer(server, client_sock, tls_session, buf, (size_t)received);
     if (!req)
+    {
+        _chttpx_metrics_parser_failure(server);
         goto cleanup_connection;
+    }
 
     if (req->_parse_status)
     {
+        _chttpx_metrics_parser_failure(server);
         const char* parse_message = req->_parse_status == cHTTPX_StatusPayloadTooLarge
                                         ? "payload too large"
                                         : (req->_parse_status == cHTTPX_StatusInternalServerError ? "internal server error" : "invalid request");
