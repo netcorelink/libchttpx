@@ -8,7 +8,7 @@
 
 - Linux и Windows
 - несколько независимых HTTP-серверов внутри одного `cHTTPX_App`
-- прямые local-вызовы между серверами и remote-вызовы по HTTP
+- прямые local-вызовы между серверами и remote-вызовы по HTTP/HTTPS
 - route groups и пути с `{parameter}`
 - global/router/route middleware с before/after фазами
 - typed path/query helpers и URL decoding
@@ -140,6 +140,16 @@ make test
 make test-sanitize
 ```
 
+Native TLS/HTTPS через OpenSSL включается отдельно и не добавляет OpenSSL-зависимость обычной HTTP-сборке:
+
+```bash
+sudo apt install -y libssl-dev openssl
+make TLS=1 libchttpx.so
+make test-tls
+```
+
+Настройка server certificate, HTTPS remote calls, custom CA и mTLS описана в [Native TLS / HTTPS](docs/tls/README_RU.md).
+
 ### Самостоятельная сборка на Windows
 
 Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`.
@@ -161,6 +171,7 @@ DLL, import library и headers копируются в `tools/`.
 - [Индекс документации](docs/README_RU.md)
 - [App runtime, несколько серверов, AppRemote, Call и CallEx](docs/app/README_RU.md)
 - [Конфигурация сервера, лимиты, lifecycle и error codes](docs/server/README_RU.md)
+- [Native TLS / HTTPS](docs/tls/README_RU.md)
 - [Routing и route groups](docs/routing/README_RU.md)
 - [Middleware](docs/middleware/README_RU.md)
 - [Requests, headers, params, queries и body](docs/request/README_RU.md)
