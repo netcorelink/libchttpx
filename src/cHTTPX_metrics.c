@@ -10,6 +10,7 @@
 #include "cHTTPX_http.h"
 #include "cHTTPX_response.h"
 #include "cHTTPX_serv.h"
+#include "cHTTPX_compression.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -457,67 +458,68 @@ static int prometheus_global_metrics(prometheus_buffer_t* buffer,
         "+Inf",
     };
 
-    return
-        prometheus_append(buffer, "# HELP libchttpx_requests_total Total HTTP requests processed.\n"
-                                  "# TYPE libchttpx_requests_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_requests_total %llu\n",
-                           (unsigned long long)metrics->requests_total) &&
-        prometheus_append(buffer, "# HELP libchttpx_requests_in_flight Requests currently being processed.\n"
-                                  "# TYPE libchttpx_requests_in_flight gauge\n") &&
-        prometheus_appendf(buffer, "libchttpx_requests_in_flight %llu\n",
-                           (unsigned long long)metrics->requests_in_flight) &&
-        prometheus_append(buffer, "# HELP libchttpx_connections_active Active accepted network connections.\n"
-                                  "# TYPE libchttpx_connections_active gauge\n") &&
-        prometheus_appendf(buffer, "libchttpx_connections_active %llu\n",
-                           (unsigned long long)metrics->connections_active) &&
-        prometheus_append(buffer, "# TYPE libchttpx_connections_accepted_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_connections_accepted_total %llu\n",
-                           (unsigned long long)metrics->connections_accepted_total) &&
-        prometheus_append(buffer, "# TYPE libchttpx_connections_rejected_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_connections_rejected_total %llu\n",
-                           (unsigned long long)metrics->connections_rejected_total) &&
-        prometheus_append(buffer, "# HELP libchttpx_responses_total HTTP responses grouped by status class.\n"
-                                  "# TYPE libchttpx_responses_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_responses_total{class=\"1xx\"} %llu\n",
-                           (unsigned long long)metrics->responses_1xx_total) &&
-        prometheus_appendf(buffer, "libchttpx_responses_total{class=\"2xx\"} %llu\n",
-                           (unsigned long long)metrics->responses_2xx_total) &&
-        prometheus_appendf(buffer, "libchttpx_responses_total{class=\"3xx\"} %llu\n",
-                           (unsigned long long)metrics->responses_3xx_total) &&
-        prometheus_appendf(buffer, "libchttpx_responses_total{class=\"4xx\"} %llu\n",
-                           (unsigned long long)metrics->responses_4xx_total) &&
-        prometheus_appendf(buffer, "libchttpx_responses_total{class=\"5xx\"} %llu\n",
-                           (unsigned long long)metrics->responses_5xx_total) &&
-        prometheus_append(buffer, "# TYPE libchttpx_request_bytes_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_request_bytes_total %llu\n",
-                           (unsigned long long)metrics->request_bytes_total) &&
-        prometheus_append(buffer, "# TYPE libchttpx_response_bytes_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_response_bytes_total %llu\n",
-                           (unsigned long long)metrics->response_bytes_total) &&
-        prometheus_append(buffer, "# TYPE libchttpx_parser_failures_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_parser_failures_total %llu\n",
-                           (unsigned long long)metrics->parser_failures_total) &&
-        prometheus_append(buffer, "# TYPE libchttpx_timeout_failures_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_timeout_failures_total %llu\n",
-                           (unsigned long long)metrics->timeout_failures_total) &&
-        prometheus_append(buffer, "# TYPE libchttpx_rate_limit_failures_total counter\n") &&
-        prometheus_appendf(buffer, "libchttpx_rate_limit_failures_total %llu\n",
-                           (unsigned long long)metrics->rate_limit_failures_total) &&
-        prometheus_append(buffer, "# HELP libchttpx_request_duration_seconds HTTP request duration.\n"
-                                  "# TYPE libchttpx_request_duration_seconds histogram\n") &&
-        ({
-            int ok = 1;
-            for (size_t i = 0; i < CHTTPX_METRICS_DURATION_BUCKETS && ok; i++)
-                ok = prometheus_appendf(buffer,
-                                        "libchttpx_request_duration_seconds_bucket{le=\"%s\"} %llu\n",
-                                        bucket_labels[i],
-                                        (unsigned long long)metrics->request_duration_buckets[i]);
-            ok;
-        }) &&
-        prometheus_appendf(buffer, "libchttpx_request_duration_seconds_sum %.9f\n",
-                           metrics->request_duration_seconds_sum) &&
-        prometheus_appendf(buffer, "libchttpx_request_duration_seconds_count %llu\n",
-                           (unsigned long long)metrics->request_duration_count);
+    if (!prometheus_append(buffer, "# HELP libchttpx_requests_total Total HTTP requests processed.\n"
+                                   "# TYPE libchttpx_requests_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_requests_total %llu\n",
+                            (unsigned long long)metrics->requests_total) ||
+        !prometheus_append(buffer, "# HELP libchttpx_requests_in_flight Requests currently being processed.\n"
+                                   "# TYPE libchttpx_requests_in_flight gauge\n") ||
+        !prometheus_appendf(buffer, "libchttpx_requests_in_flight %llu\n",
+                            (unsigned long long)metrics->requests_in_flight) ||
+        !prometheus_append(buffer, "# HELP libchttpx_connections_active Active accepted network connections.\n"
+                                   "# TYPE libchttpx_connections_active gauge\n") ||
+        !prometheus_appendf(buffer, "libchttpx_connections_active %llu\n",
+                            (unsigned long long)metrics->connections_active) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_connections_accepted_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_connections_accepted_total %llu\n",
+                            (unsigned long long)metrics->connections_accepted_total) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_connections_rejected_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_connections_rejected_total %llu\n",
+                            (unsigned long long)metrics->connections_rejected_total) ||
+        !prometheus_append(buffer, "# HELP libchttpx_responses_total HTTP responses grouped by status class.\n"
+                                   "# TYPE libchttpx_responses_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_responses_total{class=\"1xx\"} %llu\n",
+                            (unsigned long long)metrics->responses_1xx_total) ||
+        !prometheus_appendf(buffer, "libchttpx_responses_total{class=\"2xx\"} %llu\n",
+                            (unsigned long long)metrics->responses_2xx_total) ||
+        !prometheus_appendf(buffer, "libchttpx_responses_total{class=\"3xx\"} %llu\n",
+                            (unsigned long long)metrics->responses_3xx_total) ||
+        !prometheus_appendf(buffer, "libchttpx_responses_total{class=\"4xx\"} %llu\n",
+                            (unsigned long long)metrics->responses_4xx_total) ||
+        !prometheus_appendf(buffer, "libchttpx_responses_total{class=\"5xx\"} %llu\n",
+                            (unsigned long long)metrics->responses_5xx_total) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_request_bytes_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_request_bytes_total %llu\n",
+                            (unsigned long long)metrics->request_bytes_total) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_response_bytes_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_response_bytes_total %llu\n",
+                            (unsigned long long)metrics->response_bytes_total) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_parser_failures_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_parser_failures_total %llu\n",
+                            (unsigned long long)metrics->parser_failures_total) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_timeout_failures_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_timeout_failures_total %llu\n",
+                            (unsigned long long)metrics->timeout_failures_total) ||
+        !prometheus_append(buffer, "# TYPE libchttpx_rate_limit_failures_total counter\n") ||
+        !prometheus_appendf(buffer, "libchttpx_rate_limit_failures_total %llu\n",
+                            (unsigned long long)metrics->rate_limit_failures_total) ||
+        !prometheus_append(buffer, "# HELP libchttpx_request_duration_seconds HTTP request duration.\n"
+                                   "# TYPE libchttpx_request_duration_seconds histogram\n"))
+        return 0;
+
+    for (size_t i = 0; i < CHTTPX_METRICS_DURATION_BUCKETS; i++)
+    {
+        if (!prometheus_appendf(buffer,
+                                "libchttpx_request_duration_seconds_bucket{le=\"%s\"} %llu\n",
+                                bucket_labels[i],
+                                (unsigned long long)metrics->request_duration_buckets[i]))
+            return 0;
+    }
+
+    return prometheus_appendf(buffer, "libchttpx_request_duration_seconds_sum %.9f\n",
+                              metrics->request_duration_seconds_sum) &&
+           prometheus_appendf(buffer, "libchttpx_request_duration_seconds_count %llu\n",
+                              (unsigned long long)metrics->request_duration_count);
 }
 
 static int prometheus_route_metrics(prometheus_buffer_t* buffer,
