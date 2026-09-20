@@ -134,6 +134,14 @@ cHTTPX_AppShutdown(&app);
 
 Trigger shutdown from an appropriate control thread for SIGINT/SIGTERM. Avoid complex work directly in an async-signal handler.
 
+## Worker pool
+
+Each local server uses an internal fixed pool of **32 worker threads**. The worker count is intentionally not part of `chttpx_config_t` and cannot be changed by application code.
+
+Accepted sockets are placed into a bounded queue whose capacity follows `max_clients`. This prevents the previous thread-per-connection behavior from creating an unbounded number of OS threads. During shutdown, requests already running on workers are allowed to finish while queued sockets that have not started processing are closed.
+
+`max_clients` still controls the total number of accepted/in-flight connections; it does not change the number of worker threads.
+
 ## Thread-safety model
 
 - client count is updated atomically;
