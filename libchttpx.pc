@@ -6,4 +6,5 @@ Name: libchttpx
 Description: A powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers.
 Version: 1.4.1
 Libs: -L${libdir} -lchttpx
+Libs.private: -lz
 Cflags: -I${includedir}/libchttpx

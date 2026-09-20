@@ -17,6 +17,7 @@
 - multipart forms, несколько файлов, upload policy и автоматическое удаление временных файлов
 - request ID и `Accept-Language` negotiation
 - CORS, cookies, callback-based logging и rate limiting
+- optional gzip-сжатие ответов с `Accept-Encoding` negotiation
 - лимиты сервера и graceful shutdown
 
 > `cHTTPX_ResFile()` пока полностью читает файл в память. Streaming response, `sendfile()` и zero-copy output в текущем API не реализованы.
@@ -124,7 +125,7 @@ CMD ["/usr/local/bin/my-server"]
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -150,9 +151,18 @@ make test-tls
 
 Настройка server certificate, HTTPS remote calls, custom CA и mTLS описана в [Native TLS / HTTPS](docs/tls/README_RU.md).
 
+Сжатие ответов входит в обычную сборку libchttpx. zlib — стандартная зависимость библиотеки, а включение gzip выполняется уже в коде приложения через `cHTTPX_CompressionUse()`. Размер, level, MIME policy и providers тоже задаются через config.
+
+```bash
+make test-compression
+make benchmark-compression
+```
+
+TLS остаётся отдельной опцией сборки: `make TLS=1 libchttpx.so`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
+
 ### Самостоятельная сборка на Windows
 
-Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`.
+Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`, а zlib должен быть установлен (для MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
 
 ```powershell
 git clone https://github.com/netcorelink/libchttpx.git
@@ -172,6 +182,7 @@ DLL, import library и headers копируются в `tools/`.
 - [App runtime, несколько серверов, AppRemote, Call и CallEx](docs/app/README_RU.md)
 - [Конфигурация сервера, лимиты, lifecycle и error codes](docs/server/README_RU.md)
 - [Native TLS / HTTPS](docs/tls/README_RU.md)
+- [Сжатие HTTP-ответов](docs/compression/README_RU.md)
 - [Routing и route groups](docs/routing/README_RU.md)
 - [Middleware](docs/middleware/README_RU.md)
 - [Requests, headers, params, queries и body](docs/request/README_RU.md)

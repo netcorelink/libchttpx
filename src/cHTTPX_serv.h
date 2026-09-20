@@ -41,7 +41,8 @@ extern "C"
         CHTTPX_ERR_STATE = -10,
         CHTTPX_ERR_UNAVAILABLE = -11,
         CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13
+        CHTTPX_ERR_TLS = -13,
+        CHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
 
     typedef enum
@@ -107,7 +108,7 @@ extern "C"
         size_t allowed_types_count;
     } chttpx_upload_policy_t;
 
-    typedef struct
+    typedef struct chttpx_route
     {
         const char* method;
         const char* path;
@@ -118,6 +119,7 @@ extern "C"
         size_t after_middleware_count;
         chttpx_upload_policy_t upload_policy;
         bool has_upload_policy;
+        bool compression_disabled;
     } chttpx_route_t;
 
     typedef struct chttpx_serv
@@ -161,6 +163,7 @@ extern "C"
         chttpx_middleware_stack_t middleware;
         bool logging_enabled;
         void* rate_limiter_state;
+        void* compression_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;

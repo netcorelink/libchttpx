@@ -15,6 +15,7 @@
 #include "cHTTPX_middlewares.h"
 #include "cHTTPX_http.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_compression.h"
 
 #include <errno.h>
 
@@ -625,6 +626,7 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
     server->routes_count = 0;
     server->routes_capacity = 0;
 
+    _chttpx_compression_server_cleanup(server);
     _chttpx_middleware_server_cleanup(server);
 
     for (size_t i = 0; i < server->cors.origins_count; i++)

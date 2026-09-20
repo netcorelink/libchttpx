@@ -17,6 +17,7 @@ The library is designed so handlers contain application logic instead of repetit
 - multipart forms, multiple uploads, upload policies, and temporary-file cleanup
 - request IDs and `Accept-Language` negotiation
 - CORS, cookies, logging callbacks, and rate limiting
+- optional gzip response compression with `Accept-Encoding` negotiation
 - configurable server limits and graceful shutdown
 
 > `cHTTPX_ResFile()` currently reads the complete file into memory. Streaming responses, `sendfile()`, and zero-copy output are not implemented in the current API.
@@ -124,11 +125,11 @@ CMD ["/usr/local/bin/my-server"]
 
 ### Build from source on Linux
 
-Requirements: GCC, Make, pkg-config, and cJSON development files.
+Requirements: GCC, Make, pkg-config, cJSON development files, and zlib development files.
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -154,9 +155,18 @@ make test-tls
 
 See [Native TLS / HTTPS](docs/tls/README.md) for server certificates, HTTPS remote calls, custom CA verification, and mTLS.
 
+Response compression is included in the standard build. zlib is a normal libchttpx dependency; applications enable compression at runtime with `cHTTPX_CompressionUse()` and configure minimum size, level, MIME policy, or custom providers in code.
+
+```bash
+make test-compression
+make benchmark-compression
+```
+
+TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response compression](docs/compression/README.md).
+
 ### Build from source on Windows
 
-Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source.
+Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source and requires zlib (for MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
 
 ```powershell
 git clone https://github.com/netcorelink/libchttpx.git
@@ -176,6 +186,7 @@ Detailed documentation is split by functionality:
 - [App runtime, multiple servers, AppRemote, Call and CallEx](docs/app/README.md)
 - [Server configuration, limits, lifecycle and error codes](docs/server/README.md)
 - [Native TLS / HTTPS](docs/tls/README.md)
+- [Response compression](docs/compression/README.md)
 - [Routing and route groups](docs/routing/README.md)
 - [Middleware](docs/middleware/README.md)
 - [Requests, headers, params, queries and body access](docs/request/README.md)

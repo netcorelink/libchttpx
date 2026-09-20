@@ -6,6 +6,6 @@ Name: libchttpx
 Description: libchttpx with optional native OpenSSL TLS/HTTPS transport enabled.
 Version: 1.4.1
 Libs: -L${libdir} -lchttpx
-Libs.private: -lssl -lcrypto
+Libs.private: -lssl -lcrypto -lz
 Requires.private: openssl
 Cflags: -I${includedir}/libchttpx

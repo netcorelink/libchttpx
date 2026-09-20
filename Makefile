@@ -29,13 +29,15 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS = -lcjson $(TLS_LDFLAGS)
-WIN_LDFLAGS = -lws2_32 $(TLS_LDFLAGS)
+LIN_LDFLAGS = -lcjson -lz $(TLS_LDFLAGS)
+WIN_LDFLAGS = -lws2_32 -lz $(TLS_LDFLAGS)
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
 TEST_SERVER_SANITIZE_TARGET = $(BINDIR)/test_server_sanitize
 TEST_TLS_TARGET = $(BINDIR)/test_tls
+TEST_COMPRESSION_TARGET = $(BINDIR)/test_compression
+COMPRESSION_BENCHMARK_TARGET = $(BINDIR)/benchmark-compression
 EXAMPLE_SRC = example/basic.c
 EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
 
@@ -73,6 +75,8 @@ $(BINDIR)/example-%: example/%.c $(LIN_SRCS)
 examples-tls:
 	@$(MAKE) TLS=1 $(BINDIR)/example-tls
 
+examples-compression: $(BINDIR)/example-compression
+
 # WINdows build
 # -
 
@@ -108,12 +112,13 @@ lib-install: libchttpx.so
 win-lib:
 	@echo "Building Windows DLL..."
 	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -std=c11 -D_WIN32 -shared -o $(BINDIR)/$(TARGET_DLL) $(WIN_SRCS) -Wl,--out-implib,$(BINDIR)/libchttpx.a -lws2_32
+	$(CC) $(CFLAGS) -std=c11 -D_WIN32 -shared -o $(BINDIR)/$(TARGET_DLL) $(WIN_SRCS) -Wl,--out-implib,$(BINDIR)/libchttpx.a $(WIN_LDFLAGS)
 
 	@echo "Copying files to $(WIN_LIB_DIR)..."
 	if not exist $(WIN_LIB_DIR) mkdir $(WIN_LIB_DIR)
 	copy /Y $(BINDIR)\$(TARGET_DLL) $(WIN_LIB_DIR)\$(TARGET_DLL)
 	copy /Y $(BINDIR)\libchttpx.a $(WIN_LIB_DIR)\libchttpx.a
+	for /f "delims=" %%i in ('where zlib1.dll 2^>nul') do copy /Y "%%i" $(WIN_LIB_DIR)\zlib1.dll
 	if not exist $(WIN_LIB_DIR)\include mkdir $(WIN_LIB_DIR)\include
 	xcopy /E /I /Y include $(WIN_LIB_DIR)\include
 
@@ -159,6 +164,20 @@ test-tls:
 $(TEST_TLS_TARGET): tests/test_tls.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_tls.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+test-compression: $(TEST_COMPRESSION_TARGET)
+	$(TEST_COMPRESSION_TARGET)
+
+$(TEST_COMPRESSION_TARGET): tests/test_compression.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_compression.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+benchmark-compression: $(COMPRESSION_BENCHMARK_TARGET)
+	$(COMPRESSION_BENCHMARK_TARGET)
+
+$(COMPRESSION_BENCHMARK_TARGET): benchmarks/compression.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -O2 benchmarks/compression.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 # LINux lib compile
 # -

@@ -725,6 +725,9 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
     after_route_middlewares:
         for (size_t i = route->after_middleware_count; i > 0; i--)
             route->after_middlewares[i - 1](req, res);
+
+        if (route->compression_disabled)
+            res->compression_disabled = true;
     }
     else
     {

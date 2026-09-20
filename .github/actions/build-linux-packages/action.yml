@@ -32,7 +32,7 @@ runs:
           bash -euc '
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
-            apt-get install -y --no-install-recommends build-essential libcjson-dev
+            apt-get install -y --no-install-recommends build-essential libcjson-dev zlib1g-dev
             make clean
             make libchttpx.so
             cp libchttpx.so dist/deb/libchttpx.so
@@ -47,7 +47,7 @@ runs:
           -w /work \
           fedora:42 \
           bash -euc '
-            dnf install -y gcc make cjson-devel
+            dnf install -y gcc make cjson-devel zlib-devel
             make clean
             make libchttpx.so
             cp libchttpx.so dist/rpm/libchttpx.so
@@ -62,7 +62,7 @@ runs:
           -w /work \
           archlinux:base-devel \
           bash -euc '
-            pacman -Sy --noconfirm cjson
+            pacman -Sy --noconfirm cjson zlib
             make clean
             make libchttpx.so
             cp libchttpx.so dist/archlinux/libchttpx.so
@@ -77,7 +77,7 @@ runs:
           -w /work \
           alpine:3.22 \
           sh -euc '
-            apk add --no-cache build-base cjson-dev
+            apk add --no-cache build-base cjson-dev zlib-dev
             make clean
             make libchttpx.so
             cp libchttpx.so dist/apk/libchttpx.so
@@ -109,6 +109,7 @@ runs:
                 "Description: A compact cross-platform HTTP/1.1 server library for C/C++.",
                 f"Version: {version}",
                 "Libs: -L${libdir} -lchttpx",
+                "Libs.private: -lz",
                 "Cflags: -I${includedir}/libchttpx",
                 "",
             ])
