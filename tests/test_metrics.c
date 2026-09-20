@@ -131,6 +131,20 @@ int main(void)
     chttpx_app_t app;
     assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
 
+    chttpx_config_t disabled_config = cHTTPX_DefaultConfig();
+    disabled_config.port = 0;
+    disabled_config.network_mode = CHTTPX_NETWORK_IPV4;
+
+    chttpx_serv_t* disabled =
+        cHTTPX_AppServer(&app, "metrics-disabled", &disabled_config);
+    assert(disabled);
+
+    chttpx_metrics_t disabled_metrics;
+    assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == CHTTPX_ERR_UNAVAILABLE);
+
+    chttpx_router_t disabled_router = cHTTPX_RoutePathPrefix(disabled, "");
+    assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == CHTTPX_ERR_UNAVAILABLE);
+
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 0;
     config.network_mode = CHTTPX_NETWORK_IPV4;
