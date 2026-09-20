@@ -68,7 +68,7 @@ extern "C"
 
         /*
          * Optional custom providers. When omitted, the built-in gzip provider
-         * is used if libchttpx was built with COMPRESSION=1.
+         * is used.
          */
         const chttpx_compression_provider_t* providers;
         size_t providers_count;
@@ -77,12 +77,7 @@ extern "C"
     /** Return the default gzip-oriented compression configuration. */
     chttpx_compression_config_t cHTTPX_CompressionDefault(void);
 
-    /**
-     * Enable response compression for a server.
-     *
-     * Returns CHTTPX_ERR_UNAVAILABLE when the default gzip provider is
-     * requested but the library was built without COMPRESSION=1.
-     */
+    /** Enable response compression for a server. */
     int cHTTPX_CompressionUse(struct chttpx_serv* server, const chttpx_compression_config_t* config);
 
     /** Enable or disable compression for one route. */
@@ -91,7 +86,7 @@ extern "C"
     /** Enable or disable compression for one response. */
     void cHTTPX_ResponseCompression(struct chttpx_response* response, bool enabled);
 
-    /** Return true when the built-in gzip provider is compiled in. */
+    /** Return true when the built-in gzip provider is available. */
     bool cHTTPX_CompressionGzipAvailable(void);
 
     /* Internal per-server compression cleanup. */
