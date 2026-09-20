@@ -9,6 +9,7 @@ extern "C"
 #endif
 
 int _chttpx_tls_available(void);
+void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const char* message);
 int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* config);
 void _chttpx_tls_server_cleanup(chttpx_serv_t* server);
 int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** session);
