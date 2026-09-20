@@ -125,11 +125,11 @@ CMD ["/usr/local/bin/my-server"]
 
 ### Build from source on Linux
 
-Requirements: GCC, Make, pkg-config, and cJSON development files.
+Requirements: GCC, Make, pkg-config, cJSON development files, and zlib development files.
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -155,20 +155,18 @@ make test-tls
 
 See [Native TLS / HTTPS](docs/tls/README.md) for server certificates, HTTPS remote calls, custom CA verification, and mTLS.
 
-Optional built-in gzip response compression uses zlib:
+Response compression is included in the standard build. zlib is a normal libchttpx dependency; applications enable compression at runtime with `cHTTPX_CompressionUse()` and configure minimum size, level, MIME policy, or custom providers in code.
 
 ```bash
-sudo apt install -y zlib1g-dev
-make COMPRESSION=1 libchttpx.so
 make test-compression
 make benchmark-compression
 ```
 
-TLS and gzip can be enabled together with `make TLS=1 COMPRESSION=1 libchttpx.so`. The current native Linux packages still use the default build without the built-in gzip provider. See [Response compression](docs/compression/README.md).
+TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response compression](docs/compression/README.md).
 
 ### Build from source on Windows
 
-Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source.
+Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source and requires zlib (for MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
 
 ```powershell
 git clone https://github.com/netcorelink/libchttpx.git
