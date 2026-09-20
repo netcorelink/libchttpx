@@ -293,6 +293,8 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_ses
             return -2;
 
         int n = _chttpx_io_recv(fd, tls_session, buffer + total, buffer_size - 1 - total);
+        if (n == CHTTPX_ERR_TLS)
+            return CHTTPX_ERR_TLS;
         if (n < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
@@ -445,11 +447,20 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     if (!append_response_header(buffer, capacity, &length, "\r\n"))
         goto done;
 
-    if (_chttpx_io_send_all(req->client_fd, req->_tls_session, buffer, length) != CHTTPX_OK)
+    int write_result = _chttpx_io_send_all(req->client_fd, req->_tls_session, buffer, length);
+    if (write_result != CHTTPX_OK)
+    {
+        if (write_result == CHTTPX_ERR_TLS)
+            _chttpx_tls_log_error(server, req->request_id, "TLS response-header write failed");
         goto done;
+    }
 
     if (res.body && res.body_size > 0)
-        _chttpx_io_send_all(req->client_fd, req->_tls_session, res.body, res.body_size);
+    {
+        write_result = _chttpx_io_send_all(req->client_fd, req->_tls_session, res.body, res.body_size);
+        if (write_result == CHTTPX_ERR_TLS)
+            _chttpx_tls_log_error(server, req->request_id, "TLS response-body write failed");
+    }
 
 done:
     free(buffer);
@@ -773,7 +784,11 @@ void* chttpx_handle(void* arg)
         goto cleanup_connection;
     }
     if (received <= 0)
+    {
+        if (received == CHTTPX_ERR_TLS)
+            _chttpx_tls_log_error(server, "-", "TLS request-header read failed");
         goto cleanup_connection;
+    }
 
     req = parse_req_buffer(server, client_sock, tls_session, buf, (size_t)received);
     if (!req)
