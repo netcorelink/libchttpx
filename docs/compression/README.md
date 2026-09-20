@@ -2,25 +2,25 @@
 
 libchttpx can compress buffered HTTP responses after the route handler and before the response is written to the socket. The built-in provider is gzip through zlib; the provider API is intentionally generic so Brotli or Zstandard providers can be added without changing route handlers.
 
-## Build with the built-in gzip provider
+## Availability
 
-The default build has no zlib dependency. Enable the built-in gzip provider explicitly:
+gzip support is part of the standard libchttpx build. zlib is a regular library dependency, so there is no separate compression build mode and no `COMPRESSION=1` flag.
+
+Compression itself is still optional at runtime: nothing is compressed until the application calls `cHTTPX_CompressionUse()`.
+
+For a source build on Debian/Ubuntu, install zlib together with the other development dependencies:
 
 ```bash
-sudo apt install -y zlib1g-dev
-make COMPRESSION=1 libchttpx.so
+sudo apt install -y build-essential libcjson-dev zlib1g-dev
+make libchttpx.so
 make test-compression
 ```
 
-TLS and compression can be enabled together:
+TLS remains independently optional:
 
 ```bash
-make TLS=1 COMPRESSION=1 libchttpx.so
+make TLS=1 libchttpx.so
 ```
-
-If libchttpx was built without `COMPRESSION=1`, `cHTTPX_CompressionUse()` with the default provider returns `CHTTPX_ERR_UNAVAILABLE`. Custom providers do not require zlib.
-
-The current native Linux package workflow builds the default library, so the built-in gzip provider is not enabled in those packages yet.
 
 ## Basic setup
 
@@ -41,7 +41,7 @@ Default values:
 
 - minimum body size: 1024 bytes
 - gzip level: 5
-- provider: gzip when compiled with `COMPRESSION=1`
+- provider: built-in gzip
 - text, JSON, JavaScript, XML, SVG and similar textual MIME types are compressible
 - already compressed images, audio/video, fonts, archives, PDF, WASM and generic octet streams are excluded
 
