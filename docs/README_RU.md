@@ -7,7 +7,8 @@
 | App runtime | [app](app/README_RU.md) | `cHTTPX_App`, несколько серверов, remote registry, `Call`, `CallEx` |
 | Server | [server](server/README_RU.md) | config, limits, lifecycle, error codes, shutdown |
 | TLS / HTTPS | [tls](tls/README_RU.md) | optional OpenSSL build, HTTPS server/client, CA verification, mTLS |
-| Compression | [compression](compression/README_RU.md) | Accept-Encoding negotiation, optional gzip, MIME policy, providers |
+| Compression | [compression](compression/README_RU.md) | Accept-Encoding negotiation, gzip, MIME policy, providers |
+| Metrics | [metrics](metrics/README_RU.md) | thread-safe snapshot, request/connection counters, Prometheus exporter |
 | Routing | [routing](routing/README_RU.md) | routers, groups, method helpers, path parameters |
 | Middleware | [middleware](middleware/README_RU.md) | global/router/route middleware, before/after |
 | Request | [request](request/README_RU.md) | metadata, headers, params, queries, bearer token, body |
