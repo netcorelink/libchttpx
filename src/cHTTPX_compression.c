@@ -280,11 +280,6 @@ compression_error:
     return CHTTPX_ERR_COMPRESSION;
 }
 
-bool cHTTPX_CompressionGzipAvailable(void)
-{
-    return true;
-}
-
 chttpx_compression_config_t cHTTPX_CompressionDefault(void)
 {
     return (chttpx_compression_config_t){
