@@ -93,6 +93,7 @@ extern "C"
         size_t max_upload_size;
         size_t max_header_size;
         bool request_id_enabled;
+        bool metrics_enabled;
         const char** languages;
         size_t languages_count;
         const char* default_language;
@@ -164,6 +165,7 @@ extern "C"
         bool logging_enabled;
         void* rate_limiter_state;
         void* compression_state;
+        void* metrics_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
@@ -174,7 +176,7 @@ extern "C"
         chttpx_socket_t client_fd;
     } chttpx_client_ctx_t;
 
-    typedef struct
+    typedef struct chttpx_router
     {
         chttpx_serv_t* serv;
         char prefix[CHTTPX_MAX_PATH];
