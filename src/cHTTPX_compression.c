@@ -356,10 +356,13 @@ static int copy_providers(const chttpx_compression_provider_t* providers,
 
 static int prepare_compression_state(const chttpx_compression_config_t* config, chttpx_compression_state_t** state_out)
 {
-    if (!config || !state_out || config->level < -1 || config->level > 9 ||
+    if (!config || !state_out ||
         (config->include_types_count > 0 && !config->include_types) ||
         (config->exclude_types_count > 0 && !config->exclude_types) ||
         (config->providers_count > 0 && !config->providers))
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    if (config->providers_count == 0 && (config->level < -1 || config->level > 9))
         return CHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_compression_state_t* state = calloc(1, sizeof(*state));
