@@ -2,25 +2,25 @@
 
 libchttpx умеет сжимать buffered HTTP-ответ после выполнения handler и до отправки ответа в сокет. Встроенный provider — gzip через zlib. Provider API сделан универсальным, чтобы позже можно было добавить Brotli или Zstandard без изменения handler'ов.
 
-## Сборка со встроенным gzip
+## Доступность
 
-Обычная сборка не зависит от zlib. Встроенный gzip включается явно:
+gzip входит в обычную сборку libchttpx. zlib является стандартной зависимостью библиотеки, поэтому отдельного режима сборки и флага `COMPRESSION=1` нет.
+
+Само сжатие остаётся опциональным во время выполнения: пока приложение не вызовет `cHTTPX_CompressionUse()`, ответы не сжимаются.
+
+Для сборки из исходников на Debian/Ubuntu zlib устанавливается вместе с остальными development-зависимостями:
 
 ```bash
-sudo apt install -y zlib1g-dev
-make COMPRESSION=1 libchttpx.so
+sudo apt install -y build-essential libcjson-dev zlib1g-dev
+make libchttpx.so
 make test-compression
 ```
 
-TLS и compression можно включить одновременно:
+TLS остаётся отдельной опцией:
 
 ```bash
-make TLS=1 COMPRESSION=1 libchttpx.so
+make TLS=1 libchttpx.so
 ```
-
-Если библиотека собрана без `COMPRESSION=1`, вызов `cHTTPX_CompressionUse()` с provider по умолчанию вернёт `CHTTPX_ERR_UNAVAILABLE`. Для собственного provider zlib не требуется.
-
-Сейчас workflow нативных Linux-пакетов собирает обычный вариант библиотеки, поэтому встроенный gzip в этих пакетах пока не включён.
 
 ## Базовая настройка
 
@@ -41,7 +41,7 @@ if (result != CHTTPX_OK) {
 
 - минимальный размер body — 1024 байта
 - gzip level — 5
-- provider — gzip, если библиотека собрана с `COMPRESSION=1`
+- provider — встроенный gzip
 - текст, JSON, JavaScript, XML, SVG и похожие текстовые MIME сжимаются
 - уже сжатые изображения, audio/video, fonts, архивы, PDF, WASM и `application/octet-stream` исключены
 
