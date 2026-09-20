@@ -45,6 +45,9 @@ extern "C"
 
         chttpx_body_ownership_t body_ownership;
 
+        /* Set when response compression must be bypassed. */
+        bool compression_disabled;
+
         /* Times for logging */
         struct timespec start_ts;
         struct timespec end_ts;
