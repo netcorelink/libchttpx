@@ -698,12 +698,12 @@ static void quality_from_header_value(const char* header,
             *end = '\0';
 
             char* semicolon = strchr(start, ';');
+            double quality = semicolon ? parse_quality_parameter(semicolon) : 1.0;
+
             char* token_end = semicolon ? semicolon : end;
             trim_string(&start, &token_end);
             char saved = *token_end;
             *token_end = '\0';
-
-            double quality = semicolon ? parse_quality_parameter(semicolon) : 1.0;
 
             if (strcasecmp(start, target) == 0)
             {
