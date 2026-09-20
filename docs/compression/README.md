@@ -172,22 +172,6 @@ Invalid configuration returns `CHTTPX_ERR_INVALID_ARGUMENT`; allocation failures
 
 If encoding fails and identity is acceptable, libchttpx logs a warning and sends the original response. If identity is forbidden, it sends an empty `500 Internal Server Error` rather than silently violating `Accept-Encoding`.
 
-## Benchmark
-
-Run:
-
-```bash
-make benchmark-compression
-```
-
-The benchmark compresses a 1 MiB JSON-like payload repeatedly at gzip levels 1, 5 and 9 and prints CSV columns:
-
-```text
-level,input_bytes,compressed_bytes,ratio,throughput_mib_s
-```
-
-Use `ratio` as the bandwidth-saving side of the tradeoff and `throughput_mib_s` as the CPU-cost side. Results depend on CPU, compiler, zlib version and payload, so the repository does not hard-code a universal “best” level.
-
 ## Example
 
 ```bash
