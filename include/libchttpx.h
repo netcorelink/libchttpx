@@ -1240,6 +1240,7 @@ extern "C"
         size_t max_upload_size;
         size_t max_header_size;
         bool request_id_enabled;
+        bool metrics_enabled;
         const char** languages;
         size_t languages_count;
         const char* default_language;
@@ -1311,6 +1312,7 @@ extern "C"
         bool logging_enabled;
         void* rate_limiter_state;
         void* compression_state;
+        void* metrics_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
@@ -1321,7 +1323,7 @@ extern "C"
         chttpx_socket_t client_fd;
     } chttpx_client_ctx_t;
 
-    typedef struct
+    typedef struct chttpx_router
     {
         chttpx_serv_t* serv;
         char prefix[CHTTPX_MAX_PATH];
@@ -1408,6 +1410,59 @@ extern "C"
     /** Enable or disable compression for one response. */
     void cHTTPX_ResponseCompression(chttpx_response_t* response, bool enabled);
 
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+
+/* ========================================================================== */
+/* cHTTPX_metrics.h */
+/* ========================================================================== */
+#ifndef CHTTPX_METRICS_H
+#define CHTTPX_METRICS_H
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#define CHTTPX_METRICS_DURATION_BUCKETS 9
+
+    typedef struct
+    {
+        uint64_t requests_total;
+        uint64_t requests_in_flight;
+
+        uint64_t connections_active;
+        uint64_t connections_accepted_total;
+        uint64_t connections_rejected_total;
+
+        uint64_t responses_1xx_total;
+        uint64_t responses_2xx_total;
+        uint64_t responses_3xx_total;
+        uint64_t responses_4xx_total;
+        uint64_t responses_5xx_total;
+
+        uint64_t request_bytes_total;
+        uint64_t response_bytes_total;
+
+        uint64_t parser_failures_total;
+        uint64_t timeout_failures_total;
+        uint64_t rate_limit_failures_total;
+
+        uint64_t request_duration_count;
+        double request_duration_seconds_sum;
+        uint64_t request_duration_buckets[CHTTPX_METRICS_DURATION_BUCKETS];
+    } chttpx_metrics_t;
+
+    /** Copy a consistent per-server metrics snapshot. */
+    int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics);
+
+    /** Register a Prometheus text exposition route. */
+    int cHTTPX_MetricsRoute(chttpx_router_t* router, const char* path);
 
 #ifdef __cplusplus
 }
