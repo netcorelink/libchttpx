@@ -557,6 +557,9 @@ extern "C"
         /* App-managed server/microservice handling this request. */
         struct chttpx_serv* _server;
 
+        /* Internal transport state. NULL for plain HTTP. */
+        void* _tls_session;
+
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
         void* _contexts;
@@ -1181,7 +1184,8 @@ extern "C"
         CHTTPX_ERR_PROTOCOL = -9,
         CHTTPX_ERR_STATE = -10,
         CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12
+        CHTTPX_ERR_TIMEOUT = -12,
+        CHTTPX_ERR_TLS = -13
     } chttpx_error_t;
 
     typedef enum
@@ -1204,8 +1208,26 @@ extern "C"
 
     typedef struct
     {
+        bool enabled;
+        const char* cert_file;
+        const char* key_file;
+        const char* client_ca_file;
+        bool require_client_cert;
+    } chttpx_tls_config_t;
+
+    typedef struct
+    {
+        bool verify_peer;
+        const char* ca_file;
+        const char* client_cert_file;
+        const char* client_key_file;
+    } chttpx_tls_client_config_t;
+
+    typedef struct
+    {
         uint16_t port;
         chttpx_network_mode_t network_mode;
+        chttpx_tls_config_t tls;
         size_t max_clients;
         uint16_t read_timeout_sec;
         uint16_t write_timeout_sec;
@@ -1251,6 +1273,9 @@ extern "C"
         uint16_t port;
         chttpx_network_mode_t network_mode;
         chttpx_socket_t server_fd;
+
+        chttpx_tls_config_t tls;
+        void* _tls_ctx;
 
         size_t max_clients;
         size_t current_clients;
@@ -1382,12 +1407,25 @@ extern "C"
     /** Create an App-managed HTTP server using the supplied configuration. */
     chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttpx_config_t* config);
 
+    /** Return client TLS defaults (peer verification enabled, system trust store). */
+    chttpx_tls_client_config_t cHTTPX_DefaultTLSClientConfig(void);
+
     /**
      * Register a server that lives in another process/container.
      *
-     * Example: http://payment-server:8090
+     * Both http:// and https:// are accepted. HTTPS uses certificate
+     * verification by default.
      */
     int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url);
+
+    /**
+     * Register a remote server with explicit TLS client settings.
+     *
+     * ca_file == NULL uses the system trust store. Client certificate/key
+     * fields are optional and enable mutual TLS when both are provided.
+     */
+    int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url,
+                           const chttpx_tls_client_config_t* tls_config);
 
     /** Start every local server in the App in its own listener thread. */
     int cHTTPX_AppStart(chttpx_app_t* app);
