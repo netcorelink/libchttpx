@@ -94,7 +94,7 @@ sudo apt upgrade</code></pre>
                 <button class="copy-button" type="button" data-copy-target="source-install-code">Copy</button>
               </div>
               <pre id="source-install-code"><code>sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -153,6 +153,9 @@ int main(void)
             <div class="module-grid">
               <a class="module-link" data-doc-item href="module.html?name=app"><strong>App runtime</strong><span>Multiple servers, local and remote calls.</span></a>
               <a class="module-link" data-doc-item href="module.html?name=server"><strong>Server</strong><span>Configuration, lifecycle, limits and shutdown.</span></a>
+              <a class="module-link" data-doc-item href="module.html?name=tls"><strong>TLS / HTTPS</strong><span>Native OpenSSL HTTPS, verification and mTLS.</span></a>
+              <a class="module-link" data-doc-item href="module.html?name=compression"><strong>Compression</strong><span>gzip negotiation, MIME policy and providers.</span></a>
+              <a class="module-link" data-doc-item href="module.html?name=metrics"><strong>Metrics</strong><span>Thread-safe snapshots and Prometheus exporter.</span></a>
               <a class="module-link" data-doc-item href="module.html?name=routing"><strong>Routing</strong><span>Routers, route groups, methods and parameters.</span></a>
               <a class="module-link" data-doc-item href="module.html?name=middleware"><strong>Middleware</strong><span>Global, router and route middleware.</span></a>
               <a class="module-link" data-doc-item href="module.html?name=request"><strong>Request</strong><span>Headers, params, query, bearer and body helpers.</span></a>
