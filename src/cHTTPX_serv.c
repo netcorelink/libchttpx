@@ -14,6 +14,7 @@
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_middlewares.h"
 #include "cHTTPX_http.h"
+#include "cHTTPX_tls.h"
 
 #include <errno.h>
 
@@ -278,6 +279,17 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         return CHTTPX_ERR_LISTEN;
     }
 
+    int tls_result = _chttpx_tls_server_init(server, &config->tls);
+    if (tls_result != CHTTPX_OK)
+    {
+        chttpx_close(server->server_fd);
+        invalidate_socket(server);
+        free_server_languages(server);
+        free(server->name);
+        server->name = NULL;
+        return tls_result;
+    }
+
     server->initialized = true;
     return CHTTPX_OK;
 
@@ -527,8 +539,15 @@ void _chttpx_server_listen(chttpx_serv_t* server)
 
         if (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
         {
-            static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-            cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
+            /*
+             * A TLS connection has not completed its handshake yet, so raw
+             * HTTP bytes must never be written to it here.
+             */
+            if (!server->tls.enabled)
+            {
+                static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
+            }
             chttpx_close(client_fd);
             continue;
         }
@@ -586,6 +605,8 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
 
     while (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) > 0)
         server_sleep_ms(10);
+
+    _chttpx_tls_server_cleanup(server);
 
     for (size_t i = 0; i < server->routes_count; i++)
     {
