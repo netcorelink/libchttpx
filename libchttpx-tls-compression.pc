@@ -1,0 +1,11 @@
+prefix=/usr/local
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libchttpx
+Description: libchttpx with optional OpenSSL TLS and gzip response compression enabled.
+Version: 1.4.1
+Libs: -L${libdir} -lchttpx
+Libs.private: -lssl -lcrypto -lz
+Requires.private: openssl zlib
+Cflags: -I${includedir}/libchttpx
