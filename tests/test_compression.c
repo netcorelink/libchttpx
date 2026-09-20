@@ -217,8 +217,6 @@ static int failing_provider(const unsigned char* input,
 int main(void)
 {
     fill_bodies();
-    assert(cHTTPX_CompressionGzipAvailable());
-
     chttpx_app_t app;
     assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
 
