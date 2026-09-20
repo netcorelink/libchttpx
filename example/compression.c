@@ -51,7 +51,7 @@ int main(void)
     int compression_result = cHTTPX_CompressionUse(server, &compression);
     if (compression_result != CHTTPX_OK)
     {
-        fprintf(stderr, "compression unavailable: %d (build with COMPRESSION=1)\n", compression_result);
+        fprintf(stderr, "compression configuration failed: %d\n", compression_result);
         cHTTPX_AppShutdown(&app);
         return 1;
     }
