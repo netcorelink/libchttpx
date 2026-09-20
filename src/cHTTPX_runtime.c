@@ -108,7 +108,7 @@ int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd,
 
 static bool runtime_is_stopping(chttpx_runtime_t* runtime)
 {
-    return __atomic_load_n(&runtime_is_stopping(runtime), __ATOMIC_ACQUIRE);
+    return __atomic_load_n(&runtime->stopping, __ATOMIC_ACQUIRE);
 }
 
 static bool socket_valid(chttpx_socket_t fd)
@@ -1245,7 +1245,7 @@ void _chttpx_runtime_cleanup(chttpx_serv_t* server)
     if (!runtime)
         return;
 
-    runtime_is_stopping(runtime) = true;
+    __atomic_store_n(&runtime->stopping, true, __ATOMIC_RELEASE);
     begin_shutdown(runtime);
 
     job_lock(runtime);
