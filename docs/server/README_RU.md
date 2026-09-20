@@ -26,6 +26,7 @@ chttpx_serv_t* server =
 | `max_upload_size` | 500 MiB |
 | `max_header_size` | 16383 bytes |
 | `request_id_enabled` | true |
+| `metrics_enabled` | false |
 | `default_language` | `"en"` |
 | `log_level` | `CHTTPX_LOG_INFO` |
 
@@ -60,6 +61,20 @@ config.write_timeout_sec = 20;
 ```
 
 Превышение body/upload limit обычно приводит к `413 Payload Too Large`, header limit — к `431 Request Header Fields Too Large`.
+
+## Встроенные metrics
+
+По умолчанию metrics выключены. Включаются до создания server:
+
+```c
+chttpx_config_t config = cHTTPX_DefaultConfig();
+config.metrics_enabled = true;
+
+chttpx_serv_t *server =
+    cHTTPX_AppServer(&app, "main", &config);
+```
+
+Snapshot API и Prometheus endpoint описаны в [Metrics и Prometheus](../metrics/README_RU.md).
 
 ## Ошибки
 
