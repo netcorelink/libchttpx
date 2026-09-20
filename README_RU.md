@@ -125,7 +125,7 @@ CMD ["/usr/local/bin/my-server"]
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -151,20 +151,18 @@ make test-tls
 
 Настройка server certificate, HTTPS remote calls, custom CA и mTLS описана в [Native TLS / HTTPS](docs/tls/README_RU.md).
 
-Встроенное gzip-сжатие ответов через zlib также включается отдельно:
+Сжатие ответов входит в обычную сборку libchttpx. zlib — стандартная зависимость библиотеки, а включение gzip выполняется уже в коде приложения через `cHTTPX_CompressionUse()`. Размер, level, MIME policy и providers тоже задаются через config.
 
 ```bash
-sudo apt install -y zlib1g-dev
-make COMPRESSION=1 libchttpx.so
 make test-compression
 make benchmark-compression
 ```
 
-TLS и gzip можно включить вместе: `make TLS=1 COMPRESSION=1 libchttpx.so`. Текущие нативные Linux-пакеты пока собираются в обычном режиме без встроенного gzip provider. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
+TLS остаётся отдельной опцией сборки: `make TLS=1 libchttpx.so`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
 
 ### Самостоятельная сборка на Windows
 
-Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`.
+Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`, а zlib должен быть установлен (для MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
 
 ```powershell
 git clone https://github.com/netcorelink/libchttpx.git
