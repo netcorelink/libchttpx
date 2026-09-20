@@ -17,7 +17,8 @@ The library is designed so handlers contain application logic instead of repetit
 - multipart forms, multiple uploads, upload policies, and temporary-file cleanup
 - request IDs and `Accept-Language` negotiation
 - CORS, cookies, logging callbacks, and rate limiting
-- optional gzip response compression with `Accept-Encoding` negotiation
+- configurable gzip response compression with `Accept-Encoding` negotiation
+- optional built-in metrics with thread-safe snapshots and a Prometheus exporter
 - configurable server limits and graceful shutdown
 
 > `cHTTPX_ResFile()` currently reads the complete file into memory. Streaming responses, `sendfile()`, and zero-copy output are not implemented in the current API.
@@ -159,7 +160,6 @@ Response compression is included in the standard build. zlib is a normal libchtt
 
 ```bash
 make test-compression
-make benchmark-compression
 ```
 
 TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response compression](docs/compression/README.md).
@@ -187,6 +187,7 @@ Detailed documentation is split by functionality:
 - [Server configuration, limits, lifecycle and error codes](docs/server/README.md)
 - [Native TLS / HTTPS](docs/tls/README.md)
 - [Response compression](docs/compression/README.md)
+- [Metrics and Prometheus exporter](docs/metrics/README.md)
 - [Routing and route groups](docs/routing/README.md)
 - [Middleware](docs/middleware/README.md)
 - [Requests, headers, params, queries and body access](docs/request/README.md)

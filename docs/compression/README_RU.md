@@ -172,22 +172,6 @@ Provider выбирается по quality клиента. При одинако
 
 Если provider не смог сжать body, но клиент принимает identity, libchttpx пишет warning в logger и отправляет исходный ответ. Если identity запрещён, возвращается пустой `500 Internal Server Error`, а не ответ с неподдерживаемым encoding.
 
-## Benchmark: CPU против bandwidth
-
-Запуск:
-
-```bash
-make benchmark-compression
-```
-
-Benchmark многократно сжимает JSON-like payload размером 1 MiB на gzip levels 1, 5 и 9 и печатает CSV:
-
-```text
-level,input_bytes,compressed_bytes,ratio,throughput_mib_s
-```
-
-`ratio` показывает экономию трафика, а `throughput_mib_s` — стоимость по CPU. Результат зависит от процессора, compiler, версии zlib и данных, поэтому универсальный «лучший» level в документации не фиксируется.
-
 ## Пример
 
 ```bash

@@ -17,7 +17,8 @@
 - multipart forms, несколько файлов, upload policy и автоматическое удаление временных файлов
 - request ID и `Accept-Language` negotiation
 - CORS, cookies, callback-based logging и rate limiting
-- optional gzip-сжатие ответов с `Accept-Encoding` negotiation
+- настраиваемое gzip-сжатие ответов с `Accept-Encoding` negotiation
+- опциональные встроенные metrics, thread-safe snapshot и Prometheus exporter
 - лимиты сервера и graceful shutdown
 
 > `cHTTPX_ResFile()` пока полностью читает файл в память. Streaming response, `sendfile()` и zero-copy output в текущем API не реализованы.
@@ -155,7 +156,6 @@ make test-tls
 
 ```bash
 make test-compression
-make benchmark-compression
 ```
 
 TLS остаётся отдельной опцией сборки: `make TLS=1 libchttpx.so`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
@@ -183,6 +183,7 @@ DLL, import library и headers копируются в `tools/`.
 - [Конфигурация сервера, лимиты, lifecycle и error codes](docs/server/README_RU.md)
 - [Native TLS / HTTPS](docs/tls/README_RU.md)
 - [Сжатие HTTP-ответов](docs/compression/README_RU.md)
+- [Metrics и Prometheus exporter](docs/metrics/README_RU.md)
 - [Routing и route groups](docs/routing/README_RU.md)
 - [Middleware](docs/middleware/README_RU.md)
 - [Requests, headers, params, queries и body](docs/request/README_RU.md)

@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "docs/site/**"
+      - "docs/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -34,6 +34,21 @@ jobs:
           ref: packages
           path: .package-repository
           fetch-depth: 1
+
+      - name: Build documentation content from docs READMEs
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf docs/site/content
+          mkdir -p docs/site/content
+
+          for readme in docs/*/README.md; do
+            module_name="$(basename "$(dirname "$readme")")"
+            if [ "$module_name" = "site" ]; then
+              continue
+            fi
+            cp "$readme" "docs/site/content/${module_name}.md"
+          done
 
       - name: Add APT repository to site
         shell: bash

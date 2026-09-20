@@ -26,6 +26,7 @@ Current defaults:
 | `max_upload_size` | 500 MiB |
 | `max_header_size` | 16383 bytes |
 | `request_id_enabled` | true |
+| `metrics_enabled` | false |
 | `default_language` | `"en"` |
 | `log_level` | `CHTTPX_LOG_INFO` |
 
@@ -63,6 +64,20 @@ config.write_timeout_sec = 20;
 ```
 
 Oversized normal bodies/uploads return `413`; oversized header blocks return `431`. Invalid framing returns `400`.
+
+## Built-in metrics
+
+Metrics are disabled by default. Enable them before creating the server:
+
+```c
+chttpx_config_t config = cHTTPX_DefaultConfig();
+config.metrics_enabled = true;
+
+chttpx_serv_t *server =
+    cHTTPX_AppServer(&app, "main", &config);
+```
+
+See [Metrics and Prometheus](../metrics/README.md) for snapshots and the `/metrics` exporter.
 
 ## Creation failures
 

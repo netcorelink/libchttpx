@@ -16,6 +16,7 @@
 #include "cHTTPX_http.h"
 #include "cHTTPX_tls.h"
 #include "cHTTPX_compression.h"
+#include "cHTTPX_metrics.h"
 
 #include <errno.h>
 
@@ -137,6 +138,7 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
                              .max_upload_size = 500ULL * 1024 * 1024,
                              .max_header_size = BUFFER_SIZE - 1,
                              .request_id_enabled = true,
+                             .metrics_enabled = false,
                              .default_language = "en",
                              .log_level = CHTTPX_LOG_INFO};
 }
@@ -289,6 +291,18 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         free(server->name);
         server->name = NULL;
         return tls_result;
+    }
+
+    int metrics_result = _chttpx_metrics_server_init(server, config->metrics_enabled);
+    if (metrics_result != CHTTPX_OK)
+    {
+        _chttpx_tls_server_cleanup(server);
+        chttpx_close(server->server_fd);
+        invalidate_socket(server);
+        free_server_languages(server);
+        free(server->name);
+        server->name = NULL;
+        return metrics_result;
     }
 
     server->initialized = true;
@@ -504,6 +518,7 @@ static void* handle_client_wrapper(void* arg)
     }
 
     chttpx_handle(context);
+    _chttpx_metrics_connection_closed(server);
     __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
     return NULL;
 }
@@ -532,6 +547,8 @@ void _chttpx_server_listen(chttpx_serv_t* server)
             continue;
         }
 
+        _chttpx_metrics_connection_accepted(server);
+
         if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
         {
             chttpx_close(client_fd);
@@ -549,6 +566,7 @@ void _chttpx_server_listen(chttpx_serv_t* server)
                 static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                 cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
             }
+            _chttpx_metrics_connection_rejected(server);
             chttpx_close(client_fd);
             continue;
         }
@@ -556,6 +574,7 @@ void _chttpx_server_listen(chttpx_serv_t* server)
         chttpx_client_ctx_t* context = malloc(sizeof(*context));
         if (!context)
         {
+            _chttpx_metrics_connection_rejected(server);
             chttpx_close(client_fd);
             continue;
         }
@@ -563,12 +582,15 @@ void _chttpx_server_listen(chttpx_serv_t* server)
         context->server = server;
         context->client_fd = client_fd;
         __atomic_fetch_add(&server->current_clients, 1, __ATOMIC_SEQ_CST);
+        _chttpx_metrics_connection_opened(server);
 
         thread_t thread_id;
         if (_thread_create(&thread_id, handle_client_wrapper, context) != 0)
         {
             free(context);
             chttpx_close(client_fd);
+            _chttpx_metrics_connection_closed(server);
+            _chttpx_metrics_connection_rejected(server);
             __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
             continue;
         }
@@ -608,6 +630,7 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
         server_sleep_ms(10);
 
     _chttpx_tls_server_cleanup(server);
+    _chttpx_metrics_server_cleanup(server);
 
     for (size_t i = 0; i < server->routes_count; i++)
     {

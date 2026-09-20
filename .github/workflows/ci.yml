@@ -79,9 +79,6 @@ jobs:
       - name: Run compression integration tests
         run: make test-compression
 
-      - name: Run compression benchmark
-        run: make benchmark-compression
-
       - name: Verify TLS build keeps compression support
         run: |
           make clean

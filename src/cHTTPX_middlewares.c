@@ -9,6 +9,7 @@
  */
 
 #include "cHTTPX_middlewares.h"
+#include "cHTTPX_metrics.h"
 
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_headers.h"
@@ -126,6 +127,7 @@ static chttpx_middleware_result_t rate_limiter_middleware(chttpx_request_t* req,
     if (entry->requests > state->max_requests)
     {
         *res = cHTTPX_ResJson(cHTTPX_StatusTooManyRequests, "{\"error\": \"too many requests\"}");
+        _chttpx_metrics_rate_limit_failure(server);
         rate_limiter_unlock(state);
         return out;
     }
