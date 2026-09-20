@@ -7,7 +7,8 @@ The root README contains only the project overview, installation methods, and na
 | App runtime | [app](app/README.md) | `cHTTPX_App`, multiple servers, remote registry, `Call`, `CallEx` |
 | Server | [server](server/README.md) | config, limits, lifecycle, errors, shutdown |
 | TLS / HTTPS | [tls](tls/README.md) | optional OpenSSL build, HTTPS server/client, CA verification, mTLS |
-| Compression | [compression](compression/README.md) | Accept-Encoding negotiation, optional gzip, MIME policy, providers |
+| Compression | [compression](compression/README.md) | Accept-Encoding negotiation, gzip, MIME policy, providers |
+| Metrics | [metrics](metrics/README.md) | thread-safe snapshots, request/connection counters, Prometheus exporter |
 | Routing | [routing](routing/README.md) | routers, groups, method helpers, path parameters |
 | Middleware | [middleware](middleware/README.md) | global/router/route before and after middleware |
 | Request | [request](request/README.md) | metadata, headers, params, queries, bearer tokens, body access |
