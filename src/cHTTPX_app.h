@@ -38,12 +38,25 @@ extern "C"
     /** Create an App-managed HTTP server using the supplied configuration. */
     chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttpx_config_t* config);
 
+    /** Return client TLS defaults (peer verification enabled, system trust store). */
+    chttpx_tls_client_config_t cHTTPX_DefaultTLSClientConfig(void);
+
     /**
      * Register a server that lives in another process/container.
      *
-     * Example: http://payment-server:8090
+     * Both http:// and https:// are accepted. HTTPS uses certificate
+     * verification by default.
      */
     int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url);
+
+    /**
+     * Register a remote server with explicit TLS client settings.
+     *
+     * ca_file == NULL uses the system trust store. Client certificate/key
+     * fields are optional and enable mutual TLS when both are provided.
+     */
+    int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url,
+                           const chttpx_tls_client_config_t* tls_config);
 
     /** Start every local server in the App in its own listener thread. */
     int cHTTPX_AppStart(chttpx_app_t* app);
