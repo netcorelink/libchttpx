@@ -20,7 +20,7 @@
 #include <openssl/x509_vfy.h>
 #endif
 
-static void tls_log(chttpx_serv_t* server, const char* prefix)
+void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const char* prefix)
 {
     if (!server || !server->logger || server->log_level > CHTTPX_LOG_ERROR)
         return;
@@ -36,9 +36,9 @@ static void tls_log(chttpx_serv_t* server, const char* prefix)
         snprintf(message, sizeof(message), "%s: %s", prefix, detail);
     else
         snprintf(message, sizeof(message), "%s", prefix);
-    server->logger(CHTTPX_LOG_ERROR, "-", message, server->logger_data);
+    server->logger(CHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", message, server->logger_data);
 #else
-    server->logger(CHTTPX_LOG_ERROR, "-", prefix, server->logger_data);
+    server->logger(CHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", prefix, server->logger_data);
 #endif
 }
 
@@ -139,7 +139,7 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
     return CHTTPX_OK;
 
 tls_error:
-    tls_log(server, "TLS server initialization failed");
+    _chttpx_tls_log_error(server, "-", "TLS server initialization failed");
     free_server_tls_strings(server);
     return CHTTPX_ERR_TLS;
 #endif
@@ -173,13 +173,13 @@ int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** 
     SSL* ssl = SSL_new((SSL_CTX*)server->_tls_ctx);
     if (!ssl)
     {
-        tls_log(server, "TLS session allocation failed");
+        _chttpx_tls_log_error(server, "-", "TLS session allocation failed");
         return CHTTPX_ERR_TLS;
     }
 
     if (SSL_set_fd(ssl, (int)client_fd) != 1 || SSL_accept(ssl) != 1)
     {
-        tls_log(server, "TLS handshake failed");
+        _chttpx_tls_log_error(server, "-", "TLS handshake failed");
         SSL_free(ssl);
         return CHTTPX_ERR_TLS;
     }
