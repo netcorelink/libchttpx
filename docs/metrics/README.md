@@ -23,7 +23,7 @@ The configuration must be set before the server is created.
 ```c
 chttpx_metrics_t metrics;
 
-if (cHTTPX_ServerMetrics(server, &metrics) == CHTTPX_OK) {
+if (cHTTPX_ServerMetrics(server, &metrics) == cHTTPX_OK) {
     printf("requests: %llu\n",
            (unsigned long long)metrics.requests_total);
     printf("in flight: %llu\n",
@@ -65,7 +65,7 @@ chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
 
 cHTTPX_Get(&router, "/health", health_handler);
 
-if (cHTTPX_MetricsRoute(&router, "/metrics") != CHTTPX_OK) {
+if (cHTTPX_MetricsRoute(&router, "/metrics") != cHTTPX_OK) {
     /* metrics are disabled or the route could not be registered */
 }
 ```
