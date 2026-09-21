@@ -1103,7 +1103,7 @@ static chttpx_response_t response_format(uint16_t status, const char* content_ty
                                    .body_size = strlen(fallback)};
     }
     vsnprintf((char*)body, len + 1, fmt, args);
-    return (chttpx_response_t){.status = status, .content_type = content_type, .body = body, .body_size = len, .body_ownership = CHTTPX_BODY_OWNED};
+    return (chttpx_response_t){.status = status, .content_type = content_type, .body = body, .body_size = len, .body_ownership = cHTTPX_BODY_OWNED};
 }
 
 chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...)
@@ -1167,7 +1167,7 @@ chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type, co
                                .content_type = content_type,
                                .body = buffer,
                                .body_size = body_size,
-                               .body_ownership = CHTTPX_BODY_OWNED,
+                               .body_ownership = cHTTPX_BODY_OWNED,
                                .start_ts = {0},
                                .end_ts = {0}};
 }
@@ -1225,7 +1225,7 @@ chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, cons
                                .content_type = content_type,
                                .body = data,
                                .body_size = size,
-                               .body_ownership = CHTTPX_BODY_OWNED,
+                               .body_ownership = cHTTPX_BODY_OWNED,
                                .start_ts = {0},
                                .end_ts = {0}};
 }
@@ -1234,11 +1234,11 @@ void cHTTPX_ResponseCleanup(chttpx_response_t* res)
 {
     if (!res)
         return;
-    if (res->body_ownership == CHTTPX_BODY_OWNED)
+    if (res->body_ownership == cHTTPX_BODY_OWNED)
         free((void*)res->body);
     res->body = NULL;
     res->body_size = 0;
-    res->body_ownership = CHTTPX_BODY_BORROWED;
+    res->body_ownership = cHTTPX_BODY_BORROWED;
 }
 
 chttpx_response_t cHTTPX_ResNoContent(void)
