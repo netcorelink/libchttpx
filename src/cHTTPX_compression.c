@@ -132,11 +132,11 @@ static int valid_encoding_name(const char* encoding)
 static int duplicate_strings(const char** source, size_t count, char*** destination)
 {
     if (!destination || (count > 0 && !source))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     char** copy = count ? calloc(count, sizeof(*copy)) : NULL;
     if (count && !copy)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     for (size_t i = 0; i < count; i++)
     {
@@ -145,7 +145,7 @@ static int duplicate_strings(const char** source, size_t count, char*** destinat
             for (size_t j = 0; j < i; j++)
                 free(copy[j]);
             free(copy);
-            return CHTTPX_ERR_INVALID_ARGUMENT;
+            return cHTTPX_ERR_INVALID_ARGUMENT;
         }
 
         copy[i] = strdup(source[i]);
@@ -154,12 +154,12 @@ static int duplicate_strings(const char** source, size_t count, char*** destinat
             for (size_t j = 0; j < i; j++)
                 free(copy[j]);
             free(copy);
-            return CHTTPX_ERR_MEMORY;
+            return cHTTPX_ERR_MEMORY;
         }
     }
 
     *destination = copy;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 static void free_compression_state(chttpx_compression_state_t* state)
@@ -192,23 +192,23 @@ static int gzip_encode_buffer(const unsigned char* input,
     (void)user_data;
 
     if (!input || input_size == 0 || !output || !output_size || level < -1 || level > 9)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (input_size > (size_t)ULONG_MAX)
-        return CHTTPX_ERR_LIMIT;
+        return cHTTPX_ERR_LIMIT;
 
     z_stream stream;
     memset(&stream, 0, sizeof(stream));
 
     int zresult = deflateInit2(&stream, level, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY);
     if (zresult != Z_OK)
-        return CHTTPX_ERR_COMPRESSION;
+        return cHTTPX_ERR_COMPRESSION;
 
     uLong bound_value = deflateBound(&stream, (uLong)input_size);
     if (bound_value == 0 || (uintmax_t)bound_value > (uintmax_t)SIZE_MAX)
     {
         deflateEnd(&stream);
-        return CHTTPX_ERR_LIMIT;
+        return cHTTPX_ERR_LIMIT;
     }
 
     size_t capacity = (size_t)bound_value;
@@ -216,7 +216,7 @@ static int gzip_encode_buffer(const unsigned char* input,
     if (!buffer)
     {
         deflateEnd(&stream);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
 
     size_t input_offset = 0;
@@ -272,12 +272,12 @@ static int gzip_encode_buffer(const unsigned char* input,
     deflateEnd(&stream);
     *output = buffer;
     *output_size = output_offset;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 compression_error:
     deflateEnd(&stream);
     free(buffer);
-    return CHTTPX_ERR_COMPRESSION;
+    return cHTTPX_ERR_COMPRESSION;
 }
 
 chttpx_compression_config_t cHTTPX_CompressionDefault(void)
@@ -300,7 +300,7 @@ static int copy_providers(const chttpx_compression_provider_t* providers,
                           char*** encodings_out)
 {
     if (!providers_out || !encodings_out || (count > 0 && !providers))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_compression_provider_t* provider_copy = count ? calloc(count, sizeof(*provider_copy)) : NULL;
     char** encoding_copy = count ? calloc(count, sizeof(*encoding_copy)) : NULL;
@@ -308,7 +308,7 @@ static int copy_providers(const chttpx_compression_provider_t* providers,
     {
         free(provider_copy);
         free(encoding_copy);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
 
     for (size_t i = 0; i < count; i++)
@@ -319,7 +319,7 @@ static int copy_providers(const chttpx_compression_provider_t* providers,
                 free(encoding_copy[j]);
             free(provider_copy);
             free(encoding_copy);
-            return CHTTPX_ERR_INVALID_ARGUMENT;
+            return cHTTPX_ERR_INVALID_ARGUMENT;
         }
 
         encoding_copy[i] = strdup(providers[i].encoding);
@@ -329,7 +329,7 @@ static int copy_providers(const chttpx_compression_provider_t* providers,
                 free(encoding_copy[j]);
             free(provider_copy);
             free(encoding_copy);
-            return CHTTPX_ERR_MEMORY;
+            return cHTTPX_ERR_MEMORY;
         }
 
         provider_copy[i] = providers[i];
@@ -338,7 +338,7 @@ static int copy_providers(const chttpx_compression_provider_t* providers,
 
     *providers_out = provider_copy;
     *encodings_out = encoding_copy;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 static int prepare_compression_state(const chttpx_compression_config_t* config, chttpx_compression_state_t** state_out)
@@ -347,31 +347,31 @@ static int prepare_compression_state(const chttpx_compression_config_t* config, 
         (config->include_types_count > 0 && !config->include_types) ||
         (config->exclude_types_count > 0 && !config->exclude_types) ||
         (config->providers_count > 0 && !config->providers))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (config->providers_count == 0 && (config->level < -1 || config->level > 9))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_compression_state_t* state = calloc(1, sizeof(*state));
     if (!state)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     state->config = *config;
 
     int result = duplicate_strings(config->include_types, config->include_types_count, &state->include_types);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         goto error;
     state->config.include_types = (const char**)state->include_types;
 
     result = duplicate_strings(config->exclude_types, config->exclude_types_count, &state->exclude_types);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         goto error;
     state->config.exclude_types = (const char**)state->exclude_types;
 
     if (config->providers_count > 0)
     {
         result = copy_providers(config->providers, config->providers_count, &state->providers, &state->provider_encodings);
-        if (result != CHTTPX_OK)
+        if (result != cHTTPX_OK)
             goto error;
     }
     else
@@ -382,14 +382,14 @@ static int prepare_compression_state(const chttpx_compression_config_t* config, 
             .user_data = NULL,
         };
         result = copy_providers(&gzip_provider, 1, &state->providers, &state->provider_encodings);
-        if (result != CHTTPX_OK)
+        if (result != cHTTPX_OK)
             goto error;
         state->config.providers_count = 1;
     }
 
     state->config.providers = state->providers;
     *state_out = state;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 error:
     free_compression_state(state);
@@ -836,7 +836,7 @@ static chttpx_middleware_result_t compression_middleware(chttpx_request_t* reque
     unsigned char* compressed = NULL;
     size_t compressed_size = 0;
     int result = selected->encode_buffer(response->body, response->body_size, state->config.level, &compressed, &compressed_size, selected->user_data);
-    if (result != CHTTPX_OK || !compressed || compressed_size == 0)
+    if (result != cHTTPX_OK || !compressed || compressed_size == 0)
     {
         free(compressed);
         compression_log(request, CHTTPX_LOG_WARN, "response compression provider failed; using identity when allowed");
@@ -882,7 +882,7 @@ static chttpx_middleware_result_t compression_middleware(chttpx_request_t* reque
 int cHTTPX_CompressionUse(chttpx_serv_t* server, const chttpx_compression_config_t* config)
 {
     if (!server || !server->initialized)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_compression_config_t defaults;
     if (!config)
@@ -893,11 +893,11 @@ int cHTTPX_CompressionUse(chttpx_serv_t* server, const chttpx_compression_config
 
     if (!compression_middleware_registered(server, compression_middleware) &&
         server->middleware.after_middleware_count >= MAX_MIDDLEWARES)
-        return CHTTPX_ERR_LIMIT;
+        return cHTTPX_ERR_LIMIT;
 
     chttpx_compression_state_t* state = NULL;
     int result = prepare_compression_state(config, &state);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         return result;
 
     chttpx_compression_state_t* old_state = (chttpx_compression_state_t*)server->compression_state;
@@ -907,16 +907,16 @@ int cHTTPX_CompressionUse(chttpx_serv_t* server, const chttpx_compression_config
     if (!compression_middleware_registered(server, compression_middleware))
         cHTTPX_MiddlewareUseAfter(server, compression_middleware);
 
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_RouteCompression(chttpx_route_t* route, bool enabled)
 {
     if (!route)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     route->compression_disabled = !enabled;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 void cHTTPX_ResponseCompression(chttpx_response_t* response, bool enabled)
