@@ -25,8 +25,8 @@ static void default_logger(chttpx_log_level_t level, const char* request_id, con
 {
     (void)user_data;
     static const char* names[] = {"DEBUG", "INFO", "WARN", "ERROR", "OFF"};
-    if (level < CHTTPX_LOG_DEBUG || level > CHTTPX_LOG_OFF)
-        level = CHTTPX_LOG_ERROR;
+    if (level < cHTTPX_LOG_DEBUG || level > cHTTPX_LOG_OFF)
+        level = cHTTPX_LOG_ERROR;
     fprintf(stderr, "[%s] request_id=%s %s\n", names[level], request_id && *request_id ? request_id : "-", message ? message : "");
 }
 
@@ -130,7 +130,7 @@ static void free_route_upload_policy(chttpx_route_t* registered)
 chttpx_config_t cHTTPX_DefaultConfig(void)
 {
     return (chttpx_config_t){.port = 8080,
-                             .network_mode = CHTTPX_NETWORK_DUAL,
+                             .network_mode = cHTTPX_NETWORK_DUAL,
                              .max_clients = MAX_CLIENTS_DEFAULT,
                              .read_timeout_sec = 30,
                              .write_timeout_sec = 30,
@@ -141,13 +141,13 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
                              .request_id_enabled = true,
                              .metrics_enabled = false,
                              .default_language = "en",
-                             .log_level = CHTTPX_LOG_INFO};
+                             .log_level = cHTTPX_LOG_INFO};
 }
 
 int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config)
 {
     if (!server || !app || !name || !*name || !config || config->max_clients == 0 ||
-        config->network_mode < CHTTPX_NETWORK_IPV4 || config->network_mode > CHTTPX_NETWORK_DUAL ||
+        config->network_mode < cHTTPX_NETWORK_IPV4 || config->network_mode > cHTTPX_NETWORK_DUAL ||
         (config->languages_count > 0 && !config->languages))
         return cHTTPX_ERR_INVALID_ARGUMENT;
 
@@ -184,14 +184,14 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
 
     _recovery_init();
 
-    int family = config->network_mode == CHTTPX_NETWORK_IPV4 ? AF_INET : AF_INET6;
+    int family = config->network_mode == cHTTPX_NETWORK_IPV4 ? AF_INET : AF_INET6;
     server->server_fd = socket(family, SOCK_STREAM, 0);
     if (!socket_valid(server->server_fd))
         goto socket_error;
 
     if (family == AF_INET6)
     {
-        int ipv6_only = config->network_mode == CHTTPX_NETWORK_IPV6 ? 1 : 0;
+        int ipv6_only = config->network_mode == cHTTPX_NETWORK_IPV6 ? 1 : 0;
         if (setsockopt(server->server_fd, IPPROTO_IPV6, IPV6_V6ONLY,
 #ifdef CHTTPX_PLATFORM_WINDOWS
                        (const char*)&ipv6_only,
