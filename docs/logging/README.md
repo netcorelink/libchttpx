@@ -30,17 +30,17 @@ cHTTPX_SetLogger(
     server,
     logger,
     NULL,
-    CHTTPX_LOG_INFO
+    cHTTPX_LOG_INFO
 );
 ```
 
 Levels:
 
-- `CHTTPX_LOG_DEBUG`
-- `CHTTPX_LOG_INFO`
-- `CHTTPX_LOG_WARN`
-- `CHTTPX_LOG_ERROR`
-- `CHTTPX_LOG_OFF`
+- `cHTTPX_LOG_DEBUG`
+- `cHTTPX_LOG_INFO`
+- `cHTTPX_LOG_WARN`
+- `cHTTPX_LOG_ERROR`
+- `cHTTPX_LOG_OFF`
 
 `user_data` is passed back to the callback and can point to an application logging sink.
 
@@ -59,14 +59,14 @@ cHTTPX_SetLogger(
     public_server,
     public_logger,
     public_sink,
-    CHTTPX_LOG_INFO
+    cHTTPX_LOG_INFO
 );
 
 cHTTPX_SetLogger(
     admin_server,
     audit_logger,
     audit_sink,
-    CHTTPX_LOG_DEBUG
+    cHTTPX_LOG_DEBUG
 );
 ```
 
