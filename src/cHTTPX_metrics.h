@@ -57,7 +57,7 @@ extern "C"
     /**
      * Copy a consistent metrics snapshot.
      *
-     * Returns CHTTPX_OK on success or CHTTPX_ERR_UNAVAILABLE when metrics are
+     * Returns cHTTPX_OK on success or cHTTPX_ERR_UNAVAILABLE when metrics are
      * disabled for the server.
      */
     int cHTTPX_ServerMetrics(struct chttpx_serv* server, chttpx_metrics_t* metrics);
