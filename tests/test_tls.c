@@ -19,7 +19,7 @@ int main(int argc, char** argv)
     }
 
     chttpx_app_t app;
-    assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppInit(&app) == cHTTPX_OK);
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 0;
@@ -37,14 +37,14 @@ int main(int argc, char** argv)
     snprintf(base_url, sizeof(base_url), "https://localhost:%u", server->port);
 
     /* HTTPS verifies certificates by default: the self-signed test cert must fail. */
-    assert(cHTTPX_AppRemote(&app, "untrusted", base_url) == CHTTPX_OK);
+    assert(cHTTPX_AppRemote(&app, "untrusted", base_url) == cHTTPX_OK);
 
     chttpx_tls_client_config_t tls = cHTTPX_DefaultTLSClientConfig();
     assert(tls.verify_peer);
     tls.ca_file = argv[1];
-    assert(cHTTPX_AppRemoteEx(&app, "trusted", base_url, &tls) == CHTTPX_OK);
+    assert(cHTTPX_AppRemoteEx(&app, "trusted", base_url, &tls) == cHTTPX_OK);
 
-    assert(cHTTPX_AppStart(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
 
     chttpx_request_t source = {0};
     source._server = server;
@@ -57,11 +57,11 @@ int main(int argc, char** argv)
     };
 
     chttpx_response_t rejected = {0};
-    assert(cHTTPX_CallEx(&source, "untrusted", cHTTPX_MethodGet, "/health", &options, &rejected) == CHTTPX_ERR_TLS);
+    assert(cHTTPX_CallEx(&source, "untrusted", cHTTPX_MethodGet, "/health", &options, &rejected) == cHTTPX_ERR_TLS);
     cHTTPX_ResponseCleanup(&rejected);
 
     chttpx_response_t response = {0};
-    assert(cHTTPX_CallEx(&source, "trusted", cHTTPX_MethodGet, "/health", &options, &response) == CHTTPX_OK);
+    assert(cHTTPX_CallEx(&source, "trusted", cHTTPX_MethodGet, "/health", &options, &response) == cHTTPX_OK);
     assert(response.status == cHTTPX_StatusOK);
     assert(response.body != NULL);
     assert(response.body_size == strlen("{\"secure\":true}"));
