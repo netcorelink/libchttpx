@@ -839,7 +839,7 @@ static chttpx_middleware_result_t compression_middleware(chttpx_request_t* reque
     if (result != cHTTPX_OK || !compressed || compressed_size == 0)
     {
         free(compressed);
-        compression_log(request, CHTTPX_LOG_WARN, "response compression provider failed; using identity when allowed");
+        compression_log(request, cHTTPX_LOG_WARN, "response compression provider failed; using identity when allowed");
         if (identity_quality <= 0.0)
             make_empty_error(response, cHTTPX_StatusInternalServerError);
         return next;
@@ -855,25 +855,25 @@ static chttpx_middleware_result_t compression_middleware(chttpx_request_t* reque
     if (!add_compression_headers(response, selected->encoding))
     {
         free(compressed);
-        compression_log(request, CHTTPX_LOG_WARN, "response compression headers could not be added; using identity when allowed");
+        compression_log(request, cHTTPX_LOG_WARN, "response compression headers could not be added; using identity when allowed");
         if (identity_quality <= 0.0)
             make_empty_error(response, cHTTPX_StatusInternalServerError);
         return next;
     }
 
-    if (response->body_ownership == CHTTPX_BODY_OWNED)
+    if (response->body_ownership == cHTTPX_BODY_OWNED)
         free((void*)response->body);
 
     response->body = compressed;
     response->body_size = compressed_size;
-    response->body_ownership = CHTTPX_BODY_OWNED;
+    response->body_ownership = cHTTPX_BODY_OWNED;
 
-    if (server->logger && server->log_level <= CHTTPX_LOG_DEBUG)
+    if (server->logger && server->log_level <= cHTTPX_LOG_DEBUG)
     {
         char message[192];
         snprintf(message, sizeof(message), "compressed response encoding=%s original=%zu compressed=%zu",
                  selected->encoding, original_size, compressed_size);
-        server->logger(CHTTPX_LOG_DEBUG, request->request_id, message, server->logger_data);
+        server->logger(cHTTPX_LOG_DEBUG, request->request_id, message, server->logger_data);
     }
 
     return next;
