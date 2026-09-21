@@ -74,6 +74,14 @@ extern "C"
         cHTTPX_LOG_OFF
     } chttpx_log_level_t;
 
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_LOG_DEBUG cHTTPX_LOG_DEBUG
+#define CHTTPX_LOG_INFO cHTTPX_LOG_INFO
+#define CHTTPX_LOG_WARN cHTTPX_LOG_WARN
+#define CHTTPX_LOG_ERROR cHTTPX_LOG_ERROR
+#define CHTTPX_LOG_OFF cHTTPX_LOG_OFF
+#endif
+
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef enum
@@ -82,6 +90,12 @@ extern "C"
         cHTTPX_NETWORK_IPV6,
         cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_NETWORK_IPV4 cHTTPX_NETWORK_IPV4
+#define CHTTPX_NETWORK_IPV6 cHTTPX_NETWORK_IPV6
+#define CHTTPX_NETWORK_DUAL cHTTPX_NETWORK_DUAL
+#endif
 
     typedef struct
     {
