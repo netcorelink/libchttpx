@@ -140,7 +140,7 @@ extern "C"
      * @param data Buffer
      * to send.
      * @param size Buffer size in bytes.
-     * @return CHTTPX_OK on success, otherwise a negative error code.
+     * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 
