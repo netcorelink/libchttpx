@@ -157,6 +157,23 @@ static void exchange(uint16_t port, const char* request, char* response, size_t 
     exchange_family(port, AF_INET, request, response, response_size);
 }
 
+static chttpx_socket_t open_idle_connection(uint16_t port)
+{
+    chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    assert(socket_fd != INVALID_SOCKET);
+#else
+    assert(socket_fd >= 0);
+#endif
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
+    return socket_fd;
+}
+
+
 static void exchange_ipv6(uint16_t port, const char* request, char* response, size_t response_size)
 {
     exchange_family(port, AF_INET6, request, response, response_size);
@@ -251,6 +268,22 @@ int main(void)
     wait_until_listening(internal_api);
 
     char response[4096];
+
+    chttpx_socket_t idle_connections[40];
+    for (size_t i = 0; i < CHTTPX_ARRAY_LEN(idle_connections); i++)
+        idle_connections[i] = open_idle_connection(public_port);
+
+    struct timespec concurrency_start;
+    struct timespec concurrency_end;
+    clock_gettime(CLOCK_MONOTONIC, &concurrency_start);
+    exchange(public_port, "GET /ip HTTP/1.1\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    clock_gettime(CLOCK_MONOTONIC, &concurrency_end);
+    double concurrency_seconds = (double)(concurrency_end.tv_sec - concurrency_start.tv_sec) + (double)(concurrency_end.tv_nsec - concurrency_start.tv_nsec) / 1000000000.0;
+    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    assert(concurrency_seconds < 1.0);
+
+    for (size_t i = 0; i < CHTTPX_ARRAY_LEN(idle_connections); i++)
+        chttpx_close(idle_connections[i]);
 
     exchange_ipv6(public_port,
                   "GET /ip HTTP/1.1\r\n"

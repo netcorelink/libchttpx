@@ -1313,6 +1313,7 @@ extern "C"
         void* rate_limiter_state;
         void* compression_state;
         void* metrics_state;
+        void* runtime_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;

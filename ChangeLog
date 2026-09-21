@@ -1,5 +1,7 @@
 - Unreleased
 
+Replaced per-connection blocking socket handling with a non-blocking event-driven runtime. Linux uses epoll, macOS/BSD uses kqueue and Windows uses WSAPoll; complete requests are dispatched to a fixed internal 32-thread worker pool and responses return to the event loop for non-blocking writes. Worker count is intentionally not configurable through the public server config.
+
 Added request-scoped memory and contexts, response ownership, config-based initialization, typed values, JSON binding and builder APIs, route groups and scoped middleware, multipart/form parsing, upload policies, request IDs, Accept-Language selection, callback logging, chunked request decoding, body limits, graceful shutdown, and expanded tests/documentation.
 
 Fixed multipart uploads buffering the complete request in RAM, truncated fixed-length body acceptance, partial response sends, incorrect status reason phrases, OPTIONS fallthrough, temporary upload cleanup, unsafe query/cookie tokenization, current-client races and busy looping, router prefix leaks, fatal library exit calls, and unsafe signal/longjmp recovery.

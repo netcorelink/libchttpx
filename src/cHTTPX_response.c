@@ -402,95 +402,122 @@ static int append_response_header(char* buffer, size_t capacity, size_t* length,
  *
  * This function formats the HTTP response headers and body according to HTTP/1.1.
  */
-static void send_response(chttpx_request_t* req, chttpx_response_t res)
+static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, char** output, size_t* output_size)
 {
-    chttpx_serv_t* server = req ? req->_server : NULL;
+    if (!req || !output || !output_size)
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+
+    *output = NULL;
+    *output_size = 0;
+    chttpx_serv_t* server = req->_server;
     size_t capacity = 1024;
     for (size_t i = 0; i < res.headers_count; i++)
-        capacity += strlen(res.headers[i].name) + strlen(res.headers[i].value) + 4;
+    {
+        size_t name_size = strlen(res.headers[i].name);
+        size_t value_size = strlen(res.headers[i].value);
+        if (capacity > SIZE_MAX - name_size - value_size - 4)
+            return CHTTPX_ERR_LIMIT;
+        capacity += name_size + value_size + 4;
+    }
     if (server && server->cors.enabled)
-        capacity += strlen(server->cors.methods) + strlen(server->cors.headers) + MAX_HEADER_VALUE + 512;
-    char* buffer = malloc(capacity);
-    if (!buffer)
-        return;
+    {
+        size_t methods_size = server->cors.methods ? strlen(server->cors.methods) : 0;
+        size_t headers_size = server->cors.headers ? strlen(server->cors.headers) : 0;
+        if (capacity > SIZE_MAX - methods_size - headers_size - MAX_HEADER_VALUE - 512)
+            return CHTTPX_ERR_LIMIT;
+        capacity += methods_size + headers_size + MAX_HEADER_VALUE + 512;
+    }
+
+    char* header = malloc(capacity);
+    if (!header)
+        return CHTTPX_ERR_MEMORY;
     size_t length = 0;
+    const char* allowed_origin = server && server->cors.enabled ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
-    /* Cors */
-    const char* allowed_origin = req ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
+    if (!append_response_header(header, capacity, &length, "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n", res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
+        goto limit_error;
 
-    if (!append_response_header(buffer, capacity, &length,
-                                "HTTP/1.1 %d %s\r\n"
-                                "Content-Type: %s\r\n"
-                                "Content-Length: %zu\r\n"
-                                "Connection: close\r\n",
-                                res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET,
-                                res.body_size))
-        goto done;
-
-    /* Etag */
     const char* etag = generate_etag(res.body, res.body_size);
     if (etag)
     {
-        append_response_header(buffer, capacity, &length, "Etag: %s\r\n", etag);
+        if (!append_response_header(header, capacity, &length, "Etag: %s\r\n", etag))
+        {
+            free((void*)etag);
+            goto limit_error;
+        }
         free((void*)etag);
     }
 
     if (allowed_origin)
     {
-        if (!append_response_header(buffer, capacity, &length,
-                                    "Access-Control-Allow-Origin: %s\r\n"
-                                    "Access-Control-Allow-Methods: %s\r\n"
-                                    "Access-Control-Allow-Headers: %s\r\n"
-                                    "Access-Control-Allow-Credentials: true\r\n",
-                                    allowed_origin, server->cors.methods, server->cors.headers))
-            goto done;
+        if (!append_response_header(header, capacity, &length, "Access-Control-Allow-Origin: %s\r\nAccess-Control-Allow-Methods: %s\r\nAccess-Control-Allow-Headers: %s\r\nAccess-Control-Allow-Credentials: true\r\n", allowed_origin, server->cors.methods, server->cors.headers))
+            goto limit_error;
     }
 
-    if (req && req->request_id[0])
-        if (!append_response_header(buffer, capacity, &length, "X-Request-ID: %s\r\n", req->request_id))
-            goto done;
+    if (req->request_id[0] && !append_response_header(header, capacity, &length, "X-Request-ID: %s\r\n", req->request_id))
+        goto limit_error;
 
-    /* Add all request headers */
     for (size_t i = 0; i < res.headers_count; i++)
+        if (!append_response_header(header, capacity, &length, "%s: %s\r\n", res.headers[i].name, res.headers[i].value))
+            goto limit_error;
+
+    if (!append_response_header(header, capacity, &length, "\r\n"))
+        goto limit_error;
+    if (res.body_size > SIZE_MAX - length)
+        goto limit_error;
+
+    size_t total = length + res.body_size;
+    char* response = malloc(total ? total : 1);
+    if (!response)
     {
-        if (!append_response_header(buffer, capacity, &length, "%s: %s\r\n", res.headers[i].name, res.headers[i].value))
-            goto done;
+        free(header);
+        return CHTTPX_ERR_MEMORY;
     }
+    memcpy(response, header, length);
+    if (res.body && res.body_size)
+        memcpy(response + length, res.body, res.body_size);
+    free(header);
+    *output = response;
+    *output_size = total;
+    return CHTTPX_OK;
 
-    if (!append_response_header(buffer, capacity, &length, "\r\n"))
-        goto done;
+limit_error:
+    free(header);
+    return CHTTPX_ERR_LIMIT;
+}
 
-    int write_result = _chttpx_io_send_all(req->client_fd, req->_tls_session, buffer, length);
-    if (write_result != CHTTPX_OK)
-    {
-        if (write_result == CHTTPX_ERR_TLS)
-            _chttpx_tls_log_error(server, req->request_id, "TLS response-header write failed");
-        goto done;
-    }
-
-    if (res.body && res.body_size > 0)
-    {
-        write_result = _chttpx_io_send_all(req->client_fd, req->_tls_session, res.body, res.body_size);
-        if (write_result == CHTTPX_ERR_TLS)
-            _chttpx_tls_log_error(server, req->request_id, "TLS response-body write failed");
-    }
-
-done:
-    free(buffer);
+static void send_response(chttpx_request_t* req, chttpx_response_t res)
+{
+    char* response = NULL;
+    size_t response_size = 0;
+    int build_result = build_response_buffer(req, res, &response, &response_size);
+    if (build_result != CHTTPX_OK)
+        return;
+    int write_result = _chttpx_io_send_all(req->client_fd, req->_tls_session, response, response_size);
+    if (write_result == CHTTPX_ERR_TLS)
+        _chttpx_tls_log_error(req->_server, req->request_id, "TLS response write failed");
+    free(response);
 }
 
 /* Handle browser CORS preflight without hijacking ordinary OPTIONS routes. */
-static int is_cors_preflight(chttpx_request_t* req)
+static int build_cors_preflight(chttpx_request_t* req, chttpx_response_t* res)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;
-    if (!req || !server || !server->cors.enabled || strcasecmp(req->method, cHTTPX_MethodOptions) != 0)
+    if (!req || !res || !server || !server->cors.enabled || strcasecmp(req->method, cHTTPX_MethodOptions) != 0)
         return 0;
-
     if (!cHTTPX_HeaderGet(req, "Origin") || !cHTTPX_HeaderGet(req, "Access-Control-Request-Method"))
         return 0;
+    *res = (chttpx_response_t){.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
+    return 1;
+}
 
-    chttpx_response_t res = {.status = cHTTPX_StatusNoContent, .content_type = cHTTPX_CTYPE_TEXT, .body = NULL, .body_size = 0};
+static int is_cors_preflight(chttpx_request_t* req)
+{
+    chttpx_response_t res = {0};
+    if (!build_cors_preflight(req, &res))
+        return 0;
     send_response(req, res);
+    cHTTPX_ResponseCleanup(&res);
     return 1;
 }
 
@@ -677,6 +704,113 @@ static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t
     return req;
 }
 
+static void close_prefetched_stream(void* resource)
+{
+    if (resource)
+        fclose((FILE*)resource);
+}
+
+static void free_request_object(chttpx_request_t* req)
+{
+    if (!req)
+        return;
+    cHTTPX_RequestCleanup(req);
+    chttpx_free_req_cookie(req);
+    free(req->method);
+    free(req->path);
+    free(req->body);
+    for (size_t i = 0; i < req->query_count; i++)
+    {
+        free(req->query[i].name);
+        free(req->query[i].value);
+    }
+    free(req->query);
+    free(req);
+}
+
+static chttpx_request_t* parse_prefetched_request(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length)
+{
+    chttpx_request_t* req = calloc(1, sizeof(*req));
+    if (!req)
+    {
+        free(body);
+        if (body_stream)
+            fclose(body_stream);
+        return NULL;
+    }
+
+    req->body = body;
+    req->body_size = body_size;
+    req->content_length = content_length;
+    req->client_fd = client_fd;
+    req->_server = server;
+    req->_tls_session = tls_session;
+
+    char method[16];
+    char path[CHTTPX_MAX_PATH];
+    char protocol[16];
+    if (!headers || sscanf(headers, "%15s %4095s %15s", method, path, protocol) != 3)
+    {
+        req->_parse_status = cHTTPX_StatusBadRequest;
+        return req;
+    }
+
+    req->method = strdup(method);
+    req->path = strdup(path);
+    if (!req->method || !req->path)
+    {
+        req->_parse_status = cHTTPX_StatusInternalServerError;
+        return req;
+    }
+
+    const char* client_ip = cHTTPX_ClientInetIP(client_fd);
+    if (client_ip)
+        snprintf(req->client_ip, sizeof(req->client_ip), "%s", client_ip);
+
+    _parse_req_headers(req, headers, header_size);
+    if (req->_parse_status)
+        return req;
+
+    _parse_req_cookies(req);
+    if (req->_parse_status)
+        return req;
+
+    const char* content_type = cHTTPX_HeaderGet(req, "Content-Type");
+    if (content_type)
+        snprintf(req->content_type, sizeof(req->content_type), "%s", content_type);
+
+    const char* user_agent = cHTTPX_HeaderGet(req, "User-Agent");
+    if (user_agent)
+        snprintf(req->user_agent, sizeof(req->user_agent), "%s", user_agent);
+
+    snprintf(req->protocol, sizeof(req->protocol), "%s", protocol);
+    set_request_id(req);
+    set_request_language(req);
+
+    char* query = strchr(req->path, '?');
+    if (query)
+    {
+        *query = '\0';
+        _parse_req_query(req, query + 1);
+        if (req->_parse_status)
+            return req;
+    }
+
+    if (body_stream)
+    {
+        if (cHTTPX_Defer(req, body_stream, close_prefetched_stream) != 0)
+        {
+            fclose(body_stream);
+            req->_parse_status = cHTTPX_StatusInternalServerError;
+            return req;
+        }
+        req->_multipart_stream = body_stream;
+    }
+
+    _parse_media(req, headers, header_size);
+    return req;
+}
+
 int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_response_t* res)
 {
     if (!server || !server->initialized || !req || !res || !req->method || !req->path)
@@ -777,6 +911,42 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
 
     postmiddleware_logging_write(req, res);
     return CHTTPX_OK;
+}
+
+int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size)
+{
+    if (!server || !headers || !output || !output_size)
+    {
+        free(body);
+        if (body_stream)
+            fclose(body_stream);
+        return CHTTPX_ERR_INVALID_ARGUMENT;
+    }
+
+    *output = NULL;
+    *output_size = 0;
+    chttpx_request_t* req = parse_prefetched_request(server, client_fd, tls_session, headers, header_size, body, body_size, body_stream, content_length);
+    if (!req)
+        return CHTTPX_ERR_MEMORY;
+
+    chttpx_response_t res = {0};
+    if (req->_parse_status)
+    {
+        _chttpx_metrics_parser_failure(server);
+        const char* message = req->_parse_status == cHTTPX_StatusPayloadTooLarge ? "payload too large" : (req->_parse_status == cHTTPX_StatusInternalServerError ? "internal server error" : "invalid request");
+        res = cHTTPX_ResError((uint16_t)req->_parse_status, message);
+    }
+    else if (!build_cors_preflight(req, &res))
+    {
+        int dispatch_result = _chttpx_dispatch(server, req, &res);
+        if (dispatch_result != CHTTPX_OK)
+            res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "request dispatch failed");
+    }
+
+    int result = build_response_buffer(req, res, output, output_size);
+    cHTTPX_ResponseCleanup(&res);
+    free_request_object(req);
+    return result;
 }
 
 /**

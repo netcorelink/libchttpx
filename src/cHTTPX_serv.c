@@ -17,6 +17,7 @@
 #include "cHTTPX_tls.h"
 #include "cHTTPX_compression.h"
 #include "cHTTPX_metrics.h"
+#include "cHTTPX_runtime.h"
 
 #include <errno.h>
 
@@ -305,6 +306,19 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         return metrics_result;
     }
 
+    int runtime_result = _chttpx_runtime_init(server);
+    if (runtime_result != CHTTPX_OK)
+    {
+        _chttpx_metrics_server_cleanup(server);
+        _chttpx_tls_server_cleanup(server);
+        chttpx_close(server->server_fd);
+        invalidate_socket(server);
+        free_server_languages(server);
+        free(server->name);
+        server->name = NULL;
+        return runtime_result;
+    }
+
     server->initialized = true;
     return CHTTPX_OK;
 
@@ -507,22 +521,6 @@ void cHTTPX_SetLogger(chttpx_serv_t* server, chttpx_logger_fn logger, void* user
     server->log_level = level;
 }
 
-static void* handle_client_wrapper(void* arg)
-{
-    chttpx_client_ctx_t* context = arg;
-    chttpx_serv_t* server = context ? context->server : NULL;
-    if (!context || !server)
-    {
-        free(context);
-        return NULL;
-    }
-
-    chttpx_handle(context);
-    _chttpx_metrics_connection_closed(server);
-    __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-    return NULL;
-}
-
 void _chttpx_server_listen(chttpx_serv_t* server)
 {
     if (!server || !server->initialized || !socket_valid(server->server_fd))
@@ -532,76 +530,7 @@ void _chttpx_server_listen(chttpx_serv_t* server)
     if (!__atomic_compare_exchange_n(&server->listening, &expected, true, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
         return;
 
-    while (!__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
-    {
-        chttpx_socket_t client_fd = accept(server->server_fd, NULL, NULL);
-        if (!socket_valid(client_fd))
-        {
-            if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
-                break;
-#ifdef CHTTPX_PLATFORM_POSIX
-            if (errno == EINTR)
-                continue;
-#endif
-            server_sleep_ms(10);
-            continue;
-        }
-
-        _chttpx_metrics_connection_accepted(server);
-
-        if (__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE))
-        {
-            chttpx_close(client_fd);
-            break;
-        }
-
-        if (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
-        {
-            /*
-             * A TLS connection has not completed its handshake yet, so raw
-             * HTTP bytes must never be written to it here.
-             */
-            if (!server->tls.enabled)
-            {
-                static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                cHTTPX_SendAll(client_fd, busy, sizeof(busy) - 1);
-            }
-            _chttpx_metrics_connection_rejected(server);
-            chttpx_close(client_fd);
-            continue;
-        }
-
-        chttpx_client_ctx_t* context = malloc(sizeof(*context));
-        if (!context)
-        {
-            _chttpx_metrics_connection_rejected(server);
-            chttpx_close(client_fd);
-            continue;
-        }
-
-        context->server = server;
-        context->client_fd = client_fd;
-        __atomic_fetch_add(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-        _chttpx_metrics_connection_opened(server);
-
-        thread_t thread_id;
-        if (_thread_create(&thread_id, handle_client_wrapper, context) != 0)
-        {
-            free(context);
-            chttpx_close(client_fd);
-            _chttpx_metrics_connection_closed(server);
-            _chttpx_metrics_connection_rejected(server);
-            __atomic_fetch_sub(&server->current_clients, 1, __ATOMIC_SEQ_CST);
-            continue;
-        }
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        CloseHandle(thread_id);
-#else
-        pthread_detach(thread_id);
-#endif
-    }
-
+    _chttpx_runtime_listen(server);
     __atomic_store_n(&server->listening, false, __ATOMIC_RELEASE);
 }
 
@@ -611,6 +540,12 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
         return;
 
     __atomic_store_n(&server->shutdown_requested, true, __ATOMIC_RELEASE);
+    _chttpx_runtime_request_stop(server);
+
+    while (__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE))
+        server_sleep_ms(10);
+
+    _chttpx_runtime_cleanup(server);
 
     if (socket_valid(server->server_fd))
     {
@@ -622,12 +557,6 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
         chttpx_close(server->server_fd);
         invalidate_socket(server);
     }
-
-    while (__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE))
-        server_sleep_ms(10);
-
-    while (__atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) > 0)
-        server_sleep_ms(10);
 
     _chttpx_tls_server_cleanup(server);
     _chttpx_metrics_server_cleanup(server);
