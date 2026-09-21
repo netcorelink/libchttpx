@@ -22,7 +22,7 @@
 
 void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const char* prefix)
 {
-    if (!server || !server->logger || server->log_level > CHTTPX_LOG_ERROR)
+    if (!server || !server->logger || server->log_level > cHTTPX_LOG_ERROR)
         return;
 
 #ifdef CHTTPX_ENABLE_TLS
@@ -36,9 +36,9 @@ void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const 
         snprintf(message, sizeof(message), "%s: %s", prefix, detail);
     else
         snprintf(message, sizeof(message), "%s", prefix);
-    server->logger(CHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", message, server->logger_data);
+    server->logger(cHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", message, server->logger_data);
 #else
-    server->logger(CHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", prefix, server->logger_data);
+    server->logger(cHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", prefix, server->logger_data);
 #endif
 }
 
