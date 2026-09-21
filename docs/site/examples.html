@@ -55,7 +55,7 @@ static void health(chttpx_request_t* req, chttpx_response_t* res)
 int main(void)
 {
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&amp;app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&amp;app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
@@ -67,7 +67,7 @@ int main(void)
 
     int result = cHTTPX_AppRun(&amp;app);
     cHTTPX_AppShutdown(&amp;app);
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }</code></pre>
           </div>
           <a class="btn" href="https://github.com/netcorelink/libchttpx/blob/main/example/basic.c">Open source example ↗</a>
