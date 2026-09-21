@@ -375,7 +375,7 @@ static void free_internal_request(chttpx_request_t* req)
 
 static int stabilize_response(chttpx_response_t* res)
 {
-    if (!res || !res->body || res->body_size == 0 || res->body_ownership == CHTTPX_BODY_OWNED)
+    if (!res || !res->body || res->body_size == 0 || res->body_ownership == cHTTPX_BODY_OWNED)
         return cHTTPX_OK;
 
     unsigned char* copy = malloc(res->body_size);
@@ -384,7 +384,7 @@ static int stabilize_response(chttpx_response_t* res)
 
     memcpy(copy, res->body, res->body_size);
     res->body = copy;
-    res->body_ownership = CHTTPX_BODY_OWNED;
+    res->body_ownership = cHTTPX_BODY_OWNED;
     return cHTTPX_OK;
 }
 
@@ -791,8 +791,8 @@ static const char* find_remote_content_type(char* headers)
 static void log_remote_tls_error(chttpx_request_t* source, const char* message)
 {
     chttpx_serv_t* server = source ? source->_server : NULL;
-    if (server && server->logger && server->log_level <= CHTTPX_LOG_ERROR)
-        server->logger(CHTTPX_LOG_ERROR, source->request_id, message, server->logger_data);
+    if (server && server->logger && server->log_level <= cHTTPX_LOG_ERROR)
+        server->logger(cHTTPX_LOG_ERROR, source->request_id, message, server->logger_data);
 }
 
 static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* target, const char* method, const char* path, const void* body,
