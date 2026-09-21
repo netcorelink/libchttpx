@@ -67,20 +67,20 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_LOG_DEBUG,
-        CHTTPX_LOG_INFO,
-        CHTTPX_LOG_WARN,
-        CHTTPX_LOG_ERROR,
-        CHTTPX_LOG_OFF
+        cHTTPX_LOG_DEBUG,
+        cHTTPX_LOG_INFO,
+        cHTTPX_LOG_WARN,
+        cHTTPX_LOG_ERROR,
+        cHTTPX_LOG_OFF
     } chttpx_log_level_t;
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef enum
     {
-        CHTTPX_NETWORK_IPV4 = 0,
-        CHTTPX_NETWORK_IPV6,
-        CHTTPX_NETWORK_DUAL
+        cHTTPX_NETWORK_IPV4 = 0,
+        cHTTPX_NETWORK_IPV6,
+        cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
 
     typedef struct
