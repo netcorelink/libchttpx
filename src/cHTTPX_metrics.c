@@ -610,7 +610,7 @@ static void metrics_handler(chttpx_request_t* req, chttpx_response_t* res)
     }
 
     prometheus_buffer_t output = {0};
-    chttpx_runtime_metrics_t runtime_snapshot;
+    chttpx_runtime_metrics_t runtime_snapshot = {0};
     bool have_runtime_metrics = cHTTPX_ServerRuntimeMetrics(server, &runtime_snapshot) == cHTTPX_OK;
 
     metrics_lock(state);
