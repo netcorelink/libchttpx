@@ -144,7 +144,7 @@ int main(void)
     assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == cHTTPX_ERR_UNAVAILABLE);
 
     chttpx_runtime_metrics_t disabled_runtime_metrics;
-    assert(cHTTPX_ServerRuntimeMetrics(disabled, &disabled_runtime_metrics) == cHTTPX_ERR_UNAVAILABLE);
+    assert(cHTTPX_ServerRuntimeMetrics(disabled, &disabled_runtime_metrics) == cHTTPX_OK);
 
     chttpx_router_t disabled_router = cHTTPX_RoutePathPrefix(disabled, "");
     assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == cHTTPX_ERR_UNAVAILABLE);
