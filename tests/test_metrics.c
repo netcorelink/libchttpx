@@ -134,7 +134,7 @@ int main(void)
 
     chttpx_config_t disabled_config = cHTTPX_DefaultConfig();
     disabled_config.port = 0;
-    disabled_config.network_mode = CHTTPX_NETWORK_IPV4;
+    disabled_config.network_mode = cHTTPX_NETWORK_IPV4;
 
     chttpx_serv_t* disabled =
         cHTTPX_AppServer(&app, "metrics-disabled", &disabled_config);
@@ -151,7 +151,7 @@ int main(void)
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 0;
-    config.network_mode = CHTTPX_NETWORK_IPV4;
+    config.network_mode = cHTTPX_NETWORK_IPV4;
     config.metrics_enabled = true;
 
     chttpx_serv_t* server = cHTTPX_AppServer(&app, "metrics", &config);
