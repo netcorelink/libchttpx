@@ -324,7 +324,7 @@ static void test_routing_api(void)
     server.initialized = true;
     chttpx_router_t api = cHTTPX_RoutePathPrefix(&server, "/api/v2");
     chttpx_router_t private_routes = cHTTPX_RouteGroup(&api, "");
-    assert(cHTTPX_RouterUse(&private_routes, middleware) == CHTTPX_OK);
+    assert(cHTTPX_RouterUse(&private_routes, middleware) == cHTTPX_OK);
 
     chttpx_route_t* route = cHTTPX_Get(&private_routes, "/users/me", handler);
     assert(route && strcmp(route->path, "/api/v2/users/me") == 0);
@@ -339,13 +339,13 @@ static void test_routing_api(void)
     }
 
     assert(strcmp(route->path, "/api/v2/users/me") == 0);
-    assert(cHTTPX_RouteUseAfter(route, middleware) == CHTTPX_OK);
+    assert(cHTTPX_RouteUseAfter(route, middleware) == cHTTPX_OK);
     assert(route->after_middleware_count == 1);
 
     char mutable_type[] = "image/*";
     const char* allowed_types[] = {mutable_type};
     chttpx_upload_policy_t policy = {.max_size = 4096, .allowed_types = allowed_types, .allowed_types_count = 1};
-    assert(cHTTPX_RouteUploadPolicy(route, &policy) == CHTTPX_OK);
+    assert(cHTTPX_RouteUploadPolicy(route, &policy) == cHTTPX_OK);
     mutable_type[0] = 'v';
     assert(strcmp(route->upload_policy.allowed_types[0], "image/*") == 0);
 
