@@ -7,7 +7,7 @@
 ```c
 chttpx_app_t app;
 
-if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+if (cHTTPX_AppInit(&app) != cHTTPX_OK)
     return 1;
 ```
 
@@ -40,7 +40,7 @@ Names must be unique across local and remote registrations.
 ## Start, wait, run
 
 ```c
-if (cHTTPX_AppStart(&app) != CHTTPX_OK)
+if (cHTTPX_AppStart(&app) != cHTTPX_OK)
 {
     cHTTPX_AppShutdown(&app);
     return 1;
@@ -117,16 +117,16 @@ Connect/send/receive use a fixed 30-second timeout.
 
 | Result | Meaning |
 | --- | --- |
-| `CHTTPX_OK` | valid HTTP response received, including HTTP 4xx/5xx |
-| `CHTTPX_ERR_UNAVAILABLE` | DNS/connect failure or connection lost before a valid response |
-| `CHTTPX_ERR_TIMEOUT` | connect/send/receive exceeded 30 seconds |
-| `CHTTPX_ERR_TLS` | TLS handshake, certificate verification, encrypted read/write failure |
-| `CHTTPX_ERR_PROTOCOL` | peer returned invalid HTTP |
+| `cHTTPX_OK` | valid HTTP response received, including HTTP 4xx/5xx |
+| `cHTTPX_ERR_UNAVAILABLE` | DNS/connect failure or connection lost before a valid response |
+| `cHTTPX_ERR_TIMEOUT` | connect/send/receive exceeded 30 seconds |
+| `cHTTPX_ERR_TLS` | TLS handshake, certificate verification, encrypted read/write failure |
+| `cHTTPX_ERR_PROTOCOL` | peer returned invalid HTTP |
 
 A 400/403/500 response means the server responded successfully at the transport layer:
 
 ```c
-if (result == CHTTPX_OK)
+if (result == cHTTPX_OK)
 {
     if (res->status >= 400)
     {
@@ -150,7 +150,7 @@ static void create_payment(
         res
     );
 
-    if (result == CHTTPX_ERR_UNAVAILABLE)
+    if (result == cHTTPX_ERR_UNAVAILABLE)
     {
         *res = cHTTPX_ResError(
             cHTTPX_StatusServiceUnavailable,
@@ -159,7 +159,7 @@ static void create_payment(
         return;
     }
 
-    if (result == CHTTPX_ERR_TIMEOUT)
+    if (result == cHTTPX_ERR_TIMEOUT)
     {
         *res = cHTTPX_ResError(
             cHTTPX_StatusGatewayTimeout,
@@ -168,7 +168,7 @@ static void create_payment(
         return;
     }
 
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
     {
         *res = cHTTPX_ResError(
             cHTTPX_StatusBadGateway,
