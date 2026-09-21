@@ -150,17 +150,17 @@ static chttpx_route_metrics_entry_t* route_metrics_entry(chttpx_metrics_state_t*
 int _chttpx_metrics_server_init(chttpx_serv_t* server, int enabled)
 {
     if (!server)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (!enabled)
     {
         server->metrics_state = NULL;
-        return CHTTPX_OK;
+        return cHTTPX_OK;
     }
 
     chttpx_metrics_state_t* state = calloc(1, sizeof(*state));
     if (!state)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     InitializeCriticalSection(&state->mutex);
@@ -168,12 +168,12 @@ int _chttpx_metrics_server_init(chttpx_serv_t* server, int enabled)
     if (pthread_mutex_init(&state->mutex, NULL) != 0)
     {
         free(state);
-        return CHTTPX_ERR_STATE;
+        return cHTTPX_ERR_STATE;
     }
 #endif
 
     server->metrics_state = state;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 void _chttpx_metrics_server_cleanup(chttpx_serv_t* server)
@@ -321,16 +321,16 @@ void _chttpx_metrics_rate_limit_failure(chttpx_serv_t* server)
 int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics)
 {
     if (!server || !metrics)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_metrics_state_t* state = metrics_state(server);
     if (!state)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     metrics_lock(state);
     *metrics = state->metrics;
     metrics_unlock(state);
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 typedef struct
@@ -591,15 +591,15 @@ static void metrics_handler(chttpx_request_t* req, chttpx_response_t* res)
 int cHTTPX_MetricsRoute(chttpx_router_t* router, const char* path)
 {
     if (!router || !router->serv || !path || !*path)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (!metrics_state(router->serv))
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     chttpx_route_t* route = cHTTPX_Get(router, path, metrics_handler);
     if (!route)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     cHTTPX_RouteCompression(route, false);
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
