@@ -24,7 +24,7 @@ static void create_user(
             true,
             3,
             254,
-            CHTTPX_TRIM | CHTTPX_LOWERCASE,
+            cHTTPX_TRIM | cHTTPX_LOWERCASE,
             NULL
         ),
         cHTTPX_StringField(
@@ -33,7 +33,7 @@ static void create_user(
             true,
             3,
             32,
-            CHTTPX_TRIM,
+            cHTTPX_TRIM,
             NULL
         ),
     };
@@ -56,9 +56,9 @@ static void create_user(
 
 ## Normalizers
 
-- `CHTTPX_TRIM`
-- `CHTTPX_LOWERCASE`
-- `CHTTPX_UPPERCASE`
+- `cHTTPX_TRIM`
+- `cHTTPX_LOWERCASE`
+- `cHTTPX_UPPERCASE`
 
 Можно комбинировать через OR.
 
