@@ -143,6 +143,9 @@ int main(void)
     chttpx_metrics_t disabled_metrics;
     assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == cHTTPX_ERR_UNAVAILABLE);
 
+    chttpx_runtime_metrics_t disabled_runtime_metrics;
+    assert(cHTTPX_ServerRuntimeMetrics(disabled, &disabled_runtime_metrics) == cHTTPX_ERR_UNAVAILABLE);
+
     chttpx_router_t disabled_router = cHTTPX_RoutePathPrefix(disabled, "");
     assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == cHTTPX_ERR_UNAVAILABLE);
 
@@ -194,6 +197,11 @@ int main(void)
     assert(metrics.connections_accepted_total >= expected_requests);
     assert(metrics.response_bytes_total == expected_requests * 2);
 
+    chttpx_runtime_metrics_t runtime_metrics;
+    assert(cHTTPX_ServerRuntimeMetrics(server, &runtime_metrics) == cHTTPX_OK);
+    assert(runtime_metrics.completed_jobs_total >= expected_requests);
+    assert(runtime_metrics.rejected_jobs_total == 0);
+
     http_response_t scrape = exchange(server->port, "/metrics");
     assert(strncmp(scrape.bytes, "HTTP/1.1 200 OK", 15) == 0);
 
@@ -201,6 +209,9 @@ int main(void)
     assert(strstr(body, "# TYPE libchttpx_requests_total counter"));
     assert(strstr(body, "libchttpx_route_requests_total{method=\"GET\",route=\"/users/{id}\",class=\"2xx\"}"));
     assert(strstr(body, "libchttpx_request_duration_seconds_bucket{le=\"+Inf\"}"));
+    assert(strstr(body, "libchttpx_worker_queue_depth"));
+    assert(strstr(body, "libchttpx_workers_active"));
+    assert(strstr(body, "libchttpx_worker_jobs_completed_total"));
     assert(strstr(body, "/users/0") == NULL);
     assert(strstr(body, "/users/29") == NULL);
 
