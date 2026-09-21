@@ -433,10 +433,10 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_NORMALIZE_NONE = 0,
-        CHTTPX_TRIM = 1 << 0,
-        CHTTPX_LOWERCASE = 1 << 1,
-        CHTTPX_UPPERCASE = 1 << 2
+        cHTTPX_NORMALIZE_NONE = 0,
+        cHTTPX_TRIM = 1 << 0,
+        cHTTPX_LOWERCASE = 1 << 1,
+        cHTTPX_UPPERCASE = 1 << 2
     } chttpx_normalizer_t;
 
     typedef struct
@@ -742,7 +742,7 @@ extern "C"
 #define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, CHTTPX_NORMALIZE_NONE, NULL                                         \
+        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL                                         \
     }
 
 /**
@@ -758,7 +758,7 @@ extern "C"
 #define chttpx_validation_integer(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                      \
+        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                      \
     }
 
 /**
@@ -774,7 +774,7 @@ extern "C"
 #define chttpx_validation_boolean(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                        \
+        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                        \
     }
 
 #define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
@@ -817,8 +817,8 @@ extern "C"
     // RESponse
     typedef enum
     {
-        CHTTPX_BODY_BORROWED = 0,
-        CHTTPX_BODY_OWNED = 1
+        cHTTPX_BODY_BORROWED = 0,
+        cHTTPX_BODY_OWNED = 1
     } chttpx_body_ownership_t;
 
     typedef struct chttpx_response
@@ -1214,20 +1214,20 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_LOG_DEBUG,
-        CHTTPX_LOG_INFO,
-        CHTTPX_LOG_WARN,
-        CHTTPX_LOG_ERROR,
-        CHTTPX_LOG_OFF
+        cHTTPX_LOG_DEBUG,
+        cHTTPX_LOG_INFO,
+        cHTTPX_LOG_WARN,
+        cHTTPX_LOG_ERROR,
+        cHTTPX_LOG_OFF
     } chttpx_log_level_t;
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef enum
     {
-        CHTTPX_NETWORK_IPV4 = 0,
-        CHTTPX_NETWORK_IPV6,
-        CHTTPX_NETWORK_DUAL
+        cHTTPX_NETWORK_IPV4 = 0,
+        cHTTPX_NETWORK_IPV6,
+        cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
 
     typedef struct
