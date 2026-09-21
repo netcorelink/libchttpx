@@ -115,6 +115,13 @@ extern "C"
         cHTTPX_UPPERCASE = 1 << 2
     } chttpx_normalizer_t;
 
+#ifndef CHTTPX_DISABLE_LEGACY_NORMALIZER_NAMES
+#define CHTTPX_NORMALIZE_NONE cHTTPX_NORMALIZE_NONE
+#define CHTTPX_TRIM cHTTPX_TRIM
+#define CHTTPX_LOWERCASE cHTTPX_LOWERCASE
+#define CHTTPX_UPPERCASE cHTTPX_UPPERCASE
+#endif
+
     typedef struct
     {
         const char* name;
