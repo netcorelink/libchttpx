@@ -181,7 +181,7 @@ static int chunked_reader_read(chunked_reader_t* reader, unsigned char* output, 
         wanted = INT_MAX;
 #endif
     int result = _chttpx_io_recv(reader->client_fd, reader->tls_session, output, wanted);
-    if (result == CHTTPX_ERR_TLS)
+    if (result == cHTTPX_ERR_TLS)
         _chttpx_tls_log_error(reader->server, reader->request_id, "TLS chunked-body read failed");
     return result;
 }
@@ -393,7 +393,7 @@ static int spool_multipart_body(chttpx_request_t* req, chttpx_socket_t client_fd
             wanted = sizeof(chunk);
 
         int received = _chttpx_io_recv(client_fd, req->_tls_session, chunk, wanted);
-        if (received == CHTTPX_ERR_TLS)
+        if (received == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(req->_server, req->request_id, "TLS multipart-body read failed");
         if (received <= 0)
         {
@@ -527,7 +527,7 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
             wanted = INT_MAX;
 #endif
         int n = _chttpx_io_recv(client_fd, req->_tls_session, (char*)req->body + total_read, wanted);
-        if (n == CHTTPX_ERR_TLS)
+        if (n == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(req->_server, req->request_id, "TLS request-body read failed");
         if (n < 0)
         {
