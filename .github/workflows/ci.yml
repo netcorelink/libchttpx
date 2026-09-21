@@ -138,8 +138,161 @@ jobs:
         run: |
           set -euo pipefail
           test -f libchttpx-dev.tar.gz
-          tar -tzf libchttpx-dev.tar.gz | grep -q 'libchttpx-dev/include/libchttpx.h'
-          tar -tzf libchttpx-dev.tar.gz | grep -q 'libchttpx-dev/libchttpx.so'
+          tar -tzf libchttpx-dev.tar.gz > /tmp/libchttpx-package-files.txt
+          grep -q '^libchttpx-dev/include/libchttpx.h
+  build-linux-tls:
+    name: Build + HTTPS integration (Linux, OpenSSL)
+    needs: style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev openssl
+
+      - name: Build TLS-enabled shared library
+        run: make TLS=1 libchttpx.so
+
+      - name: Build HTTPS example
+        run: make examples-tls
+
+      - name: Run HTTPS integration test
+        run: make test-tls
+
+  build-linux-compression:
+    name: Response compression integration (Linux, zlib)
+    needs: style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev
+
+      - name: Build shared library
+        run: make libchttpx.so
+
+      - name: Build compression example
+        run: make examples-compression
+
+      - name: Run compression integration tests
+        run: make test-compression
+
+      - name: Verify TLS build keeps compression support
+        run: |
+          make clean
+          make TLS=1 libchttpx.so
+
+  build-windows:
+    name: Build (Windows)
+    needs: style
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-zlib
+
+      - name: Build
+        run: mingw32-make win SHELL=cmd
+
+      - name: Run tests
+        run: mingw32-make test-win SHELL=cmd
+ /tmp/libchttpx-package-files.txt
+          grep -q '^libchttpx-dev/libchttpx.so
+  build-linux-tls:
+    name: Build + HTTPS integration (Linux, OpenSSL)
+    needs: style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev openssl
+
+      - name: Build TLS-enabled shared library
+        run: make TLS=1 libchttpx.so
+
+      - name: Build HTTPS example
+        run: make examples-tls
+
+      - name: Run HTTPS integration test
+        run: make test-tls
+
+  build-linux-compression:
+    name: Response compression integration (Linux, zlib)
+    needs: style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev
+
+      - name: Build shared library
+        run: make libchttpx.so
+
+      - name: Build compression example
+        run: make examples-compression
+
+      - name: Run compression integration tests
+        run: make test-compression
+
+      - name: Verify TLS build keeps compression support
+        run: |
+          make clean
+          make TLS=1 libchttpx.so
+
+  build-windows:
+    name: Build (Windows)
+    needs: style
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-zlib
+
+      - name: Build
+        run: mingw32-make win SHELL=cmd
+
+      - name: Run tests
+        run: mingw32-make test-win SHELL=cmd
+ /tmp/libchttpx-package-files.txt
 
   build-linux-tls:
     name: Build + HTTPS integration (Linux, OpenSSL)
