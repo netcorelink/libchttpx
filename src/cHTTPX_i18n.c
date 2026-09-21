@@ -271,7 +271,7 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
 int cHTTPX_i18n_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
 {
     if (!server || !server->initialized)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     return _chttpx_server_set_languages(server, languages, count, fallback);
 }
 
