@@ -39,3 +39,8 @@ Examples assume:
 ```
 
 unless a module explicitly states otherwise.
+
+## Maintainer documentation
+
+- [Maintainer architecture baseline](maintainers/architecture.md) — runtime ownership, worker model, API/ABI policy, error model, CI gates, and benchmark protocol.
+- Repository contribution and merge requirements are defined in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
