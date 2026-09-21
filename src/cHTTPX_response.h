@@ -22,8 +22,8 @@ extern "C"
     // RESponse
     typedef enum
     {
-        CHTTPX_BODY_BORROWED = 0,
-        CHTTPX_BODY_OWNED = 1
+        cHTTPX_BODY_BORROWED = 0,
+        cHTTPX_BODY_OWNED = 1
     } chttpx_body_ownership_t;
 
     typedef struct chttpx_response
