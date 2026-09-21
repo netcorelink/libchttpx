@@ -302,7 +302,7 @@ static void* runtime_worker(void* argument)
             free(body);
             if (stream)
                 fclose(stream);
-            connection->worker_result = CHTTPX_ERR_STATE;
+            connection->worker_result = cHTTPX_ERR_STATE;
         }
         else
         {
@@ -841,7 +841,7 @@ static int connection_process_bytes(chttpx_runtime_t* runtime, chttpx_connection
 static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     int result = _chttpx_tls_accept_step(connection->tls_session);
-    if (result == CHTTPX_OK)
+    if (result == cHTTPX_OK)
     {
         connection->state = CHTTPX_CONN_READING_HEADERS;
         connection_touch(connection);
@@ -914,7 +914,7 @@ static int connection_read_ready(chttpx_runtime_t* runtime, chttpx_connection_t*
             }
             return 1;
         }
-        if (result == CHTTPX_ERR_TLS)
+        if (result == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(connection->server, "-", "TLS request read failed");
         connection_close(runtime, connection);
         return 0;
@@ -950,7 +950,7 @@ static int connection_write_ready(chttpx_runtime_t* runtime, chttpx_connection_t
             }
             return 1;
         }
-        if (result == CHTTPX_ERR_TLS)
+        if (result == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(connection->server, "-", "TLS response write failed");
         connection_close(runtime, connection);
         return 0;
@@ -966,7 +966,7 @@ static void drain_completions(chttpx_runtime_t* runtime)
     {
         chttpx_connection_t* next = connection->completion_next;
         connection->completion_next = NULL;
-        if (runtime_is_stopping(runtime) || connection->worker_result != CHTTPX_OK || !connection->write_buffer)
+        if (runtime_is_stopping(runtime) || connection->worker_result != cHTTPX_OK || !connection->write_buffer)
             connection_close(runtime, connection);
         else
         {
@@ -1039,7 +1039,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
         _chttpx_metrics_connection_opened(server);
 
         int tls_result = _chttpx_tls_accept_begin(server, fd, &connection->tls_session);
-        if (tls_result != CHTTPX_OK)
+        if (tls_result != cHTTPX_OK)
         {
             _chttpx_metrics_connection_rejected(server);
             connection_close(runtime, connection);
@@ -1050,7 +1050,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
         if (server->tls.enabled)
         {
             int step = _chttpx_tls_accept_step(connection->tls_session);
-            if (step == CHTTPX_OK)
+            if (step == cHTTPX_OK)
                 connection->state = CHTTPX_CONN_READING_HEADERS;
             else if (step == CHTTPX_IO_WANT_READ)
                 interest = CHTTPX_EVENT_READ;
@@ -1121,24 +1121,24 @@ static void begin_shutdown(chttpx_runtime_t* runtime)
 int _chttpx_runtime_init(chttpx_serv_t* server)
 {
     if (!server || !socket_valid(server->server_fd) || server->max_clients == 0)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_runtime_t* runtime = calloc(1, sizeof(*runtime));
     if (!runtime)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     runtime->server = server;
     runtime->job_capacity = server->max_clients;
     runtime->jobs = calloc(runtime->job_capacity, sizeof(*runtime->jobs));
     if (!runtime->jobs)
     {
         free(runtime);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
     if (sync_init(runtime) != 0)
     {
         free(runtime->jobs);
         free(runtime);
-        return CHTTPX_ERR_IO;
+        return cHTTPX_ERR_IO;
     }
 
     runtime->event_loop = _chttpx_event_create();
@@ -1154,7 +1154,7 @@ int _chttpx_runtime_init(chttpx_serv_t* server)
     }
 
     server->runtime_state = runtime;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 error:
     job_lock(runtime);
@@ -1168,7 +1168,7 @@ error:
     sync_destroy(runtime);
     free(runtime->jobs);
     free(runtime);
-    return CHTTPX_ERR_IO;
+    return cHTTPX_ERR_IO;
 }
 
 void _chttpx_runtime_listen(chttpx_serv_t* server)
