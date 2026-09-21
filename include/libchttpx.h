@@ -1479,6 +1479,23 @@ extern "C"
         uint64_t request_duration_buckets[CHTTPX_METRICS_DURATION_BUCKETS];
     } chttpx_metrics_t;
 
+    /**
+     * Snapshot of the bounded application worker pool.
+     *
+     * The pool is internal to the server runtime and uses a fixed 32 workers.
+     * Queue depth and active_workers are gauges; the remaining fields are
+     * monotonic counters for the lifetime of the server runtime.
+     */
+    typedef struct
+    {
+        uint64_t worker_queue_depth;
+        uint64_t active_workers;
+        uint64_t rejected_jobs_total;
+        uint64_t completed_jobs_total;
+        uint64_t queue_wait_nanoseconds_total;
+    } chttpx_runtime_metrics_t;
+
+
     /** Copy a consistent per-server metrics snapshot. */
     int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics);
 
