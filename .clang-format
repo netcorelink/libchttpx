@@ -9,9 +9,11 @@ AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
 
-ColumnLimit: 150
+ColumnLimit: 0
 
 PointerAlignment: Left
 SpaceBeforeParens: ControlStatements
 
 SortIncludes: false
+MaxEmptyLinesToKeep: 1
+SeparateDefinitionBlocks: Always
