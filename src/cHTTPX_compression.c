@@ -508,17 +508,18 @@ static int comma_token_contains(const char* value, const char* token)
         if (!end)
             end = cursor + strlen(cursor);
 
-        const char* trimmed_end = end;
-        while (trimmed_end > cursor && isspace((unsigned char)trimmed_end[-1]))
-            trimmed_end--;
+        size_t segment_length = (size_t)(end - cursor);
+        while (segment_length > 0 && isspace((unsigned char)cursor[segment_length - 1]))
+            segment_length--;
 
-        const char* equals = memchr(cursor, '=', (size_t)(trimmed_end - cursor));
+        const char* equals = memchr(cursor, '=', segment_length);
         if (equals)
-            trimmed_end = equals;
-        while (trimmed_end > cursor && isspace((unsigned char)trimmed_end[-1]))
-            trimmed_end--;
+            segment_length = (size_t)(equals - cursor);
 
-        if ((size_t)(trimmed_end - cursor) == token_length && strncasecmp(cursor, token, token_length) == 0)
+        while (segment_length > 0 && isspace((unsigned char)cursor[segment_length - 1]))
+            segment_length--;
+
+        if (segment_length == token_length && strncasecmp(cursor, token, token_length) == 0)
             return 1;
 
         cursor = *end ? end + 1 : end;
