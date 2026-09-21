@@ -226,20 +226,28 @@ static void connection_close(chttpx_runtime_t* runtime, chttpx_connection_t* con
 {
     if (!runtime || !connection)
         return;
+
     connection->state = CHTTPX_CONN_CLOSING;
     _chttpx_event_del(runtime->event_loop, connection->fd);
     connection_unlink(runtime, connection);
+
     _chttpx_tls_session_close(connection->tls_session);
     connection->tls_session = NULL;
+
     if (socket_valid(connection->fd))
         chttpx_close(connection->fd);
+
     free(connection->headers);
     free(connection->body);
+
     if (connection->body_stream)
         fclose(connection->body_stream);
+
     free(connection->write_buffer);
+
     _chttpx_metrics_connection_closed(connection->server);
     __atomic_fetch_sub(&connection->server->current_clients, 1, __ATOMIC_SEQ_CST);
+
     free(connection);
 }
 
@@ -269,16 +277,21 @@ static int parse_size_value(const char* value, size_t value_size, size_t* output
 {
     if (!value || !value_size || !output || value_size >= 32)
         return 0;
+
     char buffer[32];
     memcpy(buffer, value, value_size);
     buffer[value_size] = '\0';
+
     if (buffer[0] == '-')
         return 0;
+
     errno = 0;
     char* end = NULL;
     unsigned long long parsed = strtoull(buffer, &end, 10);
+
     if (errno == ERANGE || !end || *end || parsed > SIZE_MAX)
         return 0;
+
     *output = (size_t)parsed;
     return 1;
 }
@@ -1124,6 +1137,7 @@ void _chttpx_runtime_request_stop(chttpx_serv_t* server)
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;
     if (!runtime)
         return;
+
     __atomic_store_n(&runtime->stopping, true, __ATOMIC_RELEASE);
     _chttpx_event_wake(runtime->event_loop);
 }
