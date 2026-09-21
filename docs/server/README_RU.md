@@ -17,7 +17,7 @@ chttpx_serv_t* server =
 | Поле | Default |
 | --- | ---: |
 | `port` | 8080 |
-| `network_mode` | `CHTTPX_NETWORK_DUAL` |
+| `network_mode` | `cHTTPX_NETWORK_DUAL` |
 | `max_clients` | 255 |
 | `read_timeout_sec` | 30 |
 | `write_timeout_sec` | 30 |
@@ -28,7 +28,7 @@ chttpx_serv_t* server =
 | `request_id_enabled` | true |
 | `metrics_enabled` | false |
 | `default_language` | `"en"` |
-| `log_level` | `CHTTPX_LOG_INFO` |
+| `log_level` | `cHTTPX_LOG_INFO` |
 
 ## Сетевой режим
 
@@ -38,16 +38,16 @@ chttpx_serv_t* server =
 chttpx_config_t config = cHTTPX_DefaultConfig();
 
 /* Default: IPv4 + IPv6. */
-config.network_mode = CHTTPX_NETWORK_DUAL;
+config.network_mode = cHTTPX_NETWORK_DUAL;
 
 /* Только IPv4. */
-// config.network_mode = CHTTPX_NETWORK_IPV4;
+// config.network_mode = cHTTPX_NETWORK_IPV4;
 
 /* Только IPv6. */
-// config.network_mode = CHTTPX_NETWORK_IPV6;
+// config.network_mode = cHTTPX_NETWORK_IPV6;
 ```
 
-При `CHTTPX_NETWORK_DUAL` один server доступен и через `http://127.0.0.1:8080`, и через `http://[::1]:8080`. IPv4-mapped адреса нормализуются перед записью в `req->client_ip`, поэтому IPv4 client будет иметь адрес `127.0.0.1`, а не `::ffff:127.0.0.1`.
+При `cHTTPX_NETWORK_DUAL` один server доступен и через `http://127.0.0.1:8080`, и через `http://[::1]:8080`. IPv4-mapped адреса нормализуются перед записью в `req->client_ip`, поэтому IPv4 client будет иметь адрес `127.0.0.1`, а не `::ffff:127.0.0.1`.
 
 ## Собственные лимиты
 
