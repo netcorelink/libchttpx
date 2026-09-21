@@ -82,19 +82,19 @@ Snapshot API и Prometheus endpoint описаны в [Metrics и Prometheus](..
 
 | Код | Значение |
 | --- | --- |
-| `CHTTPX_OK` | успех |
-| `CHTTPX_ERR_MEMORY` | allocation failure |
-| `CHTTPX_ERR_SOCKET` | socket error |
-| `CHTTPX_ERR_BIND` | bind failed |
-| `CHTTPX_ERR_LISTEN` | listen failed |
-| `CHTTPX_ERR_INVALID_ARGUMENT` | неверные аргументы |
-| `CHTTPX_ERR_LIMIT` | превышен limit |
-| `CHTTPX_ERR_IO` | I/O error |
-| `CHTTPX_ERR_NOT_FOUND` | target/resource не найден |
-| `CHTTPX_ERR_PROTOCOL` | protocol error |
-| `CHTTPX_ERR_STATE` | неверное состояние lifecycle |
-| `CHTTPX_ERR_UNAVAILABLE` | remote server недоступен |
-| `CHTTPX_ERR_TIMEOUT` | remote Call timeout |
+| `cHTTPX_OK` | успех |
+| `cHTTPX_ERR_MEMORY` | allocation failure |
+| `cHTTPX_ERR_SOCKET` | socket error |
+| `cHTTPX_ERR_BIND` | bind failed |
+| `cHTTPX_ERR_LISTEN` | listen failed |
+| `cHTTPX_ERR_INVALID_ARGUMENT` | неверные аргументы |
+| `cHTTPX_ERR_LIMIT` | превышен limit |
+| `cHTTPX_ERR_IO` | I/O error |
+| `cHTTPX_ERR_NOT_FOUND` | target/resource не найден |
+| `cHTTPX_ERR_PROTOCOL` | protocol error |
+| `cHTTPX_ERR_STATE` | неверное состояние lifecycle |
+| `cHTTPX_ERR_UNAVAILABLE` | remote server недоступен |
+| `cHTTPX_ERR_TIMEOUT` | remote Call timeout |
 
 `cHTTPX_AppServer()` возвращает pointer или `NULL`. Библиотека не вызывает `exit()` при обычной ошибке инициализации.
 
@@ -103,7 +103,7 @@ Snapshot API и Prometheus endpoint описаны в [Metrics и Prometheus](..
 ```c
 chttpx_app_t app;
 
-if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+if (cHTTPX_AppInit(&app) != cHTTPX_OK)
     return 1;
 
 chttpx_config_t config = cHTTPX_DefaultConfig();
