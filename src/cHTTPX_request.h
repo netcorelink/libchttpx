@@ -109,10 +109,10 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_NORMALIZE_NONE = 0,
-        CHTTPX_TRIM = 1 << 0,
-        CHTTPX_LOWERCASE = 1 << 1,
-        CHTTPX_UPPERCASE = 1 << 2
+        cHTTPX_NORMALIZE_NONE = 0,
+        cHTTPX_TRIM = 1 << 0,
+        cHTTPX_LOWERCASE = 1 << 1,
+        cHTTPX_UPPERCASE = 1 << 2
     } chttpx_normalizer_t;
 
     typedef struct
@@ -418,7 +418,7 @@ extern "C"
 #define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, CHTTPX_NORMALIZE_NONE, NULL                                         \
+        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL                                         \
     }
 
 /**
@@ -434,7 +434,7 @@ extern "C"
 #define chttpx_validation_integer(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                      \
+        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                      \
     }
 
 /**
@@ -450,7 +450,7 @@ extern "C"
 #define chttpx_validation_boolean(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                        \
+        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                        \
     }
 
 #define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
