@@ -52,14 +52,14 @@ static void internal_handler(chttpx_request_t* req, chttpx_response_t* res)
 
 static void proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    if (cHTTPX_Call(req, "internal", cHTTPX_MethodPost, "/process", res) != CHTTPX_OK)
+    if (cHTTPX_Call(req, "internal", cHTTPX_MethodPost, "/process", res) != cHTTPX_OK)
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "internal server call failed");
 }
 
 static void remote_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     last_remote_call_result = cHTTPX_Call(req, "remote-payments", cHTTPX_MethodPost, "/process", res);
-    if (last_remote_call_result != CHTTPX_OK)
+    if (last_remote_call_result != cHTTPX_OK)
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote server call failed");
 }
 
@@ -72,14 +72,14 @@ static void remote_error_handler(chttpx_request_t* req, chttpx_response_t* res)
 static void remote_error_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     last_remote_call_result = cHTTPX_Call(req, "remote-payments", cHTTPX_MethodPost, "/error", res);
-    if (last_remote_call_result != CHTTPX_OK)
+    if (last_remote_call_result != cHTTPX_OK)
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote server call failed");
 }
 
 static void unavailable_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     last_remote_call_result = cHTTPX_Call(req, "unavailable", cHTTPX_MethodPost, "/process", res);
-    if (last_remote_call_result == CHTTPX_ERR_UNAVAILABLE)
+    if (last_remote_call_result == cHTTPX_ERR_UNAVAILABLE)
     {
         *res = cHTTPX_ResError(cHTTPX_StatusServiceUnavailable, "remote server unavailable");
         return;
@@ -97,7 +97,7 @@ static void custom_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
         .content_type = cHTTPX_CTYPE_JSON,
     };
 
-    if (cHTTPX_CallEx(req, "internal", cHTTPX_MethodPost, "/process", &options, res) != CHTTPX_OK)
+    if (cHTTPX_CallEx(req, "internal", cHTTPX_MethodPost, "/process", &options, res) != cHTTPX_OK)
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "custom internal call failed");
 }
 
@@ -131,7 +131,7 @@ static void exchange_family(uint16_t port, int family, const char* request, char
     }
 
     assert(connect(socket_fd, (struct sockaddr*)&storage, address_size) == 0);
-    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == CHTTPX_OK);
+    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == cHTTPX_OK);
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     shutdown(socket_fd, SD_SEND);
@@ -196,7 +196,7 @@ static void wait_until_listening(chttpx_serv_t* server)
 int main(void)
 {
     chttpx_app_t remote_app;
-    assert(cHTTPX_AppInit(&remote_app) == CHTTPX_OK);
+    assert(cHTTPX_AppInit(&remote_app) == cHTTPX_OK);
 
     chttpx_config_t remote_config = cHTTPX_DefaultConfig();
     assert(remote_config.network_mode == CHTTPX_NETWORK_DUAL);
@@ -209,11 +209,11 @@ int main(void)
     assert(cHTTPX_Post(&remote_router, "/process", internal_handler));
     assert(cHTTPX_Post(&remote_router, "/error", remote_error_handler));
 
-    assert(cHTTPX_AppStart(&remote_app) == CHTTPX_OK);
+    assert(cHTTPX_AppStart(&remote_app) == cHTTPX_OK);
     wait_until_listening(remote_server);
 
     chttpx_app_t app;
-    assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppInit(&app) == cHTTPX_OK);
 
     char language_en[] = "en";
     char language_ru[] = "ru";
@@ -257,13 +257,13 @@ int main(void)
 
     char remote_url[128];
     snprintf(remote_url, sizeof(remote_url), "http://127.0.0.1:%u", remote_server->port);
-    assert(cHTTPX_AppRemote(&app, "remote-payments", remote_url) == CHTTPX_OK);
-    assert(cHTTPX_AppRemote(&app, "unavailable", "http://127.0.0.1:1") == CHTTPX_OK);
+    assert(cHTTPX_AppRemote(&app, "remote-payments", remote_url) == cHTTPX_OK);
+    assert(cHTTPX_AppRemote(&app, "unavailable", "http://127.0.0.1:1") == cHTTPX_OK);
 
     const char* cors_origins[] = {"https://example.com"};
     cHTTPX_Cors(public_api, cors_origins, CHTTPX_ARRAY_LEN(cors_origins), NULL, NULL);
 
-    assert(cHTTPX_AppStart(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
     wait_until_listening(public_api);
     wait_until_listening(internal_api);
 
@@ -365,7 +365,7 @@ int main(void)
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
     assert(strstr(response, "\"server\":\"internal\"") != NULL);
-    assert(last_remote_call_result == CHTTPX_OK);
+    assert(last_remote_call_result == cHTTPX_OK);
 
     exchange(public_port,
              "POST /proxy-remote-error HTTP/1.1\r\n"
@@ -374,7 +374,7 @@ int main(void)
              "\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 500 Internal Server Error") != NULL);
-    assert(last_remote_call_result == CHTTPX_OK);
+    assert(last_remote_call_result == cHTTPX_OK);
 
     exchange(public_port,
              "POST /proxy-unavailable HTTP/1.1\r\n"
@@ -383,7 +383,7 @@ int main(void)
              "\r\n",
              response, sizeof(response));
     assert(strstr(response, "HTTP/1.1 503 Service Unavailable") != NULL);
-    assert(last_remote_call_result == CHTTPX_ERR_UNAVAILABLE);
+    assert(last_remote_call_result == cHTTPX_ERR_UNAVAILABLE);
 
     exchange(public_port,
              "POST /proxy-custom HTTP/1.1\r\n"
