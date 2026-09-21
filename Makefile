@@ -4,7 +4,7 @@ RELEASE_DIR = libchttpx-dev
 TAR = $(RELEASE_DIR).tar.gz
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -Iinclude -Isrc
+CFLAGS = -Wall -Wextra -Wpedantic -O2 -Iinclude -Isrc
 
 # Native TLS is opt-in so plain HTTP builds keep zero OpenSSL dependency.
 TLS ?= 0
@@ -19,6 +19,7 @@ endif
 CFLAGS += $(TLS_CFLAGS)
 TARGET_DLL = libchttpx.dll
 CLANG_FORMAT = clang-format
+FUZZ_CC ?= clang
 
 OBJDIR = .out
 BINDIR = .build
@@ -35,6 +36,8 @@ TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
 TEST_SERVER_SANITIZE_TARGET = $(BINDIR)/test_server_sanitize
+TEST_TSAN_TARGET = $(BINDIR)/test_server_tsan
+FUZZ_HEADERS_TARGET = $(BINDIR)/fuzz_headers
 TEST_TLS_TARGET = $(BINDIR)/test_tls
 TEST_COMPRESSION_TARGET = $(BINDIR)/test_compression
 TEST_METRICS_TARGET = $(BINDIR)/test_metrics
@@ -45,6 +48,7 @@ EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json up
 EXAMPLE_TARGETS = $(addprefix $(BINDIR)/example-,$(EXAMPLE_NAMES))
 
 LIN_SRCS = $(wildcard src/*.c)
+FORMAT_SRCS = $(wildcard src/*.c src/*.h include/*.h example/*.c tests/*.c)
 WIN_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
 
 LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
@@ -154,6 +158,16 @@ test-sanitize:
 	$(CC) $(CFLAGS) -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined tests/test_server.c $(LIN_SRCS) -o $(TEST_SERVER_SANITIZE_TARGET) $(LIN_LDFLAGS) -pthread
 	ASAN_OPTIONS=detect_leaks=1 $(TEST_SERVER_SANITIZE_TARGET)
 
+test-tsan:
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=thread tests/test_server.c $(LIN_SRCS) -o $(TEST_TSAN_TARGET) $(LIN_LDFLAGS) -pthread
+	TSAN_OPTIONS=halt_on_error=1 $(TEST_TSAN_TARGET)
+
+test-fuzz:
+	@mkdir -p $(BINDIR)
+	$(FUZZ_CC) $(CFLAGS) -std=gnu11 -O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer,address,undefined tests/fuzz_headers.c $(LIN_SRCS) -o $(FUZZ_HEADERS_TARGET) $(LIN_LDFLAGS) -pthread
+	$(FUZZ_HEADERS_TARGET) -runs=2000 -max_len=32768
+
 test-tls:
 	@mkdir -p $(BINDIR)/tls
 	openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
@@ -221,8 +235,12 @@ win-run: win
 # -
 
 lin-format:
-	@echo ">> Formatting clang source files"
-	$(CLANG_FORMAT) -i $(LIN_SRCS)
+	@echo ">> Formatting C source and header files"
+	$(CLANG_FORMAT) -i $(FORMAT_SRCS)
+
+format-check:
+	@echo ">> Checking clang-format"
+	$(CLANG_FORMAT) --dry-run --Werror $(FORMAT_SRCS)
 
 # WINdows format
 # -
