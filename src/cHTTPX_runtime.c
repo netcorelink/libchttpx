@@ -1106,6 +1106,19 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
     drain_completions(runtime);
 }
 
+int _chttpx_runtime_worker_stats(chttpx_serv_t* server, chttpx_worker_stats_t* stats)
+{
+    if (!server || !stats)
+        return cHTTPX_ERR_INVALID_ARGUMENT;
+
+    chttpx_runtime_t* runtime = server->runtime_state;
+    if (!runtime || !runtime->worker_pool)
+        return cHTTPX_ERR_UNAVAILABLE;
+
+    _chttpx_worker_stats(runtime->worker_pool, stats);
+    return cHTTPX_OK;
+}
+
 void _chttpx_runtime_request_stop(chttpx_serv_t* server)
 {
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;
