@@ -82,59 +82,59 @@ static chttpx_app_remote_t* find_remote(chttpx_app_t* app, const char* name)
 static int ensure_server_capacity(chttpx_app_t* app)
 {
     if (app->_servers_count < app->_servers_capacity)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 
     size_t new_capacity = app->_servers_capacity ? app->_servers_capacity * 2 : 4;
     if (new_capacity < app->_servers_capacity || new_capacity > SIZE_MAX / sizeof(chttpx_app_server_t))
-        return CHTTPX_ERR_LIMIT;
+        return cHTTPX_ERR_LIMIT;
 
     void* resized = realloc(app->_servers, new_capacity * sizeof(chttpx_app_server_t));
     if (!resized)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     app->_servers = resized;
     memset(app_servers(app) + app->_servers_capacity, 0,
            (new_capacity - app->_servers_capacity) * sizeof(chttpx_app_server_t));
     app->_servers_capacity = new_capacity;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 static int ensure_remote_capacity(chttpx_app_t* app)
 {
     if (app->_remotes_count < app->_remotes_capacity)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 
     size_t new_capacity = app->_remotes_capacity ? app->_remotes_capacity * 2 : 4;
     if (new_capacity < app->_remotes_capacity || new_capacity > SIZE_MAX / sizeof(chttpx_app_remote_t))
-        return CHTTPX_ERR_LIMIT;
+        return cHTTPX_ERR_LIMIT;
 
     void* resized = realloc(app->_remotes, new_capacity * sizeof(chttpx_app_remote_t));
     if (!resized)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     app->_remotes = resized;
     memset(app_remotes(app) + app->_remotes_capacity, 0,
            (new_capacity - app->_remotes_capacity) * sizeof(chttpx_app_remote_t));
     app->_remotes_capacity = new_capacity;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_AppInit(chttpx_app_t* app)
 {
     if (!app)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     memset(app, 0, sizeof(*app));
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-        return CHTTPX_ERR_SOCKET;
+        return cHTTPX_ERR_SOCKET;
 #endif
 
     app->_network_initialized = true;
     app->_initialized = true;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttpx_config_t* config)
@@ -145,7 +145,7 @@ chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttp
     if (find_server(app, name) || find_remote(app, name))
         return NULL;
 
-    if (ensure_server_capacity(app) != CHTTPX_OK)
+    if (ensure_server_capacity(app) != cHTTPX_OK)
         return NULL;
 
     chttpx_serv_t* server = calloc(1, sizeof(*server));
@@ -153,7 +153,7 @@ chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttp
         return NULL;
 
     int result = _chttpx_server_init(server, app, name, config);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
     {
         free(server);
         return NULL;
@@ -190,21 +190,21 @@ int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url
     bool http = base_url && strncmp(base_url, "http://", 7) == 0;
 
     if (!app || !app->_initialized || app->_started || !name || !*name || (!http && !https))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (https && !_chttpx_tls_available())
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     chttpx_tls_client_config_t selected = tls_config ? *tls_config : cHTTPX_DefaultTLSClientConfig();
     if ((selected.client_cert_file && !selected.client_key_file) ||
         (!selected.client_cert_file && selected.client_key_file))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (find_server(app, name) || find_remote(app, name))
-        return CHTTPX_ERR_STATE;
+        return cHTTPX_ERR_STATE;
 
     int result = ensure_remote_capacity(app);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         return result;
 
     chttpx_app_remote_t* item = &app_remotes(app)[app->_remotes_count];
@@ -224,11 +224,11 @@ int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url
         free(item->base_url);
         free_remote_tls_config(&item->tls);
         memset(item, 0, sizeof(*item));
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
 
     app->_remotes_count++;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url)
@@ -246,7 +246,7 @@ static void* app_listener(void* arg)
 int cHTTPX_AppStart(chttpx_app_t* app)
 {
     if (!app || !app->_initialized || app->_started)
-        return CHTTPX_ERR_STATE;
+        return cHTTPX_ERR_STATE;
 
     chttpx_app_server_t* items = app_servers(app);
 
@@ -269,20 +269,20 @@ int cHTTPX_AppStart(chttpx_app_t* app)
                 items[j].thread_started = false;
             }
 
-            return CHTTPX_ERR_IO;
+            return cHTTPX_ERR_IO;
         }
 
         items[i].thread_started = true;
     }
 
     app->_started = true;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_AppWait(chttpx_app_t* app)
 {
     if (!app || !app->_initialized || !app->_started)
-        return CHTTPX_ERR_STATE;
+        return cHTTPX_ERR_STATE;
 
     chttpx_app_server_t* items = app_servers(app);
 
@@ -296,13 +296,13 @@ int cHTTPX_AppWait(chttpx_app_t* app)
     }
 
     app->_started = false;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_AppRun(chttpx_app_t* app)
 {
     int result = cHTTPX_AppStart(app);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         return result;
 
     return cHTTPX_AppWait(app);
@@ -376,26 +376,26 @@ static void free_internal_request(chttpx_request_t* req)
 static int stabilize_response(chttpx_response_t* res)
 {
     if (!res || !res->body || res->body_size == 0 || res->body_ownership == CHTTPX_BODY_OWNED)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 
     unsigned char* copy = malloc(res->body_size);
     if (!copy)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     memcpy(copy, res->body, res->body_size);
     res->body = copy;
     res->body_ownership = CHTTPX_BODY_OWNED;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const char* method, const char* path, const void* body,
                       size_t body_size, const char* content_type, chttpx_response_t* res)
 {
     if (!source || !target || !target->initialized || !method || !path || !res || (body_size && !body))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (__atomic_load_n(&target->current_clients, __ATOMIC_SEQ_CST) >= target->max_clients)
-        return CHTTPX_ERR_LIMIT;
+        return cHTTPX_ERR_LIMIT;
 
     chttpx_request_t internal = {0};
     internal._server = target;
@@ -410,7 +410,7 @@ static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const cha
     if (!internal.method || !internal.path)
     {
         free_internal_request(&internal);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
 
     if (body_size)
@@ -419,7 +419,7 @@ static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const cha
         if (!internal.body)
         {
             free_internal_request(&internal);
-            return CHTTPX_ERR_MEMORY;
+            return cHTTPX_ERR_MEMORY;
         }
 
         memcpy(internal.body, body, body_size);
@@ -453,7 +453,7 @@ static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const cha
         if (internal._parse_status)
         {
             free_internal_request(&internal);
-            return CHTTPX_ERR_PROTOCOL;
+            return cHTTPX_ERR_PROTOCOL;
         }
     }
 
@@ -461,14 +461,14 @@ static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const cha
     if (internal._parse_status)
     {
         free_internal_request(&internal);
-        return CHTTPX_ERR_PROTOCOL;
+        return cHTTPX_ERR_PROTOCOL;
     }
 
     __atomic_fetch_add(&target->current_clients, 1, __ATOMIC_SEQ_CST);
     int result = _chttpx_dispatch(target, &internal, res);
     __atomic_fetch_sub(&target->current_clients, 1, __ATOMIC_SEQ_CST);
 
-    if (result == CHTTPX_OK)
+    if (result == cHTTPX_OK)
         result = stabilize_response(res);
 
     free_internal_request(&internal);
@@ -592,18 +592,18 @@ static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
     u_long mode = enabled ? 1UL : 0UL;
-    return ioctlsocket(socket_fd, FIONBIO, &mode) == 0 ? CHTTPX_OK : CHTTPX_ERR_UNAVAILABLE;
+    return ioctlsocket(socket_fd, FIONBIO, &mode) == 0 ? cHTTPX_OK : cHTTPX_ERR_UNAVAILABLE;
 #else
     int flags = fcntl(socket_fd, F_GETFL, 0);
     if (flags < 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     if (enabled)
         flags |= O_NONBLOCK;
     else
         flags &= ~O_NONBLOCK;
 
-    return fcntl(socket_fd, F_SETFL, flags) == 0 ? CHTTPX_OK : CHTTPX_ERR_UNAVAILABLE;
+    return fcntl(socket_fd, F_SETFL, flags) == 0 ? cHTTPX_OK : cHTTPX_ERR_UNAVAILABLE;
 #endif
 }
 
@@ -612,17 +612,17 @@ static int socket_set_call_timeouts(chttpx_socket_t socket_fd)
 #ifdef CHTTPX_PLATFORM_WINDOWS
     DWORD timeout_ms = CHTTPX_CALL_TIMEOUT_SEC * 1000U;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 #else
     struct timeval timeout = {.tv_sec = CHTTPX_CALL_TIMEOUT_SEC, .tv_usec = 0};
     if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 #endif
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 static int wait_for_connect(chttpx_socket_t socket_fd)
@@ -643,10 +643,10 @@ static int wait_for_connect(chttpx_socket_t socket_fd)
 #endif
 
     if (ready == 0)
-        return CHTTPX_ERR_TIMEOUT;
+        return cHTTPX_ERR_TIMEOUT;
 
     if (ready < 0)
-        return socket_error_is_timeout(socket_last_error()) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
+        return socket_error_is_timeout(socket_last_error()) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
 
     int socket_error = 0;
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -662,18 +662,18 @@ static int wait_for_connect(chttpx_socket_t socket_fd)
                    &socket_error,
 #endif
                    &error_size) != 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     if (socket_error == 0)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 
-    return socket_error_is_timeout(socket_error) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
+    return socket_error_is_timeout(socket_error) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
 }
 
 static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* connected)
 {
     if (!remote || !connected)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     *connected = INVALID_SOCKET;
@@ -689,9 +689,9 @@ static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* co
     hints.ai_socktype = SOCK_STREAM;
 
     if (getaddrinfo(remote->host, remote->port, &hints, &result) != 0)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
-    int final_result = CHTTPX_ERR_UNAVAILABLE;
+    int final_result = cHTTPX_ERR_UNAVAILABLE;
 
     for (struct addrinfo* current = result; current; current = current->ai_next)
     {
@@ -703,7 +703,7 @@ static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* co
 #endif
             continue;
 
-        if (socket_set_nonblocking(socket_fd, true) != CHTTPX_OK)
+        if (socket_set_nonblocking(socket_fd, true) != cHTTPX_OK)
         {
             chttpx_close(socket_fd);
             continue;
@@ -720,25 +720,25 @@ static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* co
             }
 
             int wait_result = wait_for_connect(socket_fd);
-            if (wait_result != CHTTPX_OK)
+            if (wait_result != cHTTPX_OK)
             {
                 chttpx_close(socket_fd);
                 final_result = wait_result;
-                if (wait_result == CHTTPX_ERR_TIMEOUT)
+                if (wait_result == cHTTPX_ERR_TIMEOUT)
                     break;
                 continue;
             }
         }
 
-        if (socket_set_nonblocking(socket_fd, false) != CHTTPX_OK ||
-            socket_set_call_timeouts(socket_fd) != CHTTPX_OK)
+        if (socket_set_nonblocking(socket_fd, false) != cHTTPX_OK ||
+            socket_set_call_timeouts(socket_fd) != cHTTPX_OK)
         {
             chttpx_close(socket_fd);
             continue;
         }
 
         *connected = socket_fd;
-        final_result = CHTTPX_OK;
+        final_result = cHTTPX_OK;
         break;
     }
 
@@ -799,11 +799,11 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
                        size_t body_size, const char* content_type, chttpx_response_t* res)
 {
     if (!source || !target)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_remote_url_t remote;
     if (!parse_remote_url(target->base_url, &remote))
-        return CHTTPX_ERR_PROTOCOL;
+        return cHTTPX_ERR_PROTOCOL;
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     chttpx_socket_t socket_fd = INVALID_SOCKET;
@@ -812,7 +812,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
 #endif
 
     int result = connect_remote(&remote, &socket_fd);
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         return result;
 
     void* tls_ctx = NULL;
@@ -822,7 +822,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
     if (remote.tls)
     {
         result = _chttpx_tls_client_connect(socket_fd, remote.host, &target->tls, &tls_ctx, &tls_session);
-        if (result != CHTTPX_OK)
+        if (result != cHTTPX_OK)
         {
             log_remote_tls_error(source, "remote TLS handshake or certificate verification failed");
             goto done;
@@ -832,7 +832,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
     char full_path[CHTTPX_MAX_PATH];
     if (snprintf(full_path, sizeof(full_path), "%s%s", remote.base_path, path) >= (int)sizeof(full_path))
     {
-        result = CHTTPX_ERR_LIMIT;
+        result = cHTTPX_ERR_LIMIT;
         goto done;
     }
 
@@ -842,7 +842,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
                                : snprintf(host_header, sizeof(host_header), "%s:%s", remote.host, remote.port);
     if (host_header_size < 0 || (size_t)host_header_size >= sizeof(host_header))
     {
-        result = CHTTPX_ERR_LIMIT;
+        result = cHTTPX_ERR_LIMIT;
         goto done;
     }
 
@@ -864,7 +864,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
 
     if (header_size < 0 || (size_t)header_size >= sizeof(header))
     {
-        result = CHTTPX_ERR_LIMIT;
+        result = cHTTPX_ERR_LIMIT;
         goto done;
     }
 
@@ -874,7 +874,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
         int added = snprintf(header + used, sizeof(header) - used, "Authorization: %s\r\n", authorization);
         if (added < 0 || (size_t)added >= sizeof(header) - used)
         {
-            result = CHTTPX_ERR_LIMIT;
+            result = cHTTPX_ERR_LIMIT;
             goto done;
         }
         used += (size_t)added;
@@ -882,7 +882,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
 
     if (used + 2 > sizeof(header))
     {
-        result = CHTTPX_ERR_LIMIT;
+        result = cHTTPX_ERR_LIMIT;
         goto done;
     }
 
@@ -890,20 +890,20 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
     used += 2;
 
     int send_result = _chttpx_io_send_all(socket_fd, tls_session, header, used);
-    if (send_result == CHTTPX_OK && body_size)
+    if (send_result == cHTTPX_OK && body_size)
         send_result = _chttpx_io_send_all(socket_fd, tls_session, body, body_size);
 
-    if (send_result != CHTTPX_OK)
+    if (send_result != cHTTPX_OK)
     {
         if (remote.tls)
         {
             log_remote_tls_error(source, "remote TLS write failed");
-            result = CHTTPX_ERR_TLS;
+            result = cHTTPX_ERR_TLS;
         }
         else
         {
             int error = socket_last_error();
-            result = socket_error_is_timeout(error) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
+            result = socket_error_is_timeout(error) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
         }
         goto done;
     }
@@ -916,7 +916,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
     response = malloc(capacity + 1);
     if (!response)
     {
-        result = CHTTPX_ERR_MEMORY;
+        result = cHTTPX_ERR_MEMORY;
         goto done;
     }
 
@@ -927,7 +927,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
         {
             if (capacity >= limit)
             {
-                result = CHTTPX_ERR_LIMIT;
+                result = cHTTPX_ERR_LIMIT;
                 goto done;
             }
 
@@ -938,7 +938,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
             char* resized = realloc(response, next + 1);
             if (!resized)
             {
-                result = CHTTPX_ERR_MEMORY;
+                result = cHTTPX_ERR_MEMORY;
                 goto done;
             }
 
@@ -952,12 +952,12 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
             if (remote.tls)
             {
                 log_remote_tls_error(source, "remote TLS read failed");
-                result = CHTTPX_ERR_TLS;
+                result = cHTTPX_ERR_TLS;
             }
             else
             {
                 int error = socket_last_error();
-                result = socket_error_is_timeout(error) ? CHTTPX_ERR_TIMEOUT : CHTTPX_ERR_UNAVAILABLE;
+                result = socket_error_is_timeout(error) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
             }
             goto done;
         }
@@ -966,7 +966,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
         {
             if (total == 0)
             {
-                result = CHTTPX_ERR_UNAVAILABLE;
+                result = cHTTPX_ERR_UNAVAILABLE;
                 goto done;
             }
             break;
@@ -980,14 +980,14 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
     int status = 0;
     if (sscanf(response, "HTTP/%*s %d", &status) != 1 || status < 100 || status > 599)
     {
-        result = CHTTPX_ERR_PROTOCOL;
+        result = cHTTPX_ERR_PROTOCOL;
         goto done;
     }
 
     char* delimiter = chttpx_memmem(response, total, "\r\n\r\n", 4);
     if (!delimiter)
     {
-        result = CHTTPX_ERR_PROTOCOL;
+        result = cHTTPX_ERR_PROTOCOL;
         goto done;
     }
 
@@ -997,7 +997,7 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
 
     const char* response_type = remote_response_content_type(find_remote_content_type(response));
     *res = cHTTPX_ResBinary((uint16_t)status, response_type, (const unsigned char*)body_start, response_body_size);
-    result = res->status ? CHTTPX_OK : CHTTPX_ERR_MEMORY;
+    result = res->status ? cHTTPX_OK : cHTTPX_ERR_MEMORY;
 
 done:
     free(response);
@@ -1011,7 +1011,7 @@ int cHTTPX_CallEx(chttpx_request_t* source, const char* server_name, const char*
 {
     if (!source || !source->_server || !source->_server->app || !server_name || !*server_name || !method || !path || !options || !res ||
         (options->body_size && !options->body))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     const void* body = options->body;
     size_t body_size = options->body_size;
@@ -1027,13 +1027,13 @@ int cHTTPX_CallEx(chttpx_request_t* source, const char* server_name, const char*
     if (remote)
         return remote_call(source, remote, method, path, body, body_size, content_type, res);
 
-    return CHTTPX_ERR_NOT_FOUND;
+    return cHTTPX_ERR_NOT_FOUND;
 }
 
 int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* method, const char* path, chttpx_response_t* res)
 {
     if (!req)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_call_options_t options = {
         .body = req->body,
