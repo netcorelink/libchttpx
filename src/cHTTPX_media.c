@@ -676,7 +676,7 @@ static void save_raw_upload(chttpx_request_t* req, char* initial_buffer, size_t 
         if (wanted > sizeof(chunk))
             wanted = sizeof(chunk);
         int received = _chttpx_io_recv(req->client_fd, req->_tls_session, chunk, wanted);
-        if (received == CHTTPX_ERR_TLS)
+        if (received == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(req->_server, req->request_id, "TLS upload read failed");
         if (received <= 0 || fwrite(chunk, 1, (size_t)received, file) != (size_t)received)
             goto bad_request;
