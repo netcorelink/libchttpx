@@ -75,7 +75,7 @@ static void free_server_languages(chttpx_serv_t* server)
 int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
 {
     if (!server || !fallback || (count > 0 && !languages))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     char** owned_languages = count ? calloc(count, sizeof(*owned_languages)) : NULL;
     char* owned_fallback = strdup(fallback);
@@ -83,7 +83,7 @@ int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, 
     {
         free(owned_languages);
         free(owned_fallback);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
 
     for (size_t i = 0; i < count; i++)
@@ -94,7 +94,7 @@ int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, 
                 free(owned_languages[j]);
             free(owned_languages);
             free(owned_fallback);
-            return CHTTPX_ERR_INVALID_ARGUMENT;
+            return cHTTPX_ERR_INVALID_ARGUMENT;
         }
 
         owned_languages[i] = strdup(languages[i]);
@@ -104,7 +104,7 @@ int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, 
                 free(owned_languages[j]);
             free(owned_languages);
             free(owned_fallback);
-            return CHTTPX_ERR_MEMORY;
+            return cHTTPX_ERR_MEMORY;
         }
     }
 
@@ -112,7 +112,7 @@ int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, 
     server->languages = (const char**)owned_languages;
     server->languages_count = count;
     server->default_language = owned_fallback;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 static void free_route_upload_policy(chttpx_route_t* registered)
@@ -149,7 +149,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     if (!server || !app || !name || !*name || !config || config->max_clients == 0 ||
         config->network_mode < CHTTPX_NETWORK_IPV4 || config->network_mode > CHTTPX_NETWORK_DUAL ||
         (config->languages_count > 0 && !config->languages))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     memset(server, 0, sizeof(*server));
     invalidate_socket(server);
@@ -157,7 +157,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     server->app = app;
     server->name = strdup(name);
     if (!server->name)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     server->port = config->port;
     server->network_mode = config->network_mode;
@@ -175,7 +175,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
 
     int languages_result =
         _chttpx_server_set_languages(server, config->languages, config->languages_count, config->default_language ? config->default_language : "en");
-    if (languages_result != CHTTPX_OK)
+    if (languages_result != cHTTPX_OK)
     {
         free(server->name);
         server->name = NULL;
@@ -241,7 +241,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         free_server_languages(server);
         free(server->name);
         server->name = NULL;
-        return CHTTPX_ERR_BIND;
+        return cHTTPX_ERR_BIND;
     }
 
     if (config->port == 0)
@@ -255,7 +255,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
             free_server_languages(server);
             free(server->name);
             server->name = NULL;
-            return CHTTPX_ERR_SOCKET;
+            return cHTTPX_ERR_SOCKET;
         }
 
         if (bound.ss_family == AF_INET)
@@ -269,7 +269,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
             free_server_languages(server);
             free(server->name);
             server->name = NULL;
-            return CHTTPX_ERR_SOCKET;
+            return cHTTPX_ERR_SOCKET;
         }
     }
 
@@ -280,11 +280,11 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
         free_server_languages(server);
         free(server->name);
         server->name = NULL;
-        return CHTTPX_ERR_LISTEN;
+        return cHTTPX_ERR_LISTEN;
     }
 
     int tls_result = _chttpx_tls_server_init(server, &config->tls);
-    if (tls_result != CHTTPX_OK)
+    if (tls_result != cHTTPX_OK)
     {
         chttpx_close(server->server_fd);
         invalidate_socket(server);
@@ -295,7 +295,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     }
 
     int metrics_result = _chttpx_metrics_server_init(server, config->metrics_enabled);
-    if (metrics_result != CHTTPX_OK)
+    if (metrics_result != cHTTPX_OK)
     {
         _chttpx_tls_server_cleanup(server);
         chttpx_close(server->server_fd);
@@ -307,7 +307,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     }
 
     int runtime_result = _chttpx_runtime_init(server);
-    if (runtime_result != CHTTPX_OK)
+    if (runtime_result != cHTTPX_OK)
     {
         _chttpx_metrics_server_cleanup(server);
         _chttpx_tls_server_cleanup(server);
@@ -320,13 +320,13 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     }
 
     server->initialized = true;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 socket_error:
     free_server_languages(server);
     free(server->name);
     server->name = NULL;
-    return CHTTPX_ERR_SOCKET;
+    return cHTTPX_ERR_SOCKET;
 }
 
 static chttpx_route_t* route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
@@ -440,43 +440,43 @@ chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* pre
 int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware)
 {
     if (!router || !middleware || router->middleware_count >= MAX_MIDDLEWARES)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     router->middlewares[router->middleware_count++] = middleware;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware)
 {
     if (!router || !middleware || router->after_middleware_count >= MAX_MIDDLEWARES)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     router->after_middlewares[router->after_middleware_count++] = middleware;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_RouteUse(chttpx_route_t* registered, chttpx_middleware_t middleware)
 {
     if (!registered || !middleware || registered->middleware_count >= MAX_MIDDLEWARES)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     registered->middlewares[registered->middleware_count++] = middleware;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_RouteUseAfter(chttpx_route_t* registered, chttpx_middleware_t middleware)
 {
     if (!registered || !middleware || registered->after_middleware_count >= MAX_MIDDLEWARES)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     registered->after_middlewares[registered->after_middleware_count++] = middleware;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_policy_t* policy)
 {
     if (!registered || !policy || (policy->allowed_types_count > 0 && !policy->allowed_types))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     char** owned_types = policy->allowed_types_count ? calloc(policy->allowed_types_count, sizeof(*owned_types)) : NULL;
     if (policy->allowed_types_count && !owned_types)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     for (size_t i = 0; i < policy->allowed_types_count; i++)
     {
@@ -485,7 +485,7 @@ int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_pol
             for (size_t j = 0; j < i; j++)
                 free(owned_types[j]);
             free(owned_types);
-            return CHTTPX_ERR_INVALID_ARGUMENT;
+            return cHTTPX_ERR_INVALID_ARGUMENT;
         }
 
         owned_types[i] = strdup(policy->allowed_types[i]);
@@ -494,7 +494,7 @@ int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_pol
             for (size_t j = 0; j < i; j++)
                 free(owned_types[j]);
             free(owned_types);
-            return CHTTPX_ERR_MEMORY;
+            return cHTTPX_ERR_MEMORY;
         }
     }
 
@@ -502,7 +502,7 @@ int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_pol
     registered->upload_policy = *policy;
     registered->upload_policy.allowed_types = (const char**)owned_types;
     registered->has_upload_policy = true;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 void cHTTPX_RouterFree(chttpx_router_t* router)
