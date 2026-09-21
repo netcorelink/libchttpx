@@ -304,8 +304,8 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_ses
             return -2;
 
         int n = _chttpx_io_recv(fd, tls_session, buffer + total, buffer_size - 1 - total);
-        if (n == CHTTPX_ERR_TLS)
-            return CHTTPX_ERR_TLS;
+        if (n == cHTTPX_ERR_TLS)
+            return cHTTPX_ERR_TLS;
         if (n < 0)
         {
 #ifdef CHTTPX_PLATFORM_POSIX
@@ -313,7 +313,7 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_ses
                 continue;
 #endif
             if (socket_read_timed_out())
-                return CHTTPX_ERR_TIMEOUT;
+                return cHTTPX_ERR_TIMEOUT;
             return -1;
         }
         if (n == 0)
@@ -405,7 +405,7 @@ static int append_response_header(char* buffer, size_t capacity, size_t* length,
 static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, char** output, size_t* output_size)
 {
     if (!req || !output || !output_size)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     *output = NULL;
     *output_size = 0;
@@ -416,7 +416,7 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
         size_t name_size = strlen(res.headers[i].name);
         size_t value_size = strlen(res.headers[i].value);
         if (capacity > SIZE_MAX - name_size - value_size - 4)
-            return CHTTPX_ERR_LIMIT;
+            return cHTTPX_ERR_LIMIT;
         capacity += name_size + value_size + 4;
     }
     if (server && server->cors.enabled)
@@ -424,13 +424,13 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
         size_t methods_size = server->cors.methods ? strlen(server->cors.methods) : 0;
         size_t headers_size = server->cors.headers ? strlen(server->cors.headers) : 0;
         if (capacity > SIZE_MAX - methods_size - headers_size - MAX_HEADER_VALUE - 512)
-            return CHTTPX_ERR_LIMIT;
+            return cHTTPX_ERR_LIMIT;
         capacity += methods_size + headers_size + MAX_HEADER_VALUE + 512;
     }
 
     char* header = malloc(capacity);
     if (!header)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     size_t length = 0;
     const char* allowed_origin = server && server->cors.enabled ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
@@ -471,7 +471,7 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
     if (!response)
     {
         free(header);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
     memcpy(response, header, length);
     if (res.body && res.body_size)
@@ -479,11 +479,11 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
     free(header);
     *output = response;
     *output_size = total;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 limit_error:
     free(header);
-    return CHTTPX_ERR_LIMIT;
+    return cHTTPX_ERR_LIMIT;
 }
 
 static void send_response(chttpx_request_t* req, chttpx_response_t res)
@@ -491,10 +491,10 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
     char* response = NULL;
     size_t response_size = 0;
     int build_result = build_response_buffer(req, res, &response, &response_size);
-    if (build_result != CHTTPX_OK)
+    if (build_result != cHTTPX_OK)
         return;
     int write_result = _chttpx_io_send_all(req->client_fd, req->_tls_session, response, response_size);
-    if (write_result == CHTTPX_ERR_TLS)
+    if (write_result == cHTTPX_ERR_TLS)
         _chttpx_tls_log_error(req->_server, req->request_id, "TLS response write failed");
     free(response);
 }
@@ -814,7 +814,7 @@ static chttpx_request_t* parse_prefetched_request(chttpx_serv_t* server, chttpx_
 int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_response_t* res)
 {
     if (!server || !server->initialized || !req || !res || !req->method || !req->path)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     req->_server = server;
 
@@ -910,7 +910,7 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
                                 duration_seconds);
 
     postmiddleware_logging_write(req, res);
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size)
@@ -920,14 +920,14 @@ int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd,
         free(body);
         if (body_stream)
             fclose(body_stream);
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     }
 
     *output = NULL;
     *output_size = 0;
     chttpx_request_t* req = parse_prefetched_request(server, client_fd, tls_session, headers, header_size, body, body_size, body_stream, content_length);
     if (!req)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     chttpx_response_t res = {0};
     if (req->_parse_status)
@@ -939,7 +939,7 @@ int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd,
     else if (!build_cors_preflight(req, &res))
     {
         int dispatch_result = _chttpx_dispatch(server, req, &res);
-        if (dispatch_result != CHTTPX_OK)
+        if (dispatch_result != cHTTPX_OK)
             res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "request dispatch failed");
     }
 
@@ -972,7 +972,7 @@ void* chttpx_handle(void* arg)
     set_client_timeout(server, client_sock);
 
     void* tls_session = NULL;
-    if (_chttpx_tls_accept(server, client_sock, &tls_session) != CHTTPX_OK)
+    if (_chttpx_tls_accept(server, client_sock, &tls_session) != cHTTPX_OK)
     {
         _chttpx_metrics_connection_rejected(server);
         chttpx_close(client_sock);
@@ -991,9 +991,9 @@ void* chttpx_handle(void* arg)
     }
     if (received <= 0)
     {
-        if (received == CHTTPX_ERR_TIMEOUT)
+        if (received == cHTTPX_ERR_TIMEOUT)
             _chttpx_metrics_timeout_failure(server);
-        else if (received == CHTTPX_ERR_TLS)
+        else if (received == cHTTPX_ERR_TLS)
         {
             _chttpx_metrics_connection_rejected(server);
             _chttpx_tls_log_error(server, "-", "TLS request-header read failed");
@@ -1024,7 +1024,7 @@ void* chttpx_handle(void* arg)
         goto cleanup_request;
 
     chttpx_response_t res = {0};
-    if (_chttpx_dispatch(server, req, &res) == CHTTPX_OK)
+    if (_chttpx_dispatch(server, req, &res) == cHTTPX_OK)
     {
         send_response(req, res);
         cHTTPX_ResponseCleanup(&res);
