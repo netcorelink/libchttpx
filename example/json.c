@@ -17,7 +17,7 @@ static void create_user(chttpx_request_t* req, chttpx_response_t* res)
             true,
             3,
             254,
-            CHTTPX_TRIM | CHTTPX_LOWERCASE,
+            cHTTPX_TRIM | cHTTPX_LOWERCASE,
             NULL
         ),
         cHTTPX_StringField(
@@ -26,7 +26,7 @@ static void create_user(chttpx_request_t* req, chttpx_response_t* res)
             true,
             1,
             64,
-            CHTTPX_TRIM,
+            cHTTPX_TRIM,
             NULL
         ),
     };
