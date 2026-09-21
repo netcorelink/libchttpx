@@ -89,7 +89,7 @@ static void test_bind_and_json(void)
     req.body_size = strlen(body);
     strcpy(req.language, "en");
     char* username = NULL;
-    chttpx_validation_t fields[] = {cHTTPX_StringField("username", &username, true, 3, 32, CHTTPX_TRIM | CHTTPX_LOWERCASE, username_validator)};
+    chttpx_validation_t fields[] = {cHTTPX_StringField("username", &username, true, 3, 32, cHTTPX_TRIM | cHTTPX_LOWERCASE, username_validator)};
     chttpx_response_t response = {0};
     assert(cHTTPX_BindJSON(&req, &response, fields, CHTTPX_ARRAY_LEN(fields)));
     assert(strcmp(username, "valid_user") == 0);
@@ -99,7 +99,7 @@ static void test_bind_and_json(void)
     assert(cHTTPX_JsonString(object, "message", "quote: \"") == 0);
     assert(cHTTPX_JsonNumber(object, "id", 42) == 0);
     response = cHTTPX_ResJsonObject(cHTTPX_StatusOK, object);
-    assert(response.body_ownership == CHTTPX_BODY_OWNED);
+    assert(response.body_ownership == cHTTPX_BODY_OWNED);
     assert(strstr((const char*)response.body, "\\\"") != NULL);
     cHTTPX_ResponseCleanup(&response);
     cHTTPX_RequestCleanup(&req);
