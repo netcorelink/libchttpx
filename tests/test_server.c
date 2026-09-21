@@ -199,7 +199,7 @@ int main(void)
     assert(cHTTPX_AppInit(&remote_app) == cHTTPX_OK);
 
     chttpx_config_t remote_config = cHTTPX_DefaultConfig();
-    assert(remote_config.network_mode == CHTTPX_NETWORK_DUAL);
+    assert(remote_config.network_mode == cHTTPX_NETWORK_DUAL);
     remote_config.port = 0;
 
     chttpx_serv_t* remote_server = cHTTPX_AppServer(&remote_app, "payments", &remote_config);
