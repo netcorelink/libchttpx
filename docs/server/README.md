@@ -17,7 +17,7 @@ Current defaults:
 | Field | Default |
 | --- | ---: |
 | `port` | 8080 |
-| `network_mode` | `CHTTPX_NETWORK_DUAL` |
+| `network_mode` | `cHTTPX_NETWORK_DUAL` |
 | `max_clients` | 255 |
 | `read_timeout_sec` | 30 |
 | `write_timeout_sec` | 30 |
@@ -28,7 +28,7 @@ Current defaults:
 | `request_id_enabled` | true |
 | `metrics_enabled` | false |
 | `default_language` | `"en"` |
-| `log_level` | `CHTTPX_LOG_INFO` |
+| `log_level` | `cHTTPX_LOG_INFO` |
 
 ## Network mode
 
@@ -38,16 +38,16 @@ Servers use dual-stack networking by default. A single IPv6 listener bound to `:
 chttpx_config_t config = cHTTPX_DefaultConfig();
 
 /* Default: accept IPv4 and IPv6. */
-config.network_mode = CHTTPX_NETWORK_DUAL;
+config.network_mode = cHTTPX_NETWORK_DUAL;
 
 /* IPv4 only. */
-// config.network_mode = CHTTPX_NETWORK_IPV4;
+// config.network_mode = cHTTPX_NETWORK_IPV4;
 
 /* IPv6 only. */
-// config.network_mode = CHTTPX_NETWORK_IPV6;
+// config.network_mode = cHTTPX_NETWORK_IPV6;
 ```
 
-With `CHTTPX_NETWORK_DUAL`, both `http://127.0.0.1:8080` and `http://[::1]:8080` reach the same server. IPv4-mapped peer addresses are normalized before they are exposed through `req->client_ip`, so an IPv4 client is reported as `127.0.0.1` rather than `::ffff:127.0.0.1`.
+With `cHTTPX_NETWORK_DUAL`, both `http://127.0.0.1:8080` and `http://[::1]:8080` reach the same server. IPv4-mapped peer addresses are normalized before they are exposed through `req->client_ip`, so an IPv4 client is reported as `127.0.0.1` rather than `::ffff:127.0.0.1`.
 
 ## Custom limits
 
