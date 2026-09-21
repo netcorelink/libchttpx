@@ -42,6 +42,10 @@ The snapshot includes:
 - parser, timeout and rate-limit failure counters;
 - request-duration count, sum and cumulative histogram buckets.
 
+Worker-runtime metrics are available through `cHTTPX_ServerRuntimeMetrics()`. They include the bounded application queue depth, active workers, rejected jobs, completed jobs, and total queue-wait time. The worker pool is fixed at 32 threads and is intentionally not a public configuration knob.
+
+The Prometheus exporter also publishes these values as `libchttpx_worker_queue_depth`, `libchttpx_workers_active`, `libchttpx_worker_jobs_rejected_total`, `libchttpx_worker_jobs_completed_total`, and `libchttpx_worker_queue_wait_seconds_total`.
+
 The duration buckets are:
 
 ```text
