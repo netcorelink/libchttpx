@@ -115,7 +115,7 @@ static test_response_t exchange(uint16_t port, const char* request)
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
-    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == CHTTPX_OK);
+    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == cHTTPX_OK);
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     shutdown(socket_fd, SD_SEND);
@@ -211,14 +211,14 @@ static int failing_provider(const unsigned char* input,
     (void)user_data;
     *output = NULL;
     *output_size = 0;
-    return CHTTPX_ERR_COMPRESSION;
+    return cHTTPX_ERR_COMPRESSION;
 }
 
 int main(void)
 {
     fill_bodies();
     chttpx_app_t app;
-    assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppInit(&app) == cHTTPX_OK);
 
     chttpx_config_t server_config = cHTTPX_DefaultConfig();
     server_config.port = 0;
@@ -229,7 +229,7 @@ int main(void)
     chttpx_compression_config_t compression = cHTTPX_CompressionDefault();
     compression.min_size = 128;
     compression.level = 5;
-    assert(cHTTPX_CompressionUse(server, &compression) == CHTTPX_OK);
+    assert(cHTTPX_CompressionUse(server, &compression) == cHTTPX_OK);
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     assert(cHTTPX_Get(&router, "/large", large_handler));
@@ -241,9 +241,9 @@ int main(void)
 
     chttpx_route_t* route_disabled = cHTTPX_Get(&router, "/route-disabled", large_handler);
     assert(route_disabled);
-    assert(cHTTPX_RouteCompression(route_disabled, false) == CHTTPX_OK);
+    assert(cHTTPX_RouteCompression(route_disabled, false) == cHTTPX_OK);
 
-    assert(cHTTPX_AppStart(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
     wait_until_listening(server);
 
     test_response_t response = exchange(
@@ -326,7 +326,7 @@ int main(void)
     failing_config.min_size = 128;
     failing_config.providers = &failing;
     failing_config.providers_count = 1;
-    assert(cHTTPX_CompressionUse(server, &failing_config) == CHTTPX_OK);
+    assert(cHTTPX_CompressionUse(server, &failing_config) == cHTTPX_OK);
 
     response = exchange(
         server->port,
