@@ -1499,6 +1499,14 @@ extern "C"
     /** Copy a consistent per-server metrics snapshot. */
     int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics);
 
+    /**
+     * Copy a worker-runtime metrics snapshot.
+     *
+     * Returns cHTTPX_OK while the server runtime is active, otherwise
+     * cHTTPX_ERR_UNAVAILABLE.
+     */
+    int cHTTPX_ServerRuntimeMetrics(chttpx_serv_t* server, chttpx_runtime_metrics_t* metrics);
+
     /** Register a Prometheus text exposition route. */
     int cHTTPX_MetricsRoute(chttpx_router_t* router, const char* path);
 
