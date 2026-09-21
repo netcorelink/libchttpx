@@ -87,26 +87,26 @@ See [Metrics and Prometheus](../metrics/README.md) for snapshots and the `/metri
 
 | Code | Meaning |
 | --- | --- |
-| `CHTTPX_OK` | success |
-| `CHTTPX_ERR_MEMORY` | allocation failure |
-| `CHTTPX_ERR_SOCKET` | socket setup failure |
-| `CHTTPX_ERR_BIND` | bind failed |
-| `CHTTPX_ERR_LISTEN` | listen failed |
-| `CHTTPX_ERR_INVALID_ARGUMENT` | invalid input |
-| `CHTTPX_ERR_LIMIT` | limit exceeded |
-| `CHTTPX_ERR_IO` | I/O failure |
-| `CHTTPX_ERR_NOT_FOUND` | resource/target not found |
-| `CHTTPX_ERR_PROTOCOL` | invalid protocol data |
-| `CHTTPX_ERR_STATE` | invalid lifecycle state |
-| `CHTTPX_ERR_UNAVAILABLE` | remote call unavailable |
-| `CHTTPX_ERR_TIMEOUT` | remote call timed out |
+| `cHTTPX_OK` | success |
+| `cHTTPX_ERR_MEMORY` | allocation failure |
+| `cHTTPX_ERR_SOCKET` | socket setup failure |
+| `cHTTPX_ERR_BIND` | bind failed |
+| `cHTTPX_ERR_LISTEN` | listen failed |
+| `cHTTPX_ERR_INVALID_ARGUMENT` | invalid input |
+| `cHTTPX_ERR_LIMIT` | limit exceeded |
+| `cHTTPX_ERR_IO` | I/O failure |
+| `cHTTPX_ERR_NOT_FOUND` | resource/target not found |
+| `cHTTPX_ERR_PROTOCOL` | invalid protocol data |
+| `cHTTPX_ERR_STATE` | invalid lifecycle state |
+| `cHTTPX_ERR_UNAVAILABLE` | remote call unavailable |
+| `cHTTPX_ERR_TIMEOUT` | remote call timed out |
 
 ## Lifecycle
 
 ```c
 chttpx_app_t app;
 
-if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+if (cHTTPX_AppInit(&app) != cHTTPX_OK)
     return 1;
 
 chttpx_config_t config = cHTTPX_DefaultConfig();
