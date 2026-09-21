@@ -935,7 +935,7 @@ extern "C"
      * @param data Buffer
      * to send.
      * @param size Buffer size in bytes.
-     * @return CHTTPX_OK on success, otherwise a negative error code.
+     * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 
@@ -1175,22 +1175,42 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_OK = 0,
-        CHTTPX_ERR_MEMORY = -1,
-        CHTTPX_ERR_SOCKET = -2,
-        CHTTPX_ERR_BIND = -3,
-        CHTTPX_ERR_LISTEN = -4,
-        CHTTPX_ERR_INVALID_ARGUMENT = -5,
-        CHTTPX_ERR_LIMIT = -6,
-        CHTTPX_ERR_IO = -7,
-        CHTTPX_ERR_NOT_FOUND = -8,
-        CHTTPX_ERR_PROTOCOL = -9,
-        CHTTPX_ERR_STATE = -10,
-        CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13,
-        CHTTPX_ERR_COMPRESSION = -14
+        cHTTPX_OK = 0,
+        cHTTPX_ERR_MEMORY = -1,
+        cHTTPX_ERR_SOCKET = -2,
+        cHTTPX_ERR_BIND = -3,
+        cHTTPX_ERR_LISTEN = -4,
+        cHTTPX_ERR_INVALID_ARGUMENT = -5,
+        cHTTPX_ERR_LIMIT = -6,
+        cHTTPX_ERR_IO = -7,
+        cHTTPX_ERR_NOT_FOUND = -8,
+        cHTTPX_ERR_PROTOCOL = -9,
+        cHTTPX_ERR_STATE = -10,
+        cHTTPX_ERR_UNAVAILABLE = -11,
+        cHTTPX_ERR_TIMEOUT = -12,
+        cHTTPX_ERR_TLS = -13,
+        cHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
+
+    /* Backward compatibility for the legacy all-uppercase result names. */
+#ifndef CHTTPX_DISABLE_LEGACY_ERROR_NAMES
+#define CHTTPX_OK cHTTPX_OK
+#define CHTTPX_ERR_MEMORY cHTTPX_ERR_MEMORY
+#define CHTTPX_ERR_SOCKET cHTTPX_ERR_SOCKET
+#define CHTTPX_ERR_BIND cHTTPX_ERR_BIND
+#define CHTTPX_ERR_LISTEN cHTTPX_ERR_LISTEN
+#define CHTTPX_ERR_INVALID_ARGUMENT cHTTPX_ERR_INVALID_ARGUMENT
+#define CHTTPX_ERR_LIMIT cHTTPX_ERR_LIMIT
+#define CHTTPX_ERR_IO cHTTPX_ERR_IO
+#define CHTTPX_ERR_NOT_FOUND cHTTPX_ERR_NOT_FOUND
+#define CHTTPX_ERR_PROTOCOL cHTTPX_ERR_PROTOCOL
+#define CHTTPX_ERR_STATE cHTTPX_ERR_STATE
+#define CHTTPX_ERR_UNAVAILABLE cHTTPX_ERR_UNAVAILABLE
+#define CHTTPX_ERR_TIMEOUT cHTTPX_ERR_TIMEOUT
+#define CHTTPX_ERR_TLS cHTTPX_ERR_TLS
+#define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
+#endif
+
 
     typedef enum
     {
@@ -1978,7 +1998,7 @@ extern "C"
      * codes.
      * @param count     Number of elements in languages.
      * @param fallback  Fallback language code.
-     * @return CHTTPX_OK on
+     * @return cHTTPX_OK on
      * success, otherwise a negative error code.
      */
     int cHTTPX_i18n_languages(struct chttpx_serv* server, const char** languages, size_t count, const char* fallback);
