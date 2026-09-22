@@ -298,8 +298,13 @@ static void metrics_snapshot(chttpx_metrics_state_t* state, chttpx_metrics_t* me
 
     metrics->requests_total = metric_load(&state->metrics.requests_total);
     metrics->requests_in_flight = metric_load(&state->metrics.requests_in_flight);
+    if (metrics->requests_in_flight > metrics->requests_total)
+        metrics->requests_in_flight = metrics->requests_total;
+
     metrics->connections_active = metric_load(&state->metrics.connections_active);
     metrics->connections_accepted_total = metric_load(&state->metrics.connections_accepted_total);
+    if (metrics->connections_active > metrics->connections_accepted_total)
+        metrics->connections_active = metrics->connections_accepted_total;
     metrics->connections_rejected_total = metric_load(&state->metrics.connections_rejected_total);
     metrics->responses_1xx_total = metric_load(&state->metrics.responses_1xx_total);
     metrics->responses_2xx_total = metric_load(&state->metrics.responses_2xx_total);
