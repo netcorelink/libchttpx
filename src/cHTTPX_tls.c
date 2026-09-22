@@ -22,7 +22,7 @@
 
 void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const char* prefix)
 {
-    if (!server || !server->logger || server->log_level > CHTTPX_LOG_ERROR)
+    if (!server || !server->logger || server->log_level > cHTTPX_LOG_ERROR)
         return;
 
 #ifdef CHTTPX_ENABLE_TLS
@@ -36,9 +36,9 @@ void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const 
         snprintf(message, sizeof(message), "%s: %s", prefix, detail);
     else
         snprintf(message, sizeof(message), "%s", prefix);
-    server->logger(CHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", message, server->logger_data);
+    server->logger(cHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", message, server->logger_data);
 #else
-    server->logger(CHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", prefix, server->logger_data);
+    server->logger(cHTTPX_LOG_ERROR, request_id && *request_id ? request_id : "-", prefix, server->logger_data);
 #endif
 }
 
@@ -65,19 +65,19 @@ static void free_server_tls_strings(chttpx_serv_t* server)
 int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* config)
 {
     if (!server || !config)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (!config->enabled)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 
     if (!config->cert_file || !*config->cert_file || !config->key_file || !*config->key_file)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
 #ifndef CHTTPX_ENABLE_TLS
-    return CHTTPX_ERR_UNAVAILABLE;
+    return cHTTPX_ERR_UNAVAILABLE;
 #else
     if (OPENSSL_init_ssl(0, NULL) != 1)
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
 
     server->tls.enabled = true;
     server->tls.require_client_cert = config->require_client_cert;
@@ -89,7 +89,7 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
         (config->client_ca_file && !server->tls.client_ca_file))
     {
         free_server_tls_strings(server);
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     }
 
     SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
@@ -136,12 +136,12 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
     }
 
     server->_tls_ctx = ctx;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 tls_error:
     _chttpx_tls_log_error(server, "-", "TLS server initialization failed");
     free_server_tls_strings(server);
-    return CHTTPX_ERR_TLS;
+    return cHTTPX_ERR_TLS;
 #endif
 }
 
@@ -161,76 +161,76 @@ void _chttpx_tls_server_cleanup(chttpx_serv_t* server)
 int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** session)
 {
     if (!server || !session)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     *session = NULL;
     if (!server->tls.enabled)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 
 #ifndef CHTTPX_ENABLE_TLS
     (void)client_fd;
-    return CHTTPX_ERR_UNAVAILABLE;
+    return cHTTPX_ERR_UNAVAILABLE;
 #else
     SSL* ssl = SSL_new((SSL_CTX*)server->_tls_ctx);
     if (!ssl)
     {
         _chttpx_tls_log_error(server, "-", "TLS session allocation failed");
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     }
 
     if (SSL_set_fd(ssl, (int)client_fd) != 1 || SSL_accept(ssl) != 1)
     {
         _chttpx_tls_log_error(server, "-", "TLS handshake failed");
         SSL_free(ssl);
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     }
 
     *session = ssl;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 #endif
 }
 
 int _chttpx_tls_accept_begin(chttpx_serv_t* server, chttpx_socket_t client_fd, void** session)
 {
     if (!server || !session)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     *session = NULL;
     if (!server->tls.enabled)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 #ifndef CHTTPX_ENABLE_TLS
     (void)client_fd;
-    return CHTTPX_ERR_UNAVAILABLE;
+    return cHTTPX_ERR_UNAVAILABLE;
 #else
     SSL* ssl = SSL_new((SSL_CTX*)server->_tls_ctx);
     if (!ssl)
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     if (SSL_set_fd(ssl, (int)client_fd) != 1)
     {
         SSL_free(ssl);
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     }
     SSL_set_accept_state(ssl);
     *session = ssl;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 #endif
 }
 
 int _chttpx_tls_accept_step(void* session)
 {
     if (!session)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
 #ifndef CHTTPX_ENABLE_TLS
-    return CHTTPX_ERR_UNAVAILABLE;
+    return cHTTPX_ERR_UNAVAILABLE;
 #else
     int result = SSL_accept((SSL*)session);
     if (result == 1)
-        return CHTTPX_OK;
+        return cHTTPX_OK;
     int error = SSL_get_error((SSL*)session, result);
     if (error == SSL_ERROR_WANT_READ)
         return CHTTPX_IO_WANT_READ;
     if (error == SSL_ERROR_WANT_WRITE)
         return CHTTPX_IO_WANT_WRITE;
-    return CHTTPX_ERR_TLS;
+    return cHTTPX_ERR_TLS;
 #endif
 }
 
@@ -252,7 +252,7 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
                                void** context, void** session)
 {
     if (!host || !*host || !context || !session)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     *context = NULL;
     *session = NULL;
@@ -260,16 +260,16 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
 #ifndef CHTTPX_ENABLE_TLS
     (void)socket_fd;
     (void)config;
-    return CHTTPX_ERR_UNAVAILABLE;
+    return cHTTPX_ERR_UNAVAILABLE;
 #else
     chttpx_tls_client_config_t selected = config ? *config : (chttpx_tls_client_config_t){.verify_peer = true};
     if ((selected.client_cert_file && !selected.client_key_file) ||
         (!selected.client_cert_file && selected.client_key_file))
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx)
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
 
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
@@ -283,7 +283,7 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
         if (trust_ok != 1)
         {
             SSL_CTX_free(ctx);
-            return CHTTPX_ERR_TLS;
+            return cHTTPX_ERR_TLS;
         }
     }
     else
@@ -296,7 +296,7 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
             SSL_CTX_check_private_key(ctx) != 1)
         {
             SSL_CTX_free(ctx);
-            return CHTTPX_ERR_TLS;
+            return cHTTPX_ERR_TLS;
         }
     }
 
@@ -304,7 +304,7 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
     if (!ssl)
     {
         SSL_CTX_free(ctx);
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     }
 
     unsigned char ip_buffer[16];
@@ -336,12 +336,12 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
 
     *context = ctx;
     *session = ssl;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 error:
     SSL_free(ssl);
     SSL_CTX_free(ctx);
-    return CHTTPX_ERR_TLS;
+    return cHTTPX_ERR_TLS;
 #endif
 }
 
@@ -364,7 +364,7 @@ void _chttpx_tls_client_close(void* context, void* session)
 int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t size)
 {
     if (!buffer || size == 0)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     size_t wanted = size > INT_MAX ? INT_MAX : size;
 
@@ -384,7 +384,7 @@ int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t 
             if (error == SSL_ERROR_SYSCALL && errno == EINTR)
                 continue;
 #endif
-            return CHTTPX_ERR_TLS;
+            return cHTTPX_ERR_TLS;
         }
     }
 #else
@@ -407,7 +407,7 @@ int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t 
 int _chttpx_io_recv_nonblocking(chttpx_socket_t fd, void* tls_session, void* buffer, size_t size)
 {
     if (!buffer || size == 0)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     size_t wanted = size > INT_MAX ? INT_MAX : size;
 #ifdef CHTTPX_ENABLE_TLS
     if (tls_session)
@@ -422,7 +422,7 @@ int _chttpx_io_recv_nonblocking(chttpx_socket_t fd, void* tls_session, void* buf
             return CHTTPX_IO_WANT_WRITE;
         if (error == SSL_ERROR_ZERO_RETURN)
             return 0;
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     }
 #else
     (void)tls_session;
@@ -442,13 +442,13 @@ int _chttpx_io_recv_nonblocking(chttpx_socket_t fd, void* tls_session, void* buf
     if (errno == EINTR)
         return CHTTPX_IO_WANT_READ;
 #endif
-    return CHTTPX_ERR_IO;
+    return cHTTPX_ERR_IO;
 }
 
 int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const void* data, size_t size)
 {
     if (size > 0 && !data)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
     if (size == 0)
         return 0;
     size_t wanted = size > INT_MAX ? INT_MAX : size;
@@ -463,7 +463,7 @@ int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const voi
             return CHTTPX_IO_WANT_READ;
         if (error == SSL_ERROR_WANT_WRITE)
             return CHTTPX_IO_WANT_WRITE;
-        return CHTTPX_ERR_TLS;
+        return cHTTPX_ERR_TLS;
     }
 #else
     (void)tls_session;
@@ -487,13 +487,13 @@ int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const voi
     if (errno == EINTR)
         return CHTTPX_IO_WANT_WRITE;
 #endif
-    return CHTTPX_ERR_IO;
+    return cHTTPX_ERR_IO;
 }
 
 int _chttpx_io_send_all(chttpx_socket_t fd, void* tls_session, const void* data, size_t size)
 {
     if (size > 0 && !data)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     const unsigned char* cursor = data;
     size_t sent = 0;
@@ -527,7 +527,7 @@ int _chttpx_io_send_all(chttpx_socket_t fd, void* tls_session, const void* data,
                 if (error == SSL_ERROR_SYSCALL && errno == EINTR)
                     continue;
 #endif
-                return CHTTPX_ERR_TLS;
+                return cHTTPX_ERR_TLS;
             }
             sent += (size_t)result;
             continue;
@@ -545,12 +545,12 @@ int _chttpx_io_send_all(chttpx_socket_t fd, void* tls_session, const void* data,
             if (errno == EINTR)
                 continue;
 #endif
-            return CHTTPX_ERR_IO;
+            return cHTTPX_ERR_IO;
         }
         if (result == 0)
-            return CHTTPX_ERR_IO;
+            return cHTTPX_ERR_IO;
         sent += (size_t)result;
     }
 
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }

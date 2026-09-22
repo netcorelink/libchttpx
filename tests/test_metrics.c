@@ -74,7 +74,7 @@ static http_response_t exchange(uint16_t port, const char* path)
                           "GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
                           path);
     assert(length > 0 && (size_t)length < sizeof(request));
-    assert(cHTTPX_SendAll(fd, request, (size_t)length) == CHTTPX_OK);
+    assert(cHTTPX_SendAll(fd, request, (size_t)length) == cHTTPX_OK);
     shutdown(fd, SHUT_WR);
 
     while (response.size + 1 < sizeof(response.bytes))
@@ -115,7 +115,7 @@ static void* snapshot_reader(void* data)
     while (!__atomic_load_n(&ctx->stop, __ATOMIC_ACQUIRE))
     {
         chttpx_metrics_t metrics;
-        assert(cHTTPX_ServerMetrics(ctx->server, &metrics) == CHTTPX_OK);
+        assert(cHTTPX_ServerMetrics(ctx->server, &metrics) == cHTTPX_OK);
         assert(metrics.requests_in_flight <= metrics.requests_total);
     }
     return NULL;
@@ -130,25 +130,28 @@ static double diff_seconds(struct timespec start, struct timespec end)
 int main(void)
 {
     chttpx_app_t app;
-    assert(cHTTPX_AppInit(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppInit(&app) == cHTTPX_OK);
 
     chttpx_config_t disabled_config = cHTTPX_DefaultConfig();
     disabled_config.port = 0;
-    disabled_config.network_mode = CHTTPX_NETWORK_IPV4;
+    disabled_config.network_mode = cHTTPX_NETWORK_IPV4;
 
     chttpx_serv_t* disabled =
         cHTTPX_AppServer(&app, "metrics-disabled", &disabled_config);
     assert(disabled);
 
     chttpx_metrics_t disabled_metrics;
-    assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == CHTTPX_ERR_UNAVAILABLE);
+    assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == cHTTPX_ERR_UNAVAILABLE);
+
+    chttpx_runtime_metrics_t disabled_runtime_metrics;
+    assert(cHTTPX_ServerRuntimeMetrics(disabled, &disabled_runtime_metrics) == cHTTPX_OK);
 
     chttpx_router_t disabled_router = cHTTPX_RoutePathPrefix(disabled, "");
-    assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == CHTTPX_ERR_UNAVAILABLE);
+    assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == cHTTPX_ERR_UNAVAILABLE);
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 0;
-    config.network_mode = CHTTPX_NETWORK_IPV4;
+    config.network_mode = cHTTPX_NETWORK_IPV4;
     config.metrics_enabled = true;
 
     chttpx_serv_t* server = cHTTPX_AppServer(&app, "metrics", &config);
@@ -156,9 +159,9 @@ int main(void)
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     assert(cHTTPX_Get(&router, "/users/{id}", user_handler));
-    assert(cHTTPX_MetricsRoute(&router, "/metrics") == CHTTPX_OK);
+    assert(cHTTPX_MetricsRoute(&router, "/metrics") == cHTTPX_OK);
 
-    assert(cHTTPX_AppStart(&app) == CHTTPX_OK);
+    assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
     wait_until_listening(server);
 
     snapshot_ctx_t snapshot_ctx = {.server = server, .stop = 0};
@@ -184,7 +187,7 @@ int main(void)
         (uint64_t)WORKER_COUNT * (uint64_t)REQUESTS_PER_WORKER;
 
     chttpx_metrics_t metrics;
-    assert(cHTTPX_ServerMetrics(server, &metrics) == CHTTPX_OK);
+    assert(cHTTPX_ServerMetrics(server, &metrics) == cHTTPX_OK);
     assert(metrics.requests_total == expected_requests);
     assert(metrics.requests_in_flight == 0);
     assert(metrics.responses_2xx_total == expected_requests);
@@ -194,6 +197,11 @@ int main(void)
     assert(metrics.connections_accepted_total >= expected_requests);
     assert(metrics.response_bytes_total == expected_requests * 2);
 
+    chttpx_runtime_metrics_t runtime_metrics;
+    assert(cHTTPX_ServerRuntimeMetrics(server, &runtime_metrics) == cHTTPX_OK);
+    assert(runtime_metrics.completed_jobs_total >= expected_requests);
+    assert(runtime_metrics.rejected_jobs_total == 0);
+
     http_response_t scrape = exchange(server->port, "/metrics");
     assert(strncmp(scrape.bytes, "HTTP/1.1 200 OK", 15) == 0);
 
@@ -201,6 +209,9 @@ int main(void)
     assert(strstr(body, "# TYPE libchttpx_requests_total counter"));
     assert(strstr(body, "libchttpx_route_requests_total{method=\"GET\",route=\"/users/{id}\",class=\"2xx\"}"));
     assert(strstr(body, "libchttpx_request_duration_seconds_bucket{le=\"+Inf\"}"));
+    assert(strstr(body, "libchttpx_worker_queue_depth"));
+    assert(strstr(body, "libchttpx_workers_active"));
+    assert(strstr(body, "libchttpx_worker_jobs_completed_total"));
     assert(strstr(body, "/users/0") == NULL);
     assert(strstr(body, "/users/29") == NULL);
 
@@ -208,7 +219,7 @@ int main(void)
     struct timespec end;
     clock_gettime(CLOCK_MONOTONIC, &start);
     for (int i = 0; i < 100000; i++)
-        assert(cHTTPX_ServerMetrics(server, &metrics) == CHTTPX_OK);
+        assert(cHTTPX_ServerMetrics(server, &metrics) == cHTTPX_OK);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     double ns_per_snapshot = diff_seconds(start, end) * 1e9 / 100000.0;

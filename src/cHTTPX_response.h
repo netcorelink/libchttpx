@@ -22,9 +22,14 @@ extern "C"
     // RESponse
     typedef enum
     {
-        CHTTPX_BODY_BORROWED = 0,
-        CHTTPX_BODY_OWNED = 1
+        cHTTPX_BODY_BORROWED = 0,
+        cHTTPX_BODY_OWNED = 1
     } chttpx_body_ownership_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_BODY_OWNERSHIP_NAMES
+#define CHTTPX_BODY_BORROWED cHTTPX_BODY_BORROWED
+#define CHTTPX_BODY_OWNED cHTTPX_BODY_OWNED
+#endif
 
     typedef struct chttpx_response
     {
@@ -140,7 +145,7 @@ extern "C"
      * @param data Buffer
      * to send.
      * @param size Buffer size in bytes.
-     * @return CHTTPX_OK on success, otherwise a negative error code.
+     * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 

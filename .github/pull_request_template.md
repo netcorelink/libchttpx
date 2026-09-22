@@ -20,8 +20,11 @@ Use a **conventional commit** title — it becomes the release version on merge:
 - [ ] PR title follows the table above
 - [ ] Code builds on Linux (`make lin` and `make libchttpx.so`)
 - [ ] Code builds on Windows (`make win`) if applicable
-- [ ] Source is formatted (`make lin-format` or `clang-format`)
-- [ ] README updated if public API or usage changed
+- [ ] Source follows `.clang-format` and keeps logical blocks readable
+- [ ] ASan/UBSan pass; TSan passes for concurrency-sensitive changes
+- [ ] Parser/network changes include negative-path tests and fuzz coverage where applicable
+- [ ] Public API changes document ownership, lifetime, thread-safety, and compatibility impact
+- [ ] Documentation is updated when public API or observable behavior changes
 
 ## Related issues
 

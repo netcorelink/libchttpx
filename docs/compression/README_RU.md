@@ -30,7 +30,7 @@ compression.min_size = 1024;
 compression.level = 5;
 
 int result = cHTTPX_CompressionUse(server, &compression);
-if (result != CHTTPX_OK) {
+if (result != cHTTPX_OK) {
     /* обработка ошибки */
 }
 ```
@@ -146,7 +146,7 @@ static int encode_zstd(
     void *user_data)
 {
     /* выделить *output и закодировать input */
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 chttpx_compression_provider_t providers[] = {
@@ -168,7 +168,7 @@ Provider выбирается по quality клиента. При одинако
 
 ## Ошибки и logging
 
-Некорректная конфигурация возвращает `CHTTPX_ERR_INVALID_ARGUMENT`, ошибка памяти — `CHTTPX_ERR_MEMORY`, а ошибка compression provider — `CHTTPX_ERR_COMPRESSION` внутри middleware.
+Некорректная конфигурация возвращает `cHTTPX_ERR_INVALID_ARGUMENT`, ошибка памяти — `cHTTPX_ERR_MEMORY`, а ошибка compression provider — `cHTTPX_ERR_COMPRESSION` внутри middleware.
 
 Если provider не смог сжать body, но клиент принимает identity, libchttpx пишет warning в logger и отправляет исходный ответ. Если identity запрещён, возвращается пустой `500 Internal Server Error`, а не ответ с неподдерживаемым encoding.
 

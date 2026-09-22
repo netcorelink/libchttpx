@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, develop]
   pull_request:
     branches: [main, master, develop, audit/core-safety-hardening]
 
@@ -10,8 +10,55 @@ permissions:
   contents: read
 
 jobs:
+  style:
+    name: Format and public naming
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt update && sudo apt install -y clang-format
+
+      - name: Check newly maintained runtime sources
+        run: clang-format --dry-run --Werror src/cHTTPX_worker.c src/cHTTPX_worker.h tests/fuzz_headers.c
+
+      - name: Reject legacy result names outside compatibility aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches="$(grep -R -nE '\\bCHTTPX_(OK|ERR_[A-Z0-9_]+)\\b' src include example tests 2>/dev/null || true)"
+          matches="$(printf '%s\n' "$matches" | grep -vE '^(src/cHTTPX_serv\.h|include/libchttpx\.h):[0-9]+:#define CHTTPX_(OK|ERR_[A-Z0-9_]+) ' || true)"
+          if [ -n "$matches" ]; then
+            echo "Use canonical cHTTPX_OK / cHTTPX_ERR_* result names:"
+            echo "$matches"
+            exit 1
+          fi
+
+  static-analysis:
+    name: Static analysis (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt update && sudo apt install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck \
+            --enable=warning,performance,portability \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            -I include \
+            -I src \
+            --error-exitcode=1 \
+            src/ include/ example/
+
   build-linux:
-    name: Build (Linux)
+    name: Build and test (Linux)
+    needs: [style, static-analysis]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,7 +67,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev clang-format
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev
 
       - name: Build binary
         run: make lin
@@ -34,11 +81,69 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Run ASan and UBSan tests
+  sanitizers:
+    name: ASan, UBSan and TSan
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev
+
+      - name: Run ASan and UBSan
         run: make test-sanitize
+
+      - name: Run ThreadSanitizer
+        run: make test-tsan
+
+  fuzz-smoke:
+    name: HTTP parser fuzz smoke
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang make libcjson-dev zlib1g-dev
+
+      - name: Run fuzz smoke test
+        run: make test-fuzz
+
+  package-smoke:
+    name: Package validation
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev
+
+      - name: Build release archive
+        run: make lin-lib
+
+      - name: Validate archive contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f libchttpx-dev.tar.gz
+          tar -tzf libchttpx-dev.tar.gz > /tmp/libchttpx-package-files.txt
+          grep -q '^libchttpx-dev/include/libchttpx.h$' /tmp/libchttpx-package-files.txt
+          grep -q '^libchttpx-dev/libchttpx.so$' /tmp/libchttpx-package-files.txt
 
   build-linux-tls:
     name: Build + HTTPS integration (Linux, OpenSSL)
+    needs: style
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,6 +165,7 @@ jobs:
 
   build-linux-compression:
     name: Response compression integration (Linux, zlib)
+    needs: style
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -86,6 +192,7 @@ jobs:
 
   build-windows:
     name: Build (Windows)
+    needs: style
     runs-on: windows-latest
     defaults:
       run:
@@ -109,24 +216,3 @@ jobs:
 
       - name: Run tests
         run: mingw32-make test-win SHELL=cmd
-
-  static-analysis:
-    name: Static analysis (cppcheck)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install cppcheck
-        run: sudo apt update && sudo apt install -y cppcheck
-
-      - name: Run cppcheck
-        run: |
-          cppcheck \
-            --enable=warning,performance,portability \
-            --suppress=missingIncludeSystem \
-            --inline-suppr \
-            -I include \
-            -I src \
-            --error-exitcode=1 \
-            src/ include/ example/

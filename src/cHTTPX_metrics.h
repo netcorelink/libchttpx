@@ -55,12 +55,38 @@ extern "C"
     } chttpx_metrics_t;
 
     /**
+     * Snapshot of the bounded application worker pool.
+     *
+     * The pool is internal to the server runtime and uses a fixed 32 workers.
+     * Queue depth and active_workers are gauges; the remaining fields are
+     * monotonic counters for the lifetime of the server runtime.
+     */
+    typedef struct
+    {
+        uint64_t worker_queue_depth;
+        uint64_t active_workers;
+        uint64_t rejected_jobs_total;
+        uint64_t completed_jobs_total;
+        uint64_t queue_wait_nanoseconds_total;
+    } chttpx_runtime_metrics_t;
+
+
+    /**
      * Copy a consistent metrics snapshot.
      *
-     * Returns CHTTPX_OK on success or CHTTPX_ERR_UNAVAILABLE when metrics are
+     * Returns cHTTPX_OK on success or cHTTPX_ERR_UNAVAILABLE when metrics are
      * disabled for the server.
      */
     int cHTTPX_ServerMetrics(struct chttpx_serv* server, chttpx_metrics_t* metrics);
+
+    /**
+     * Copy a worker-runtime metrics snapshot.
+     *
+     * Returns cHTTPX_OK while the server runtime is active, otherwise
+     * cHTTPX_ERR_UNAVAILABLE.
+     */
+    int cHTTPX_ServerRuntimeMetrics(struct chttpx_serv* server, chttpx_runtime_metrics_t* metrics);
+
 
     /**
      * Register a Prometheus text exposition endpoint on the supplied router.

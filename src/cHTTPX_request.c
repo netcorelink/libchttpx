@@ -522,7 +522,7 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
                 return 0;
             }
 
-            if (f->normalizers & CHTTPX_TRIM)
+            if (f->normalizers & cHTTPX_TRIM)
             {
                 char* start = v;
                 while (*start && isspace((unsigned char)*start))
@@ -534,12 +534,12 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
                     v[--trim_len] = '\0';
             }
 
-            if (f->normalizers & CHTTPX_LOWERCASE)
+            if (f->normalizers & cHTTPX_LOWERCASE)
             {
                 for (char* p = v; *p; p++)
                     *p = (char)tolower((unsigned char)*p);
             }
-            else if (f->normalizers & CHTTPX_UPPERCASE)
+            else if (f->normalizers & cHTTPX_UPPERCASE)
             {
                 for (char* p = v; *p; p++)
                     *p = (char)toupper((unsigned char)*p);

@@ -433,11 +433,18 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_NORMALIZE_NONE = 0,
-        CHTTPX_TRIM = 1 << 0,
-        CHTTPX_LOWERCASE = 1 << 1,
-        CHTTPX_UPPERCASE = 1 << 2
+        cHTTPX_NORMALIZE_NONE = 0,
+        cHTTPX_TRIM = 1 << 0,
+        cHTTPX_LOWERCASE = 1 << 1,
+        cHTTPX_UPPERCASE = 1 << 2
     } chttpx_normalizer_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_NORMALIZER_NAMES
+#define CHTTPX_NORMALIZE_NONE cHTTPX_NORMALIZE_NONE
+#define CHTTPX_TRIM cHTTPX_TRIM
+#define CHTTPX_LOWERCASE cHTTPX_LOWERCASE
+#define CHTTPX_UPPERCASE cHTTPX_UPPERCASE
+#endif
 
     typedef struct
     {
@@ -742,7 +749,7 @@ extern "C"
 #define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, CHTTPX_NORMALIZE_NONE, NULL                                         \
+        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL                                         \
     }
 
 /**
@@ -758,7 +765,7 @@ extern "C"
 #define chttpx_validation_integer(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                      \
+        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                      \
     }
 
 /**
@@ -774,7 +781,7 @@ extern "C"
 #define chttpx_validation_boolean(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                        \
+        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                        \
     }
 
 #define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
@@ -817,9 +824,14 @@ extern "C"
     // RESponse
     typedef enum
     {
-        CHTTPX_BODY_BORROWED = 0,
-        CHTTPX_BODY_OWNED = 1
+        cHTTPX_BODY_BORROWED = 0,
+        cHTTPX_BODY_OWNED = 1
     } chttpx_body_ownership_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_BODY_OWNERSHIP_NAMES
+#define CHTTPX_BODY_BORROWED cHTTPX_BODY_BORROWED
+#define CHTTPX_BODY_OWNED cHTTPX_BODY_OWNED
+#endif
 
     typedef struct chttpx_response
     {
@@ -935,7 +947,7 @@ extern "C"
      * @param data Buffer
      * to send.
      * @param size Buffer size in bytes.
-     * @return CHTTPX_OK on success, otherwise a negative error code.
+     * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 
@@ -1175,40 +1187,74 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_OK = 0,
-        CHTTPX_ERR_MEMORY = -1,
-        CHTTPX_ERR_SOCKET = -2,
-        CHTTPX_ERR_BIND = -3,
-        CHTTPX_ERR_LISTEN = -4,
-        CHTTPX_ERR_INVALID_ARGUMENT = -5,
-        CHTTPX_ERR_LIMIT = -6,
-        CHTTPX_ERR_IO = -7,
-        CHTTPX_ERR_NOT_FOUND = -8,
-        CHTTPX_ERR_PROTOCOL = -9,
-        CHTTPX_ERR_STATE = -10,
-        CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13,
-        CHTTPX_ERR_COMPRESSION = -14
+        cHTTPX_OK = 0,
+        cHTTPX_ERR_MEMORY = -1,
+        cHTTPX_ERR_SOCKET = -2,
+        cHTTPX_ERR_BIND = -3,
+        cHTTPX_ERR_LISTEN = -4,
+        cHTTPX_ERR_INVALID_ARGUMENT = -5,
+        cHTTPX_ERR_LIMIT = -6,
+        cHTTPX_ERR_IO = -7,
+        cHTTPX_ERR_NOT_FOUND = -8,
+        cHTTPX_ERR_PROTOCOL = -9,
+        cHTTPX_ERR_STATE = -10,
+        cHTTPX_ERR_UNAVAILABLE = -11,
+        cHTTPX_ERR_TIMEOUT = -12,
+        cHTTPX_ERR_TLS = -13,
+        cHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
+
+    /* Backward compatibility for the legacy all-uppercase result names. */
+#ifndef CHTTPX_DISABLE_LEGACY_ERROR_NAMES
+#define CHTTPX_OK cHTTPX_OK
+#define CHTTPX_ERR_MEMORY cHTTPX_ERR_MEMORY
+#define CHTTPX_ERR_SOCKET cHTTPX_ERR_SOCKET
+#define CHTTPX_ERR_BIND cHTTPX_ERR_BIND
+#define CHTTPX_ERR_LISTEN cHTTPX_ERR_LISTEN
+#define CHTTPX_ERR_INVALID_ARGUMENT cHTTPX_ERR_INVALID_ARGUMENT
+#define CHTTPX_ERR_LIMIT cHTTPX_ERR_LIMIT
+#define CHTTPX_ERR_IO cHTTPX_ERR_IO
+#define CHTTPX_ERR_NOT_FOUND cHTTPX_ERR_NOT_FOUND
+#define CHTTPX_ERR_PROTOCOL cHTTPX_ERR_PROTOCOL
+#define CHTTPX_ERR_STATE cHTTPX_ERR_STATE
+#define CHTTPX_ERR_UNAVAILABLE cHTTPX_ERR_UNAVAILABLE
+#define CHTTPX_ERR_TIMEOUT cHTTPX_ERR_TIMEOUT
+#define CHTTPX_ERR_TLS cHTTPX_ERR_TLS
+#define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
+#endif
+
 
     typedef enum
     {
-        CHTTPX_LOG_DEBUG,
-        CHTTPX_LOG_INFO,
-        CHTTPX_LOG_WARN,
-        CHTTPX_LOG_ERROR,
-        CHTTPX_LOG_OFF
+        cHTTPX_LOG_DEBUG,
+        cHTTPX_LOG_INFO,
+        cHTTPX_LOG_WARN,
+        cHTTPX_LOG_ERROR,
+        cHTTPX_LOG_OFF
     } chttpx_log_level_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_LOG_DEBUG cHTTPX_LOG_DEBUG
+#define CHTTPX_LOG_INFO cHTTPX_LOG_INFO
+#define CHTTPX_LOG_WARN cHTTPX_LOG_WARN
+#define CHTTPX_LOG_ERROR cHTTPX_LOG_ERROR
+#define CHTTPX_LOG_OFF cHTTPX_LOG_OFF
+#endif
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef enum
     {
-        CHTTPX_NETWORK_IPV4 = 0,
-        CHTTPX_NETWORK_IPV6,
-        CHTTPX_NETWORK_DUAL
+        cHTTPX_NETWORK_IPV4 = 0,
+        cHTTPX_NETWORK_IPV6,
+        cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_NETWORK_IPV4 cHTTPX_NETWORK_IPV4
+#define CHTTPX_NETWORK_IPV6 cHTTPX_NETWORK_IPV6
+#define CHTTPX_NETWORK_DUAL cHTTPX_NETWORK_DUAL
+#endif
 
     typedef struct
     {
@@ -1459,8 +1505,33 @@ extern "C"
         uint64_t request_duration_buckets[CHTTPX_METRICS_DURATION_BUCKETS];
     } chttpx_metrics_t;
 
+    /**
+     * Snapshot of the bounded application worker pool.
+     *
+     * The pool is internal to the server runtime and uses a fixed 32 workers.
+     * Queue depth and active_workers are gauges; the remaining fields are
+     * monotonic counters for the lifetime of the server runtime.
+     */
+    typedef struct
+    {
+        uint64_t worker_queue_depth;
+        uint64_t active_workers;
+        uint64_t rejected_jobs_total;
+        uint64_t completed_jobs_total;
+        uint64_t queue_wait_nanoseconds_total;
+    } chttpx_runtime_metrics_t;
+
+
     /** Copy a consistent per-server metrics snapshot. */
     int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics);
+
+    /**
+     * Copy a worker-runtime metrics snapshot.
+     *
+     * Returns cHTTPX_OK while the server runtime is active, otherwise
+     * cHTTPX_ERR_UNAVAILABLE.
+     */
+    int cHTTPX_ServerRuntimeMetrics(chttpx_serv_t* server, chttpx_runtime_metrics_t* metrics);
 
     /** Register a Prometheus text exposition route. */
     int cHTTPX_MetricsRoute(chttpx_router_t* router, const char* path);
@@ -1978,7 +2049,7 @@ extern "C"
      * codes.
      * @param count     Number of elements in languages.
      * @param fallback  Fallback language code.
-     * @return CHTTPX_OK on
+     * @return cHTTPX_OK on
      * success, otherwise a negative error code.
      */
     int cHTTPX_i18n_languages(struct chttpx_serv* server, const char** languages, size_t count, const char* fallback);

@@ -101,7 +101,7 @@ extern "C"
      * codes.
      * @param count     Number of elements in languages.
      * @param fallback  Fallback language code.
-     * @return CHTTPX_OK on
+     * @return cHTTPX_OK on
      * success, otherwise a negative error code.
      */
     int cHTTPX_i18n_languages(struct chttpx_serv* server, const char** languages, size_t count, const char* fallback);

@@ -28,40 +28,74 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_OK = 0,
-        CHTTPX_ERR_MEMORY = -1,
-        CHTTPX_ERR_SOCKET = -2,
-        CHTTPX_ERR_BIND = -3,
-        CHTTPX_ERR_LISTEN = -4,
-        CHTTPX_ERR_INVALID_ARGUMENT = -5,
-        CHTTPX_ERR_LIMIT = -6,
-        CHTTPX_ERR_IO = -7,
-        CHTTPX_ERR_NOT_FOUND = -8,
-        CHTTPX_ERR_PROTOCOL = -9,
-        CHTTPX_ERR_STATE = -10,
-        CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13,
-        CHTTPX_ERR_COMPRESSION = -14
+        cHTTPX_OK = 0,
+        cHTTPX_ERR_MEMORY = -1,
+        cHTTPX_ERR_SOCKET = -2,
+        cHTTPX_ERR_BIND = -3,
+        cHTTPX_ERR_LISTEN = -4,
+        cHTTPX_ERR_INVALID_ARGUMENT = -5,
+        cHTTPX_ERR_LIMIT = -6,
+        cHTTPX_ERR_IO = -7,
+        cHTTPX_ERR_NOT_FOUND = -8,
+        cHTTPX_ERR_PROTOCOL = -9,
+        cHTTPX_ERR_STATE = -10,
+        cHTTPX_ERR_UNAVAILABLE = -11,
+        cHTTPX_ERR_TIMEOUT = -12,
+        cHTTPX_ERR_TLS = -13,
+        cHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
+
+    /* Backward compatibility for the legacy all-uppercase result names. */
+#ifndef CHTTPX_DISABLE_LEGACY_ERROR_NAMES
+#define CHTTPX_OK cHTTPX_OK
+#define CHTTPX_ERR_MEMORY cHTTPX_ERR_MEMORY
+#define CHTTPX_ERR_SOCKET cHTTPX_ERR_SOCKET
+#define CHTTPX_ERR_BIND cHTTPX_ERR_BIND
+#define CHTTPX_ERR_LISTEN cHTTPX_ERR_LISTEN
+#define CHTTPX_ERR_INVALID_ARGUMENT cHTTPX_ERR_INVALID_ARGUMENT
+#define CHTTPX_ERR_LIMIT cHTTPX_ERR_LIMIT
+#define CHTTPX_ERR_IO cHTTPX_ERR_IO
+#define CHTTPX_ERR_NOT_FOUND cHTTPX_ERR_NOT_FOUND
+#define CHTTPX_ERR_PROTOCOL cHTTPX_ERR_PROTOCOL
+#define CHTTPX_ERR_STATE cHTTPX_ERR_STATE
+#define CHTTPX_ERR_UNAVAILABLE cHTTPX_ERR_UNAVAILABLE
+#define CHTTPX_ERR_TIMEOUT cHTTPX_ERR_TIMEOUT
+#define CHTTPX_ERR_TLS cHTTPX_ERR_TLS
+#define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
+#endif
+
 
     typedef enum
     {
-        CHTTPX_LOG_DEBUG,
-        CHTTPX_LOG_INFO,
-        CHTTPX_LOG_WARN,
-        CHTTPX_LOG_ERROR,
-        CHTTPX_LOG_OFF
+        cHTTPX_LOG_DEBUG,
+        cHTTPX_LOG_INFO,
+        cHTTPX_LOG_WARN,
+        cHTTPX_LOG_ERROR,
+        cHTTPX_LOG_OFF
     } chttpx_log_level_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_LOG_DEBUG cHTTPX_LOG_DEBUG
+#define CHTTPX_LOG_INFO cHTTPX_LOG_INFO
+#define CHTTPX_LOG_WARN cHTTPX_LOG_WARN
+#define CHTTPX_LOG_ERROR cHTTPX_LOG_ERROR
+#define CHTTPX_LOG_OFF cHTTPX_LOG_OFF
+#endif
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef enum
     {
-        CHTTPX_NETWORK_IPV4 = 0,
-        CHTTPX_NETWORK_IPV6,
-        CHTTPX_NETWORK_DUAL
+        cHTTPX_NETWORK_IPV4 = 0,
+        cHTTPX_NETWORK_IPV6,
+        cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_NETWORK_IPV4 cHTTPX_NETWORK_IPV4
+#define CHTTPX_NETWORK_IPV6 cHTTPX_NETWORK_IPV6
+#define CHTTPX_NETWORK_DUAL cHTTPX_NETWORK_DUAL
+#endif
 
     typedef struct
     {

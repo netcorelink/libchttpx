@@ -199,8 +199,8 @@ void postmiddleware_logging_write(chttpx_request_t* req, chttpx_response_t* res)
     snprintf(message, sizeof(message), "%s \"%s %s %s\" %d %zu \"%s\" %.4fms", req->client_ip, req->method ? req->method : "",
              req->path ? req->path : "", req->protocol, res->status, res->body_size, req->user_agent, ms);
 
-    if (server->logger && server->log_level <= CHTTPX_LOG_INFO)
-        server->logger(CHTTPX_LOG_INFO, req->request_id, message, server->logger_data);
+    if (server->logger && server->log_level <= cHTTPX_LOG_INFO)
+        server->logger(cHTTPX_LOG_INFO, req->request_id, message, server->logger_data);
 }
 
 void cHTTPX_MiddlewareLogging(chttpx_serv_t* server)

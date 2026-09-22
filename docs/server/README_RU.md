@@ -17,7 +17,7 @@ chttpx_serv_t* server =
 | Поле | Default |
 | --- | ---: |
 | `port` | 8080 |
-| `network_mode` | `CHTTPX_NETWORK_DUAL` |
+| `network_mode` | `cHTTPX_NETWORK_DUAL` |
 | `max_clients` | 255 |
 | `read_timeout_sec` | 30 |
 | `write_timeout_sec` | 30 |
@@ -28,7 +28,7 @@ chttpx_serv_t* server =
 | `request_id_enabled` | true |
 | `metrics_enabled` | false |
 | `default_language` | `"en"` |
-| `log_level` | `CHTTPX_LOG_INFO` |
+| `log_level` | `cHTTPX_LOG_INFO` |
 
 ## Сетевой режим
 
@@ -38,16 +38,16 @@ chttpx_serv_t* server =
 chttpx_config_t config = cHTTPX_DefaultConfig();
 
 /* Default: IPv4 + IPv6. */
-config.network_mode = CHTTPX_NETWORK_DUAL;
+config.network_mode = cHTTPX_NETWORK_DUAL;
 
 /* Только IPv4. */
-// config.network_mode = CHTTPX_NETWORK_IPV4;
+// config.network_mode = cHTTPX_NETWORK_IPV4;
 
 /* Только IPv6. */
-// config.network_mode = CHTTPX_NETWORK_IPV6;
+// config.network_mode = cHTTPX_NETWORK_IPV6;
 ```
 
-При `CHTTPX_NETWORK_DUAL` один server доступен и через `http://127.0.0.1:8080`, и через `http://[::1]:8080`. IPv4-mapped адреса нормализуются перед записью в `req->client_ip`, поэтому IPv4 client будет иметь адрес `127.0.0.1`, а не `::ffff:127.0.0.1`.
+При `cHTTPX_NETWORK_DUAL` один server доступен и через `http://127.0.0.1:8080`, и через `http://[::1]:8080`. IPv4-mapped адреса нормализуются перед записью в `req->client_ip`, поэтому IPv4 client будет иметь адрес `127.0.0.1`, а не `::ffff:127.0.0.1`.
 
 ## Собственные лимиты
 
@@ -82,19 +82,19 @@ Snapshot API и Prometheus endpoint описаны в [Metrics и Prometheus](..
 
 | Код | Значение |
 | --- | --- |
-| `CHTTPX_OK` | успех |
-| `CHTTPX_ERR_MEMORY` | allocation failure |
-| `CHTTPX_ERR_SOCKET` | socket error |
-| `CHTTPX_ERR_BIND` | bind failed |
-| `CHTTPX_ERR_LISTEN` | listen failed |
-| `CHTTPX_ERR_INVALID_ARGUMENT` | неверные аргументы |
-| `CHTTPX_ERR_LIMIT` | превышен limit |
-| `CHTTPX_ERR_IO` | I/O error |
-| `CHTTPX_ERR_NOT_FOUND` | target/resource не найден |
-| `CHTTPX_ERR_PROTOCOL` | protocol error |
-| `CHTTPX_ERR_STATE` | неверное состояние lifecycle |
-| `CHTTPX_ERR_UNAVAILABLE` | remote server недоступен |
-| `CHTTPX_ERR_TIMEOUT` | remote Call timeout |
+| `cHTTPX_OK` | успех |
+| `cHTTPX_ERR_MEMORY` | allocation failure |
+| `cHTTPX_ERR_SOCKET` | socket error |
+| `cHTTPX_ERR_BIND` | bind failed |
+| `cHTTPX_ERR_LISTEN` | listen failed |
+| `cHTTPX_ERR_INVALID_ARGUMENT` | неверные аргументы |
+| `cHTTPX_ERR_LIMIT` | превышен limit |
+| `cHTTPX_ERR_IO` | I/O error |
+| `cHTTPX_ERR_NOT_FOUND` | target/resource не найден |
+| `cHTTPX_ERR_PROTOCOL` | protocol error |
+| `cHTTPX_ERR_STATE` | неверное состояние lifecycle |
+| `cHTTPX_ERR_UNAVAILABLE` | remote server недоступен |
+| `cHTTPX_ERR_TIMEOUT` | remote Call timeout |
 
 `cHTTPX_AppServer()` возвращает pointer или `NULL`. Библиотека не вызывает `exit()` при обычной ошибке инициализации.
 
@@ -103,7 +103,7 @@ Snapshot API и Prometheus endpoint описаны в [Metrics и Prometheus](..
 ```c
 chttpx_app_t app;
 
-if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+if (cHTTPX_AppInit(&app) != cHTTPX_OK)
     return 1;
 
 chttpx_config_t config = cHTTPX_DefaultConfig();

@@ -1,6 +1,7 @@
 #include "cHTTPX_runtime.h"
 
 #include "cHTTPX_event.h"
+#include "cHTTPX_worker.h"
 #include "cHTTPX_http.h"
 #include "cHTTPX_metrics.h"
 #include "cHTTPX_tls.h"
@@ -13,7 +14,6 @@
 #include <string.h>
 #include <time.h>
 
-#define CHTTPX_WORKER_THREADS 32
 #define CHTTPX_RUNTIME_EVENTS 256
 #define CHTTPX_CHUNK_LINE_MAX 128
 
@@ -23,7 +23,8 @@ typedef enum
     CHTTPX_CONN_READING_HEADERS,
     CHTTPX_CONN_READING_BODY,
     CHTTPX_CONN_PROCESSING,
-    CHTTPX_CONN_WRITING
+    CHTTPX_CONN_WRITING,
+    CHTTPX_CONN_CLOSING
 } chttpx_connection_state_t;
 
 typedef enum
@@ -80,24 +81,13 @@ typedef struct chttpx_runtime
 {
     chttpx_serv_t* server;
     chttpx_event_loop_t* event_loop;
-    thread_t workers[CHTTPX_WORKER_THREADS];
-    size_t workers_started;
-    chttpx_connection_t** jobs;
-    size_t job_capacity;
-    size_t job_head;
-    size_t job_tail;
-    size_t job_count;
-    bool workers_stopping;
+    chttpx_worker_pool_t* worker_pool;
     bool stopping;
     bool shutdown_started;
     bool listener_registered;
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    CRITICAL_SECTION job_mutex;
-    CONDITION_VARIABLE job_ready;
     CRITICAL_SECTION completion_mutex;
 #else
-    pthread_mutex_t job_mutex;
-    pthread_cond_t job_ready;
     pthread_mutex_t completion_mutex;
 #endif
     chttpx_connection_t* completions;
@@ -131,51 +121,6 @@ static uint64_t monotonic_ms(void)
 #endif
 }
 
-static void job_lock(chttpx_runtime_t* runtime)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    EnterCriticalSection(&runtime->job_mutex);
-#else
-    pthread_mutex_lock(&runtime->job_mutex);
-#endif
-}
-
-static void job_unlock(chttpx_runtime_t* runtime)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    LeaveCriticalSection(&runtime->job_mutex);
-#else
-    pthread_mutex_unlock(&runtime->job_mutex);
-#endif
-}
-
-static void job_wait(chttpx_runtime_t* runtime)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    SleepConditionVariableCS(&runtime->job_ready, &runtime->job_mutex, INFINITE);
-#else
-    pthread_cond_wait(&runtime->job_ready, &runtime->job_mutex);
-#endif
-}
-
-static void job_signal(chttpx_runtime_t* runtime)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WakeConditionVariable(&runtime->job_ready);
-#else
-    pthread_cond_signal(&runtime->job_ready);
-#endif
-}
-
-static void job_broadcast(chttpx_runtime_t* runtime)
-{
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WakeAllConditionVariable(&runtime->job_ready);
-#else
-    pthread_cond_broadcast(&runtime->job_ready);
-#endif
-}
-
 static void completion_lock(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -197,25 +142,10 @@ static void completion_unlock(chttpx_runtime_t* runtime)
 static int sync_init(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
-    InitializeCriticalSection(&runtime->job_mutex);
-    InitializeConditionVariable(&runtime->job_ready);
     InitializeCriticalSection(&runtime->completion_mutex);
     return 0;
 #else
-    if (pthread_mutex_init(&runtime->job_mutex, NULL) != 0)
-        return -1;
-    if (pthread_cond_init(&runtime->job_ready, NULL) != 0)
-    {
-        pthread_mutex_destroy(&runtime->job_mutex);
-        return -1;
-    }
-    if (pthread_mutex_init(&runtime->completion_mutex, NULL) != 0)
-    {
-        pthread_cond_destroy(&runtime->job_ready);
-        pthread_mutex_destroy(&runtime->job_mutex);
-        return -1;
-    }
-    return 0;
+    return pthread_mutex_init(&runtime->completion_mutex, NULL) == 0 ? 0 : -1;
 #endif
 }
 
@@ -223,11 +153,8 @@ static void sync_destroy(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
     DeleteCriticalSection(&runtime->completion_mutex);
-    DeleteCriticalSection(&runtime->job_mutex);
 #else
     pthread_mutex_destroy(&runtime->completion_mutex);
-    pthread_cond_destroy(&runtime->job_ready);
-    pthread_mutex_destroy(&runtime->job_mutex);
 #endif
 }
 
@@ -249,73 +176,36 @@ static chttpx_connection_t* completion_take_all(chttpx_runtime_t* runtime)
     return list;
 }
 
-static bool worker_submit(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
+static void runtime_worker_execute(void* job, void* context)
 {
-    job_lock(runtime);
-    if (runtime->workers_stopping || runtime->job_count >= runtime->job_capacity)
+    chttpx_connection_t* connection = job;
+    chttpx_runtime_t* runtime = context;
+
+    unsigned char* body = connection->body;
+    FILE* stream = connection->body_stream;
+    connection->body = NULL;
+    connection->body_stream = NULL;
+
+    if (runtime_is_stopping(runtime))
     {
-        job_unlock(runtime);
-        return false;
-    }
-    runtime->jobs[runtime->job_tail] = connection;
-    runtime->job_tail = (runtime->job_tail + 1) % runtime->job_capacity;
-    runtime->job_count++;
-    job_signal(runtime);
-    job_unlock(runtime);
-    return true;
-}
+        free(body);
 
-static chttpx_connection_t* worker_take(chttpx_runtime_t* runtime)
-{
-    job_lock(runtime);
-    while (runtime->job_count == 0 && !runtime->workers_stopping)
-        job_wait(runtime);
-    if (runtime->job_count == 0 && runtime->workers_stopping)
+        if (stream)
+            fclose(stream);
+
+        connection->worker_result = cHTTPX_ERR_STATE;
+    }
+    else
     {
-        job_unlock(runtime);
-        return NULL;
+        connection->worker_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session, connection->headers, connection->header_end, body, connection->body_size, stream, connection->content_length, &connection->write_buffer, &connection->write_size);
     }
-    chttpx_connection_t* connection = runtime->jobs[runtime->job_head];
-    runtime->jobs[runtime->job_head] = NULL;
-    runtime->job_head = (runtime->job_head + 1) % runtime->job_capacity;
-    runtime->job_count--;
-    job_unlock(runtime);
-    return connection;
-}
 
-static void* runtime_worker(void* argument)
-{
-    chttpx_runtime_t* runtime = argument;
-    for (;;)
-    {
-        chttpx_connection_t* connection = worker_take(runtime);
-        if (!connection)
-            break;
+    free(connection->headers);
+    connection->headers = NULL;
+    connection->header_size = 0;
+    connection->header_capacity = 0;
 
-        unsigned char* body = connection->body;
-        FILE* stream = connection->body_stream;
-        connection->body = NULL;
-        connection->body_stream = NULL;
-
-        if (runtime_is_stopping(runtime))
-        {
-            free(body);
-            if (stream)
-                fclose(stream);
-            connection->worker_result = CHTTPX_ERR_STATE;
-        }
-        else
-        {
-            connection->worker_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session, connection->headers, connection->header_end, body, connection->body_size, stream, connection->content_length, &connection->write_buffer, &connection->write_size);
-        }
-
-        free(connection->headers);
-        connection->headers = NULL;
-        connection->header_size = 0;
-        connection->header_capacity = 0;
-        completion_push(runtime, connection);
-    }
-    return NULL;
+    completion_push(runtime, connection);
 }
 
 static void connection_unlink(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
@@ -336,19 +226,28 @@ static void connection_close(chttpx_runtime_t* runtime, chttpx_connection_t* con
 {
     if (!runtime || !connection)
         return;
+
+    connection->state = CHTTPX_CONN_CLOSING;
     _chttpx_event_del(runtime->event_loop, connection->fd);
     connection_unlink(runtime, connection);
+
     _chttpx_tls_session_close(connection->tls_session);
     connection->tls_session = NULL;
+
     if (socket_valid(connection->fd))
         chttpx_close(connection->fd);
+
     free(connection->headers);
     free(connection->body);
+
     if (connection->body_stream)
         fclose(connection->body_stream);
+
     free(connection->write_buffer);
+
     _chttpx_metrics_connection_closed(connection->server);
     __atomic_fetch_sub(&connection->server->current_clients, 1, __ATOMIC_SEQ_CST);
+
     free(connection);
 }
 
@@ -378,16 +277,21 @@ static int parse_size_value(const char* value, size_t value_size, size_t* output
 {
     if (!value || !value_size || !output || value_size >= 32)
         return 0;
+
     char buffer[32];
     memcpy(buffer, value, value_size);
     buffer[value_size] = '\0';
+
     if (buffer[0] == '-')
         return 0;
+
     errno = 0;
     char* end = NULL;
     unsigned long long parsed = strtoull(buffer, &end, 10);
+
     if (errno == ERANGE || !end || *end || parsed > SIZE_MAX)
         return 0;
+
     *output = (size_t)parsed;
     return 1;
 }
@@ -726,7 +630,7 @@ static int connection_submit(chttpx_runtime_t* runtime, chttpx_connection_t* con
     }
     _chttpx_event_del(runtime->event_loop, connection->fd);
     connection->state = CHTTPX_CONN_PROCESSING;
-    if (!worker_submit(runtime, connection))
+    if (!_chttpx_worker_submit(runtime->worker_pool, connection))
     {
         connection_close(runtime, connection);
         return 0;
@@ -841,7 +745,7 @@ static int connection_process_bytes(chttpx_runtime_t* runtime, chttpx_connection
 static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     int result = _chttpx_tls_accept_step(connection->tls_session);
-    if (result == CHTTPX_OK)
+    if (result == cHTTPX_OK)
     {
         connection->state = CHTTPX_CONN_READING_HEADERS;
         connection_touch(connection);
@@ -914,7 +818,7 @@ static int connection_read_ready(chttpx_runtime_t* runtime, chttpx_connection_t*
             }
             return 1;
         }
-        if (result == CHTTPX_ERR_TLS)
+        if (result == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(connection->server, "-", "TLS request read failed");
         connection_close(runtime, connection);
         return 0;
@@ -950,7 +854,7 @@ static int connection_write_ready(chttpx_runtime_t* runtime, chttpx_connection_t
             }
             return 1;
         }
-        if (result == CHTTPX_ERR_TLS)
+        if (result == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(connection->server, "-", "TLS response write failed");
         connection_close(runtime, connection);
         return 0;
@@ -966,7 +870,7 @@ static void drain_completions(chttpx_runtime_t* runtime)
     {
         chttpx_connection_t* next = connection->completion_next;
         connection->completion_next = NULL;
-        if (runtime_is_stopping(runtime) || connection->worker_result != CHTTPX_OK || !connection->write_buffer)
+        if (runtime_is_stopping(runtime) || connection->worker_result != cHTTPX_OK || !connection->write_buffer)
             connection_close(runtime, connection);
         else
         {
@@ -1039,7 +943,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
         _chttpx_metrics_connection_opened(server);
 
         int tls_result = _chttpx_tls_accept_begin(server, fd, &connection->tls_session);
-        if (tls_result != CHTTPX_OK)
+        if (tls_result != cHTTPX_OK)
         {
             _chttpx_metrics_connection_rejected(server);
             connection_close(runtime, connection);
@@ -1050,7 +954,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
         if (server->tls.enabled)
         {
             int step = _chttpx_tls_accept_step(connection->tls_session);
-            if (step == CHTTPX_OK)
+            if (step == cHTTPX_OK)
                 connection->state = CHTTPX_CONN_READING_HEADERS;
             else if (step == CHTTPX_IO_WANT_READ)
                 interest = CHTTPX_EVENT_READ;
@@ -1121,24 +1025,17 @@ static void begin_shutdown(chttpx_runtime_t* runtime)
 int _chttpx_runtime_init(chttpx_serv_t* server)
 {
     if (!server || !socket_valid(server->server_fd) || server->max_clients == 0)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_runtime_t* runtime = calloc(1, sizeof(*runtime));
     if (!runtime)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
     runtime->server = server;
-    runtime->job_capacity = server->max_clients;
-    runtime->jobs = calloc(runtime->job_capacity, sizeof(*runtime->jobs));
-    if (!runtime->jobs)
-    {
-        free(runtime);
-        return CHTTPX_ERR_MEMORY;
-    }
+
     if (sync_init(runtime) != 0)
     {
-        free(runtime->jobs);
         free(runtime);
-        return CHTTPX_ERR_IO;
+        return cHTTPX_ERR_IO;
     }
 
     runtime->event_loop = _chttpx_event_create();
@@ -1146,29 +1043,21 @@ int _chttpx_runtime_init(chttpx_serv_t* server)
         goto error;
     runtime->listener_registered = true;
 
-    for (size_t i = 0; i < CHTTPX_WORKER_THREADS; i++)
-    {
-        if (_thread_create(&runtime->workers[i], runtime_worker, runtime) != 0)
-            goto error;
-        runtime->workers_started++;
-    }
+    if (_chttpx_worker_pool_create(&runtime->worker_pool, server->max_clients, runtime_worker_execute, runtime) != 0)
+        goto error;
 
     server->runtime_state = runtime;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 
 error:
-    job_lock(runtime);
-    runtime->workers_stopping = true;
-    job_broadcast(runtime);
-    job_unlock(runtime);
-    for (size_t i = 0; i < runtime->workers_started; i++)
-        _thread_join(runtime->workers[i]);
+    _chttpx_worker_pool_destroy(runtime->worker_pool);
+
     if (runtime->event_loop)
         _chttpx_event_destroy(runtime->event_loop);
+
     sync_destroy(runtime);
-    free(runtime->jobs);
     free(runtime);
-    return CHTTPX_ERR_IO;
+    return cHTTPX_ERR_IO;
 }
 
 void _chttpx_runtime_listen(chttpx_serv_t* server)
@@ -1230,11 +1119,25 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
     drain_completions(runtime);
 }
 
+int _chttpx_runtime_worker_stats(chttpx_serv_t* server, chttpx_worker_stats_t* stats)
+{
+    if (!server || !stats)
+        return cHTTPX_ERR_INVALID_ARGUMENT;
+
+    chttpx_runtime_t* runtime = server->runtime_state;
+    if (!runtime || !runtime->worker_pool)
+        return cHTTPX_ERR_UNAVAILABLE;
+
+    _chttpx_worker_stats(runtime->worker_pool, stats);
+    return cHTTPX_OK;
+}
+
 void _chttpx_runtime_request_stop(chttpx_serv_t* server)
 {
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;
     if (!runtime)
         return;
+
     __atomic_store_n(&runtime->stopping, true, __ATOMIC_RELEASE);
     _chttpx_event_wake(runtime->event_loop);
 }
@@ -1248,13 +1151,8 @@ void _chttpx_runtime_cleanup(chttpx_serv_t* server)
     __atomic_store_n(&runtime->stopping, true, __ATOMIC_RELEASE);
     begin_shutdown(runtime);
 
-    job_lock(runtime);
-    runtime->workers_stopping = true;
-    job_broadcast(runtime);
-    job_unlock(runtime);
-
-    for (size_t i = 0; i < runtime->workers_started; i++)
-        _thread_join(runtime->workers[i]);
+    _chttpx_worker_pool_destroy(runtime->worker_pool);
+    runtime->worker_pool = NULL;
 
     drain_completions(runtime);
 
@@ -1263,7 +1161,6 @@ void _chttpx_runtime_cleanup(chttpx_serv_t* server)
 
     _chttpx_event_destroy(runtime->event_loop);
     sync_destroy(runtime);
-    free(runtime->jobs);
     free(runtime);
     server->runtime_state = NULL;
 }

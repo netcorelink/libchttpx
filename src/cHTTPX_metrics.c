@@ -9,6 +9,7 @@
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_http.h"
 #include "cHTTPX_response.h"
+#include "cHTTPX_runtime.h"
 #include "cHTTPX_serv.h"
 #include "cHTTPX_compression.h"
 
@@ -150,17 +151,17 @@ static chttpx_route_metrics_entry_t* route_metrics_entry(chttpx_metrics_state_t*
 int _chttpx_metrics_server_init(chttpx_serv_t* server, int enabled)
 {
     if (!server)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (!enabled)
     {
         server->metrics_state = NULL;
-        return CHTTPX_OK;
+        return cHTTPX_OK;
     }
 
     chttpx_metrics_state_t* state = calloc(1, sizeof(*state));
     if (!state)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
     InitializeCriticalSection(&state->mutex);
@@ -168,12 +169,12 @@ int _chttpx_metrics_server_init(chttpx_serv_t* server, int enabled)
     if (pthread_mutex_init(&state->mutex, NULL) != 0)
     {
         free(state);
-        return CHTTPX_ERR_STATE;
+        return cHTTPX_ERR_STATE;
     }
 #endif
 
     server->metrics_state = state;
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 void _chttpx_metrics_server_cleanup(chttpx_serv_t* server)
@@ -321,16 +322,35 @@ void _chttpx_metrics_rate_limit_failure(chttpx_serv_t* server)
 int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics)
 {
     if (!server || !metrics)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     chttpx_metrics_state_t* state = metrics_state(server);
     if (!state)
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     metrics_lock(state);
     *metrics = state->metrics;
     metrics_unlock(state);
-    return CHTTPX_OK;
+    return cHTTPX_OK;
+}
+
+
+int cHTTPX_ServerRuntimeMetrics(chttpx_serv_t* server, chttpx_runtime_metrics_t* metrics)
+{
+    if (!server || !metrics)
+        return cHTTPX_ERR_INVALID_ARGUMENT;
+
+    chttpx_worker_stats_t worker_stats;
+    int result = _chttpx_runtime_worker_stats(server, &worker_stats);
+    if (result != cHTTPX_OK)
+        return result;
+
+    metrics->worker_queue_depth = (uint64_t)worker_stats.queue_depth;
+    metrics->active_workers = (uint64_t)worker_stats.active_workers;
+    metrics->rejected_jobs_total = worker_stats.rejected_jobs;
+    metrics->completed_jobs_total = worker_stats.completed_jobs;
+    metrics->queue_wait_nanoseconds_total = worker_stats.total_queue_wait_ns;
+    return cHTTPX_OK;
 }
 
 typedef struct
@@ -522,6 +542,31 @@ static int prometheus_global_metrics(prometheus_buffer_t* buffer,
                               (unsigned long long)metrics->request_duration_count);
 }
 
+static int prometheus_runtime_metrics(prometheus_buffer_t* buffer,
+                                      const chttpx_runtime_metrics_t* metrics)
+{
+    if (!metrics)
+        return 1;
+
+    return prometheus_append(buffer, "# HELP libchttpx_worker_queue_depth Requests waiting for an application worker.\n"
+                                     "# TYPE libchttpx_worker_queue_depth gauge\n") &&
+           prometheus_appendf(buffer, "libchttpx_worker_queue_depth %llu\n",
+                              (unsigned long long)metrics->worker_queue_depth) &&
+           prometheus_append(buffer, "# HELP libchttpx_workers_active Application workers currently executing request jobs.\n"
+                                     "# TYPE libchttpx_workers_active gauge\n") &&
+           prometheus_appendf(buffer, "libchttpx_workers_active %llu\n",
+                              (unsigned long long)metrics->active_workers) &&
+           prometheus_append(buffer, "# TYPE libchttpx_worker_jobs_rejected_total counter\n") &&
+           prometheus_appendf(buffer, "libchttpx_worker_jobs_rejected_total %llu\n",
+                              (unsigned long long)metrics->rejected_jobs_total) &&
+           prometheus_append(buffer, "# TYPE libchttpx_worker_jobs_completed_total counter\n") &&
+           prometheus_appendf(buffer, "libchttpx_worker_jobs_completed_total %llu\n",
+                              (unsigned long long)metrics->completed_jobs_total) &&
+           prometheus_append(buffer, "# TYPE libchttpx_worker_queue_wait_seconds_total counter\n") &&
+           prometheus_appendf(buffer, "libchttpx_worker_queue_wait_seconds_total %.9f\n",
+                              (double)metrics->queue_wait_nanoseconds_total / 1000000000.0);
+}
+
 static int prometheus_route_metrics(prometheus_buffer_t* buffer,
                                     chttpx_metrics_state_t* state)
 {
@@ -565,10 +610,13 @@ static void metrics_handler(chttpx_request_t* req, chttpx_response_t* res)
     }
 
     prometheus_buffer_t output = {0};
+    chttpx_runtime_metrics_t runtime_snapshot = {0};
+    bool have_runtime_metrics = cHTTPX_ServerRuntimeMetrics(server, &runtime_snapshot) == cHTTPX_OK;
 
     metrics_lock(state);
     chttpx_metrics_t snapshot = state->metrics;
     int ok = prometheus_global_metrics(&output, &snapshot) &&
+             (!have_runtime_metrics || prometheus_runtime_metrics(&output, &runtime_snapshot)) &&
              prometheus_route_metrics(&output, state);
     metrics_unlock(state);
 
@@ -591,15 +639,15 @@ static void metrics_handler(chttpx_request_t* req, chttpx_response_t* res)
 int cHTTPX_MetricsRoute(chttpx_router_t* router, const char* path)
 {
     if (!router || !router->serv || !path || !*path)
-        return CHTTPX_ERR_INVALID_ARGUMENT;
+        return cHTTPX_ERR_INVALID_ARGUMENT;
 
     if (!metrics_state(router->serv))
-        return CHTTPX_ERR_UNAVAILABLE;
+        return cHTTPX_ERR_UNAVAILABLE;
 
     chttpx_route_t* route = cHTTPX_Get(router, path, metrics_handler);
     if (!route)
-        return CHTTPX_ERR_MEMORY;
+        return cHTTPX_ERR_MEMORY;
 
     cHTTPX_RouteCompression(route, false);
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }

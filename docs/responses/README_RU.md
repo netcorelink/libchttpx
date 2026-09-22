@@ -79,8 +79,8 @@ cHTTPX_HeaderAdd(
 
 ## Ownership
 
-- `CHTTPX_BODY_OWNED` — cleanup освобождает body;
-- `CHTTPX_BODY_BORROWED` — библиотека body не освобождает.
+- `cHTTPX_BODY_OWNED` — cleanup освобождает body;
+- `cHTTPX_BODY_BORROWED` — библиотека body не освобождает.
 
 Response helpers, которые выделяют память, создают owned response. В обычном handler не освобождайте их body вручную.
 
