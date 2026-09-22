@@ -362,16 +362,30 @@ static void set_client_timeout(chttpx_serv_t* server, chttpx_socket_t client_fd)
 #endif
 }
 
-/* Cors */
+/**
+ * Find an allowed CORS origin in the sorted server origin table.
+ *
+ * @param server HTTP server containing the immutable CORS configuration.
+ * @param req_origin Origin header value supplied by the client.
+ * @return Borrowed configured origin string or NULL when it is not allowed.
+ */
 static const char* allowed_origin_cors(chttpx_serv_t* server, const char* req_origin)
 {
     if (!server || !server->cors.enabled || !req_origin)
         return NULL;
 
-    for (size_t i = 0; i < server->cors.origins_count; i++)
+    size_t left = 0;
+    size_t right = server->cors.origins_count;
+    while (left < right)
     {
-        if (strcmp(server->cors.origins[i], req_origin) == 0)
-            return server->cors.origins[i];
+        size_t middle = left + (right - left) / 2;
+        int order = strcmp(server->cors.origins[middle], req_origin);
+        if (order == 0)
+            return server->cors.origins[middle];
+        if (order < 0)
+            left = middle + 1;
+        else
+            right = middle;
     }
 
     return NULL;
