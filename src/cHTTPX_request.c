@@ -519,15 +519,11 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
     if (!req || !fields || !req->body)
         return 0;
 
-    char* body = malloc(req->body_size + 1);
-    if (!body)
-        return 0;
-
-    memcpy(body, (const void*)req->body, req->body_size);
-    body[req->body_size] = '\0';
-
-    cJSON* json = cJSON_Parse(body);
-    free(body);
+    /*
+     * cJSON can parse a bounded byte range directly. Avoid duplicating the
+     * complete request body only to append a temporary NUL terminator.
+     */
+    cJSON* json = cJSON_ParseWithLengthOpts((const char*)req->body, req->body_size, NULL, false);
 
     if (!json)
     {
