@@ -44,23 +44,16 @@ static int compare_origins(const void* left, const void* right)
 }
 
 /**
- * Enable and configure CORS (Cross-Origin Resource Sharing).
+ * Enable and configure CORS for one initialized HTTP server.
  *
- * This function enables CORS support for the HTTP server and configures
- * which origins, HTTP methods, and request headers are allowed.
+ * The supplied strings are copied. Origins are sorted once during
+ * configuration so request-time checks can use binary search.
  *
- * The CORS configuration is applied globally and is typically used together
- * with the built-in CORS middleware.
- *
- * @param origins        Array of allowed origin strings (e.g. "https://example.com").
- *                       Each origin must match exactly the value of the "Origin" header.
- * @param origins_count Number of elements in the origins array.
- * @param methods       Comma-separated list of allowed HTTP methods.
- *                       If NULL, defaults to:
- *                       "GET, POST, PUT, DELETE, OPTIONS"
- * @param headers       Comma-separated list of allowed request headers.
- *                       If NULL, defaults to:
- *                       "Content-Type"
+ * @param server Initialized HTTP server to configure.
+ * @param origins Array of exact allowed Origin header values.
+ * @param origins_count Number of elements in origins.
+ * @param methods Comma-separated allowed methods, or NULL for defaults.
+ * @param headers Comma-separated allowed request headers, or NULL for defaults.
  */
 void cHTTPX_Cors(chttpx_serv_t* server, const char** origins, size_t origins_count, const char* methods, const char* headers)
 {
