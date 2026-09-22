@@ -436,6 +436,12 @@ void cHTTPX_RequestCleanup(chttpx_request_t* req)
     }
 }
 
+/**
+ * Extract a Bearer token from the Authorization request header.
+ *
+ * @param req Current HTTP request.
+ * @return Borrowed token pointer or NULL when the header is absent/invalid.
+ */
 const char* cHTTPX_BearerToken(chttpx_request_t* req)
 {
     const char* authorization = cHTTPX_HeaderGet(req, "Authorization");
@@ -444,6 +450,14 @@ const char* cHTTPX_BearerToken(chttpx_request_t* req)
     return authorization + 7;
 }
 
+/**
+ * Replay the request body through a bounded chunk callback.
+ *
+ * @param req Current HTTP request.
+ * @param callback Function invoked for each body chunk.
+ * @param user_data Caller value forwarded to callback.
+ * @return 0 on success or -1 on invalid input, I/O error, or callback failure.
+ */
 int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, void* user_data)
 {
     if (!req || !callback)
