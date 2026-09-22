@@ -260,7 +260,11 @@ int main(void)
     assert(cHTTPX_AppRemote(&app, "remote-payments", remote_url) == cHTTPX_OK);
     assert(cHTTPX_AppRemote(&app, "unavailable", "http://127.0.0.1:1") == cHTTPX_OK);
 
-    const char* cors_origins[] = {"https://example.com"};
+    const char* cors_origins[] = {
+        "https://z.example.com",
+        "https://example.com",
+        "https://a.example.com",
+    };
     cHTTPX_Cors(public_api, cors_origins, CHTTPX_ARRAY_LEN(cors_origins), NULL, NULL);
 
     assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
