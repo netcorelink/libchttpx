@@ -10,6 +10,7 @@
 #define WORKER_COUNT 6
 #define REQUESTS_PER_WORKER 30
 #define RESPONSE_CAPACITY 65536
+#define EXTRA_ROUTE_COUNT 24
 
 typedef struct
 {
@@ -34,6 +35,13 @@ static void user_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     const char* id = cHTTPX_Param(req, "id");
     assert(id && *id);
+    static const unsigned char body[] = "ok";
+    *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "text/plain", body, sizeof(body) - 1);
+}
+
+static void static_handler(chttpx_request_t* req, chttpx_response_t* res)
+{
+    (void)req;
     static const unsigned char body[] = "ok";
     *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "text/plain", body, sizeof(body) - 1);
 }
@@ -159,6 +167,12 @@ int main(void)
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     assert(cHTTPX_Get(&router, "/users/{id}", user_handler));
+    for (size_t i = 0; i < EXTRA_ROUTE_COUNT; ++i)
+    {
+        char path[64];
+        snprintf(path, sizeof(path), "/route/%zu", i);
+        assert(cHTTPX_Get(&router, path, static_handler));
+    }
     assert(cHTTPX_MetricsRoute(&router, "/metrics") == cHTTPX_OK);
 
     assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
@@ -180,11 +194,19 @@ int main(void)
     for (size_t i = 0; i < WORKER_COUNT; i++)
         assert(pthread_join(workers[i], NULL) == 0);
 
+    for (size_t i = 0; i < EXTRA_ROUTE_COUNT; ++i)
+    {
+        char path[64];
+        snprintf(path, sizeof(path), "/route/%zu", i);
+        http_response_t response = exchange(server->port, path);
+        assert(strncmp(response.bytes, "HTTP/1.1 200 OK", 15) == 0);
+    }
+
     __atomic_store_n(&snapshot_ctx.stop, 1, __ATOMIC_RELEASE);
     assert(pthread_join(snapshot_thread, NULL) == 0);
 
     const uint64_t expected_requests =
-        (uint64_t)WORKER_COUNT * (uint64_t)REQUESTS_PER_WORKER;
+        (uint64_t)WORKER_COUNT * (uint64_t)REQUESTS_PER_WORKER + EXTRA_ROUTE_COUNT;
 
     chttpx_metrics_t metrics;
     assert(cHTTPX_ServerMetrics(server, &metrics) == cHTTPX_OK);
@@ -208,6 +230,7 @@ int main(void)
     const char* body = response_body(&scrape);
     assert(strstr(body, "# TYPE libchttpx_requests_total counter"));
     assert(strstr(body, "libchttpx_route_requests_total{method=\"GET\",route=\"/users/{id}\",class=\"2xx\"}"));
+    assert(strstr(body, "libchttpx_route_requests_total{method=\"GET\",route=\"/route/23\",class=\"2xx\"}"));
     assert(strstr(body, "libchttpx_request_duration_seconds_bucket{le=\"+Inf\"}"));
     assert(strstr(body, "libchttpx_worker_queue_depth"));
     assert(strstr(body, "libchttpx_workers_active"));
