@@ -37,6 +37,9 @@
 #include <ctype.h>
 #include <stdio.h>
 
+#define CHTTPX_CLEANUP_BLOCK_CAPACITY 32
+#define CHTTPX_CONTEXT_BUCKET_COUNT 32
+
 typedef struct chttpx_cleanup_entry
 {
     void* resource;
@@ -44,14 +47,134 @@ typedef struct chttpx_cleanup_entry
     struct chttpx_cleanup_entry* next;
 } chttpx_cleanup_entry_t;
 
+typedef struct chttpx_cleanup_block
+{
+    size_t used;
+    chttpx_cleanup_entry_t entries[CHTTPX_CLEANUP_BLOCK_CAPACITY];
+    struct chttpx_cleanup_block* next;
+} chttpx_cleanup_block_t;
+
+typedef struct
+{
+    chttpx_cleanup_entry_t* head;
+    chttpx_cleanup_block_t first_block;
+    chttpx_cleanup_block_t* extra_blocks;
+} chttpx_cleanup_state_t;
+
 typedef struct chttpx_context_entry
 {
-    char* name;
     void* value;
     chttpx_context_free_fn cleanup_fn;
     struct chttpx_context_entry* next;
+    char name[];
 } chttpx_context_entry_t;
 
+typedef struct
+{
+    chttpx_context_entry_t* buckets[CHTTPX_CONTEXT_BUCKET_COUNT];
+} chttpx_context_table_t;
+
+/**
+ * Hash a short request-scoped lookup key with FNV-1a.
+ *
+ * @param value Null-terminated key.
+ * @return Stable 64-bit hash value.
+ */
+static uint64_t request_hash_string(const char* value)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    for (const unsigned char* p = (const unsigned char*)value; *p; ++p)
+    {
+        hash ^= (uint64_t)*p;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+/**
+ * Return the request cleanup state, creating it on first use when requested.
+ *
+ * @param req Current request.
+ * @param create Non-zero to allocate missing state.
+ * @return Cleanup state or NULL.
+ */
+static chttpx_cleanup_state_t* cleanup_state(chttpx_request_t* req, int create)
+{
+    if (!req)
+        return NULL;
+
+    chttpx_cleanup_state_t* state = req->_cleanup_entries;
+    if (!state && create)
+    {
+        state = calloc(1, sizeof(*state));
+        if (!state)
+            return NULL;
+        req->_cleanup_entries = state;
+    }
+    return state;
+}
+
+/**
+ * Allocate one cleanup entry from request-local blocks.
+ *
+ * Entries are pooled in groups to avoid one heap allocation per deferred
+ * resource while preserving cHTTPX_Detach semantics for the resource itself.
+ *
+ * @param state Cleanup state owned by the request.
+ * @return Reusable cleanup entry or NULL on allocation failure.
+ */
+static chttpx_cleanup_entry_t* cleanup_entry_alloc(chttpx_cleanup_state_t* state)
+{
+    if (!state)
+        return NULL;
+
+    if (state->first_block.used < CHTTPX_CLEANUP_BLOCK_CAPACITY)
+        return &state->first_block.entries[state->first_block.used++];
+
+    chttpx_cleanup_block_t* block = state->extra_blocks;
+    if (!block || block->used == CHTTPX_CLEANUP_BLOCK_CAPACITY)
+    {
+        chttpx_cleanup_block_t* created = calloc(1, sizeof(*created));
+        if (!created)
+            return NULL;
+        created->next = state->extra_blocks;
+        state->extra_blocks = created;
+        block = created;
+    }
+
+    return &block->entries[block->used++];
+}
+
+/**
+ * Return the named-context hash table, creating it on first use when requested.
+ *
+ * @param req Current request.
+ * @param create Non-zero to allocate the table when absent.
+ * @return Context table or NULL.
+ */
+static chttpx_context_table_t* context_table(chttpx_request_t* req, int create)
+{
+    if (!req)
+        return NULL;
+
+    chttpx_context_table_t* table = req->_contexts;
+    if (!table && create)
+    {
+        table = calloc(1, sizeof(*table));
+        if (!table)
+            return NULL;
+        req->_contexts = table;
+    }
+    return table;
+}
+
+/**
+ * Allocate zero-initialized memory owned by the current request.
+ *
+ * @param req Current HTTP request.
+ * @param size Number of bytes to allocate.
+ * @return Request-owned memory or NULL on failure.
+ */
 void* cHTTPX_Alloc(chttpx_request_t* req, size_t size)
 {
     if (!req || size == 0)
@@ -70,6 +193,13 @@ void* cHTTPX_Alloc(chttpx_request_t* req, size_t size)
     return memory;
 }
 
+/**
+ * Duplicate a string into request-owned memory.
+ *
+ * @param req Current HTTP request.
+ * @param str Null-terminated source string.
+ * @return Request-owned copy or NULL on failure.
+ */
 char* cHTTPX_Strdup(chttpx_request_t* req, const char* str)
 {
     if (!str)
@@ -82,35 +212,57 @@ char* cHTTPX_Strdup(chttpx_request_t* req, const char* str)
     return copy;
 }
 
+/**
+ * Register an arbitrary resource for cleanup at the end of the request.
+ *
+ * @param req Current HTTP request.
+ * @param resource Resource passed to cleanup_fn.
+ * @param cleanup_fn Function that releases resource.
+ * @return 0 on success, -1 on invalid input or allocation failure.
+ */
 int cHTTPX_Defer(chttpx_request_t* req, void* resource, chttpx_cleanup_fn cleanup_fn)
 {
     if (!req || !resource || !cleanup_fn)
         return -1;
 
-    chttpx_cleanup_entry_t* entry = malloc(sizeof(*entry));
+    chttpx_cleanup_state_t* state = cleanup_state(req, 1);
+    if (!state)
+        return -1;
+
+    chttpx_cleanup_entry_t* entry = cleanup_entry_alloc(state);
     if (!entry)
         return -1;
 
     entry->resource = resource;
     entry->cleanup_fn = cleanup_fn;
-    entry->next = req->_cleanup_entries;
-    req->_cleanup_entries = entry;
+    entry->next = state->head;
+    state->head = entry;
     return 0;
 }
 
+/**
+ * Remove a resource from automatic request cleanup.
+ *
+ * @param req Current HTTP request.
+ * @param resource Previously deferred resource.
+ * @return Detached resource or NULL when not registered.
+ */
 void* cHTTPX_Detach(chttpx_request_t* req, void* resource)
 {
-    if (!req || !resource)
+    chttpx_cleanup_state_t* state = cleanup_state(req, 0);
+    if (!state || !resource)
         return NULL;
 
-    chttpx_cleanup_entry_t** current = (chttpx_cleanup_entry_t**)&req->_cleanup_entries;
+    chttpx_cleanup_entry_t** current = &state->head;
     while (*current)
     {
         if ((*current)->resource == resource)
         {
             chttpx_cleanup_entry_t* detached = *current;
             *current = detached->next;
-            free(detached);
+            detached->resource = NULL;
+            detached->cleanup_fn = NULL;
+            detached->next = NULL;
             return resource;
         }
         current = &(*current)->next;
@@ -119,12 +271,29 @@ void* cHTTPX_Detach(chttpx_request_t* req, void* resource)
     return NULL;
 }
 
+/**
+ * Store or replace a named request context.
+ *
+ * Contexts are indexed through a small request-local hash table so lookup does
+ * not grow linearly with the number of named contexts.
+ *
+ * @param req Current HTTP request.
+ * @param name Context name.
+ * @param value Application-owned value.
+ * @param cleanup_fn Optional callback invoked when the context is replaced or cleaned up.
+ * @return 0 on success, -1 on invalid input or allocation failure.
+ */
 int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chttpx_context_free_fn cleanup_fn)
 {
     if (!req || !name || !*name)
         return -1;
 
-    chttpx_context_entry_t* entry = req->_contexts;
+    chttpx_context_table_t* table = context_table(req, 1);
+    if (!table)
+        return -1;
+
+    size_t bucket = (size_t)(request_hash_string(name) % CHTTPX_CONTEXT_BUCKET_COUNT);
+    chttpx_context_entry_t* entry = table->buckets[bucket];
     while (entry)
     {
         if (strcmp(entry->name, name) == 0)
@@ -138,41 +307,58 @@ int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chtt
         entry = entry->next;
     }
 
-    entry = calloc(1, sizeof(*entry));
+    size_t name_size = strlen(name) + 1;
+    if (name_size > SIZE_MAX - sizeof(*entry))
+        return -1;
+
+    entry = malloc(sizeof(*entry) + name_size);
     if (!entry)
         return -1;
-    entry->name = strdup(name);
-    if (!entry->name)
-    {
-        free(entry);
-        return -1;
-    }
+
     entry->value = value;
     entry->cleanup_fn = cleanup_fn;
-    entry->next = req->_contexts;
-    req->_contexts = entry;
+    entry->next = table->buckets[bucket];
+    memcpy(entry->name, name, name_size);
+    table->buckets[bucket] = entry;
     return 0;
 }
 
+/**
+ * Look up a named request context.
+ *
+ * @param req Current HTTP request.
+ * @param name Context name.
+ * @return Borrowed context value or NULL when absent.
+ */
 void* cHTTPX_ContextGet(chttpx_request_t* req, const char* name)
 {
-    if (!req || !name)
+    chttpx_context_table_t* table = context_table(req, 0);
+    if (!table || !name)
         return NULL;
-    chttpx_context_entry_t* entry = req->_contexts;
-    while (entry)
-    {
+
+    size_t bucket = (size_t)(request_hash_string(name) % CHTTPX_CONTEXT_BUCKET_COUNT);
+    for (chttpx_context_entry_t* entry = table->buckets[bucket]; entry; entry = entry->next)
         if (strcmp(entry->name, name) == 0)
             return entry->value;
-        entry = entry->next;
-    }
+
     return NULL;
 }
 
+/**
+ * Detach a named request context without running its cleanup callback.
+ *
+ * @param req Current HTTP request.
+ * @param name Context name.
+ * @return Detached value owned by the caller or NULL when absent.
+ */
 void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name)
 {
-    if (!req || !name)
+    chttpx_context_table_t* table = context_table(req, 0);
+    if (!table || !name)
         return NULL;
-    chttpx_context_entry_t** current = (chttpx_context_entry_t**)&req->_contexts;
+
+    size_t bucket = (size_t)(request_hash_string(name) % CHTTPX_CONTEXT_BUCKET_COUNT);
+    chttpx_context_entry_t** current = &table->buckets[bucket];
     while (*current)
     {
         if (strcmp((*current)->name, name) == 0)
@@ -180,7 +366,6 @@ void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name)
             chttpx_context_entry_t* detached = *current;
             void* value = detached->value;
             *current = detached->next;
-            free(detached->name);
             free(detached);
             return value;
         }
@@ -189,22 +374,34 @@ void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name)
     return NULL;
 }
 
+/**
+ * Run all request-owned cleanup callbacks and release internal lookup state.
+ *
+ * @param req Request whose scoped resources must be released.
+ */
 void cHTTPX_RequestCleanup(chttpx_request_t* req)
 {
     if (!req)
         return;
 
-    chttpx_context_entry_t* context = req->_contexts;
-    while (context)
+    chttpx_context_table_t* table = context_table(req, 0);
+    if (table)
     {
-        chttpx_context_entry_t* next_context = context->next;
-        if (context->cleanup_fn && context->value)
-            context->cleanup_fn(context->value);
-        free(context->name);
-        free(context);
-        context = next_context;
+        for (size_t bucket = 0; bucket < CHTTPX_CONTEXT_BUCKET_COUNT; ++bucket)
+        {
+            chttpx_context_entry_t* entry = table->buckets[bucket];
+            while (entry)
+            {
+                chttpx_context_entry_t* next = entry->next;
+                if (entry->cleanup_fn && entry->value)
+                    entry->cleanup_fn(entry->value);
+                free(entry);
+                entry = next;
+            }
+        }
+        free(table);
+        req->_contexts = NULL;
     }
-    req->_contexts = NULL;
 
     if (req->context)
     {
@@ -214,15 +411,29 @@ void cHTTPX_RequestCleanup(chttpx_request_t* req)
         req->context_free = NULL;
     }
 
-    chttpx_cleanup_entry_t* cleanup = req->_cleanup_entries;
-    while (cleanup)
+    chttpx_cleanup_state_t* state = cleanup_state(req, 0);
+    if (state)
     {
-        chttpx_cleanup_entry_t* next_cleanup = cleanup->next;
-        cleanup->cleanup_fn(cleanup->resource);
-        free(cleanup);
-        cleanup = next_cleanup;
+        chttpx_cleanup_entry_t* entry = state->head;
+        while (entry)
+        {
+            chttpx_cleanup_entry_t* next = entry->next;
+            if (entry->cleanup_fn && entry->resource)
+                entry->cleanup_fn(entry->resource);
+            entry = next;
+        }
+
+        chttpx_cleanup_block_t* block = state->extra_blocks;
+        while (block)
+        {
+            chttpx_cleanup_block_t* next = block->next;
+            free(block);
+            block = next;
+        }
+
+        free(state);
+        req->_cleanup_entries = NULL;
     }
-    req->_cleanup_entries = NULL;
 }
 
 const char* cHTTPX_BearerToken(chttpx_request_t* req)
