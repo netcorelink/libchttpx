@@ -82,7 +82,7 @@ typedef struct
  */
 static uint64_t request_hash_string(const char* value)
 {
-    uint64_t hash = 1469598103934665603ULL;
+    uint64_t hash = 14695981039346656037ULL;
     for (const unsigned char* p = (const unsigned char*)value; *p; ++p)
     {
         hash ^= (uint64_t)*p;
