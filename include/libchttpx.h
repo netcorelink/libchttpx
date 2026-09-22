@@ -1129,21 +1129,17 @@ extern "C"
     /**
      * Enable and configure CORS (Cross-Origin Resource Sharing).
      *
-     * This function enables CORS support for the HTTP server and configures
-     * which origins, HTTP methods, and request headers are allowed.
+     * The function copies the supplied configuration. Allowed origins are
+     * normalized into an immutable sorted table used for logarithmic lookup
+     * while requests are served.
      *
-     * The CORS configuration is applied globally and is typically used together
-     * with the built-in CORS middleware.
-     *
-     * @param origins        Array of allowed origin strings (e.g. "https://example.com").
-     *                       Each origin must match exactly the value of the "Origin" header.
-     * @param origins_count Number of elements in the origins array.
-     * @param methods       Comma-separated list of allowed HTTP methods.
-     *                       If NULL, defaults to:
-     *                       "GET, POST, PUT, DELETE, OPTIONS"
-     * @param headers       Comma-separated list of allowed request headers.
-     *                       If NULL, defaults to:
-     *                       "Content-Type"
+     * @param server Initialized HTTP server to configure.
+     * @param origins Array of exact allowed Origin header values.
+     * @param origins_count Number of elements in origins.
+     * @param methods Comma-separated allowed methods, or NULL for the default
+     * "GET, POST, PUT, DELETE, OPTIONS" set.
+     * @param headers Comma-separated allowed request headers, or NULL for
+     * "Content-Type".
      */
     void cHTTPX_Cors(struct chttpx_serv* server, const char** origins, size_t origins_count, const char* methods, const char* headers);
 
