@@ -192,7 +192,7 @@ static void increment_status_class(chttpx_metrics_state_t* state, int status)
  */
 static uint64_t route_metrics_hash(const char* method, const char* route)
 {
-    uint64_t hash = 1469598103934665603ULL;
+    uint64_t hash = 14695981039346656037ULL;
     const char* values[] = {method, route};
 
     for (size_t part = 0; part < CHTTPX_ARRAY_LEN(values); ++part)
