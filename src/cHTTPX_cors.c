@@ -27,6 +27,21 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/**
+ * Compare two owned CORS origin strings for qsort().
+ *
+ * @param left Pointer to the first origin pointer.
+ * @param right Pointer to the second origin pointer.
+ * @return Negative, zero, or positive value using strcmp ordering.
+ */
+static int compare_origins(const void* left, const void* right)
+{
+    const char* const* lhs = left;
+    const char* const* rhs = right;
+    return strcmp(*lhs, *rhs);
+}
 
 /**
  * Enable and configure CORS (Cross-Origin Resource Sharing).
@@ -72,6 +87,8 @@ void cHTTPX_Cors(chttpx_serv_t* server, const char** origins, size_t origins_cou
             goto memory_error;
         }
     }
+    if (origins_count > 1)
+        qsort(owned_origins, origins_count, sizeof(*owned_origins), compare_origins);
     for (size_t i = 0; i < server->cors.origins_count; i++)
         free((void*)server->cors.origins[i]);
     free((void*)server->cors.origins);
