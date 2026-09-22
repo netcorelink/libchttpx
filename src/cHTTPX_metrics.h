@@ -72,26 +72,38 @@ extern "C"
 
 
     /**
-     * Copy a consistent metrics snapshot.
+     * Copy the current server metrics into a caller-owned snapshot.
      *
-     * Returns cHTTPX_OK on success or cHTTPX_ERR_UNAVAILABLE when metrics are
-     * disabled for the server.
+     * Global counters are read atomically. Individual fields may advance while
+     * the snapshot is copied, which is expected for monitoring data.
+     *
+     * @param server Server whose metrics should be read.
+     * @param metrics Output structure populated on success.
+     * @return cHTTPX_OK on success, cHTTPX_ERR_INVALID_ARGUMENT for invalid
+     * input, or cHTTPX_ERR_UNAVAILABLE when metrics are disabled.
      */
     int cHTTPX_ServerMetrics(struct chttpx_serv* server, chttpx_metrics_t* metrics);
 
     /**
-     * Copy a worker-runtime metrics snapshot.
+     * Copy bounded worker-pool runtime metrics.
      *
-     * Returns cHTTPX_OK while the server runtime is active, otherwise
-     * cHTTPX_ERR_UNAVAILABLE.
+     * @param server Server whose worker runtime should be inspected.
+     * @param metrics Output runtime metrics snapshot.
+     * @return cHTTPX_OK on success or cHTTPX_ERR_UNAVAILABLE when runtime
+     * metrics are not available.
      */
     int cHTTPX_ServerRuntimeMetrics(struct chttpx_serv* server, chttpx_runtime_metrics_t* metrics);
 
-
     /**
-     * Register a Prometheus text exposition endpoint on the supplied router.
+     * Register a Prometheus text exposition endpoint.
      *
      * Metrics must be enabled in chttpx_config_t before the server is created.
+     *
+     * @param router Router that owns the metrics endpoint.
+     * @param path Route path used for the Prometheus endpoint.
+     * @return cHTTPX_OK on success, cHTTPX_ERR_INVALID_ARGUMENT for invalid
+     * input, cHTTPX_ERR_UNAVAILABLE when metrics are disabled, or
+     * cHTTPX_ERR_MEMORY when route registration fails.
      */
     int cHTTPX_MetricsRoute(struct chttpx_router* router, const char* path);
 
