@@ -513,7 +513,7 @@ extern "C"
         /* User-Agent */
         char user_agent[512];
 
-        /* HTTP/1.1 HTTP/2 ... */
+        /* HTTP protocol negotiated for this request. */
         char protocol[16];
 
         /* Client IP REQuest */
