@@ -2,7 +2,7 @@
  * Optional TLS transport backend for libchttpx.
  *
  * Define CHTTPX_ENABLE_TLS and link OpenSSL (ssl + crypto) to enable it.
- * Plain HTTP builds compile this file without any OpenSSL dependency.
+ * Cleartext HTTP/2 builds compile this file without any OpenSSL dependency.
  */
 
 #include "cHTTPX_tls.h"
@@ -18,6 +18,39 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509_vfy.h>
+
+static int chttpx_h2_alpn_select(SSL* ssl, const unsigned char** out, unsigned char* outlen,
+                                 const unsigned char* in, unsigned int inlen, void* arg)
+{
+    (void)ssl;
+    (void)arg;
+    const unsigned char* cursor = in;
+    const unsigned char* end = in + inlen;
+
+    while (cursor < end)
+    {
+        unsigned int length = *cursor++;
+        if ((size_t)(end - cursor) < length)
+            break;
+        if (length == 2 && cursor[0] == 'h' && cursor[1] == '2')
+        {
+            *out = cursor;
+            *outlen = 2;
+            return SSL_TLSEXT_ERR_OK;
+        }
+        cursor += length;
+    }
+
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+
+static int chttpx_tls_selected_h2(SSL* ssl)
+{
+    const unsigned char* protocol = NULL;
+    unsigned int length = 0;
+    SSL_get0_alpn_selected(ssl, &protocol, &length);
+    return length == 2 && protocol && protocol[0] == 'h' && protocol[1] == '2';
+}
 #endif
 
 void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const char* prefix)
@@ -98,6 +131,7 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
 
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
+    SSL_CTX_set_alpn_select_cb(ctx, chttpx_h2_alpn_select, NULL);
 
     if (SSL_CTX_use_certificate_chain_file(ctx, server->tls.cert_file) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx, server->tls.key_file, SSL_FILETYPE_PEM) != 1 ||
@@ -178,7 +212,7 @@ int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** 
         return cHTTPX_ERR_TLS;
     }
 
-    if (SSL_set_fd(ssl, (int)client_fd) != 1 || SSL_accept(ssl) != 1)
+    if (SSL_set_fd(ssl, (int)client_fd) != 1 || SSL_accept(ssl) != 1 || !chttpx_tls_selected_h2(ssl))
     {
         _chttpx_tls_log_error(server, "-", "TLS handshake failed");
         SSL_free(ssl);
@@ -224,7 +258,7 @@ int _chttpx_tls_accept_step(void* session)
 #else
     int result = SSL_accept((SSL*)session);
     if (result == 1)
-        return cHTTPX_OK;
+        return chttpx_tls_selected_h2((SSL*)session) ? cHTTPX_OK : cHTTPX_ERR_TLS;
     int error = SSL_get_error((SSL*)session, result);
     if (error == SSL_ERROR_WANT_READ)
         return CHTTPX_IO_WANT_READ;
@@ -328,7 +362,11 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
             goto error;
     }
 
-    if (SSL_set_fd(ssl, (int)socket_fd) != 1 || SSL_connect(ssl) != 1)
+    static const unsigned char h2_alpn[] = {2, 'h', '2'};
+    if (SSL_set_alpn_protos(ssl, h2_alpn, sizeof(h2_alpn)) != 0)
+        goto error;
+
+    if (SSL_set_fd(ssl, (int)socket_fd) != 1 || SSL_connect(ssl) != 1 || !chttpx_tls_selected_h2(ssl))
         goto error;
 
     if (selected.verify_peer && SSL_get_verify_result(ssl) != X509_V_OK)
