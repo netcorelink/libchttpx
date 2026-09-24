@@ -213,11 +213,6 @@ static chttpx_socket_t open_idle_connection(uint16_t port)
 }
 
 
-static void exchange_ipv6(uint16_t port, const char* request, char* response, size_t response_size)
-{
-    exchange_family(port, AF_INET6, request, response, response_size);
-}
-
 static void wait_until_listening(chttpx_serv_t* server)
 {
     for (int i = 0; i < 5000 && !__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE); i++)
