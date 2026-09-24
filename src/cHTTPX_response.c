@@ -32,6 +32,7 @@
 #include "cHTTPX_queries.h"
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_http2.h"
 #include "cHTTPX_metrics.h"
 
 #include <errno.h>
@@ -414,7 +415,7 @@ static int append_response_header(char* buffer, size_t capacity, size_t* length,
  * @param res httpx_response_t structure containing status, content type, and body.
  * @param client_fd File descriptor of the connected client socket.
  *
- * This function formats the HTTP response headers and body according to HTTP/1.1.
+ * This function serializes the application response for the HTTP/2 transport.
  */
 static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, char** output, size_t* output_size)
 {
@@ -448,7 +449,7 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
     size_t length = 0;
     const char* allowed_origin = server && server->cors.enabled ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
-    if (!append_response_header(header, capacity, &length, "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n", res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
+    if (!append_response_header(header, capacity, &length, "HTTP/2 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n", res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
         goto limit_error;
 
     const char* etag = generate_etag(res.body, res.body_size);
@@ -993,75 +994,7 @@ void* chttpx_handle(void* arg)
         return NULL;
     }
 
-    chttpx_request_t* req = NULL;
-    char buf[BUFFER_SIZE];
-    ssize_t received = read_req(server, client_sock, tls_session, buf, BUFFER_SIZE);
-    if (received == -2)
-    {
-        _chttpx_metrics_parser_failure(server);
-        static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        _chttpx_io_send_all(client_sock, tls_session, too_large, sizeof(too_large) - 1);
-        goto cleanup_connection;
-    }
-    if (received <= 0)
-    {
-        if (received == cHTTPX_ERR_TIMEOUT)
-            _chttpx_metrics_timeout_failure(server);
-        else if (received == cHTTPX_ERR_TLS)
-        {
-            _chttpx_metrics_connection_rejected(server);
-            _chttpx_tls_log_error(server, "-", "TLS request-header read failed");
-        }
-        goto cleanup_connection;
-    }
-
-    req = parse_req_buffer(server, client_sock, tls_session, buf, (size_t)received);
-    if (!req)
-    {
-        _chttpx_metrics_parser_failure(server);
-        goto cleanup_connection;
-    }
-
-    if (req->_parse_status)
-    {
-        _chttpx_metrics_parser_failure(server);
-        const char* parse_message = req->_parse_status == cHTTPX_StatusPayloadTooLarge
-                                        ? "payload too large"
-                                        : (req->_parse_status == cHTTPX_StatusInternalServerError ? "internal server error" : "invalid request");
-        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status, parse_message);
-        send_response(req, parse_error);
-        cHTTPX_ResponseCleanup(&parse_error);
-        goto cleanup_request;
-    }
-
-    if (is_cors_preflight(req))
-        goto cleanup_request;
-
-    chttpx_response_t res = {0};
-    if (_chttpx_dispatch(server, req, &res) == cHTTPX_OK)
-    {
-        send_response(req, res);
-        cHTTPX_ResponseCleanup(&res);
-    }
-
-cleanup_request:
-    cHTTPX_RequestCleanup(req);
-    chttpx_free_req_cookie(req);
-
-    free(req->method);
-    free(req->path);
-    free(req->body);
-
-    for (size_t i = 0; i < req->query_count; i++)
-    {
-        free(req->query[i].name);
-        free(req->query[i].value);
-    }
-
-    free(req->query);
-    free(req);
-
-cleanup_connection:
+    _chttpx_http2_serve(server, client_sock, tls_session);
     _chttpx_tls_session_close(tls_session);
     chttpx_close(client_sock);
     return NULL;
