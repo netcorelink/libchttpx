@@ -193,9 +193,7 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
         if (names)
             SSL_CTX_set_client_CA_list(ctx, names);
 
-       SSL_CTX_set_verify(ctx, server->tls.require_client_cert, ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
-                               : SSL_VERIFY_PEER,
-                           NULL);
+        SSL_CTX_set_verify(ctx, server->tls.require_client_cert ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT) : SSL_VERIFY_PEER, NULL);
     }
     else if (server->tls.require_client_cert)
     {
