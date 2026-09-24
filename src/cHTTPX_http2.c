@@ -13,6 +13,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef CHTTPX_PLATFORM_POSIX
+#include <netdb.h>
+#include <strings.h>
+#endif
 
 #define CHTTPX_H2_PROTOCOL "HTTP/2"
 #define CHTTPX_H2_CALL_TIMEOUT_SEC 30
@@ -31,6 +35,7 @@ typedef struct chttpx_h2_stream
     size_t body_capacity;
     size_t body_limit;
     bool responded;
+    int error_status;
     char* response;
     size_t response_size;
     size_t response_body_offset;
@@ -122,7 +127,10 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream,
     if (namelen == 7 && memcmp(name, ":method", 7) == 0)
     {
         if (valuelen >= sizeof(stream->method))
-            return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+        {
+            stream->error_status = cHTTPX_StatusBadRequest;
+            return 0;
+        }
         memcpy(stream->method, value, valuelen);
         stream->method[valuelen] = '\0';
         return 0;
@@ -131,7 +139,10 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream,
     if (namelen == 5 && memcmp(name, ":path", 5) == 0)
     {
         if (valuelen >= sizeof(stream->path))
-            return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+        {
+            stream->error_status = cHTTPX_StatusURITooLong;
+            return 0;
+        }
         memcpy(stream->path, value, valuelen);
         stream->path[valuelen] = '\0';
         return 0;
@@ -140,7 +151,10 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream,
     if (namelen == 10 && memcmp(name, ":authority", 10) == 0)
     {
         if (valuelen >= sizeof(stream->authority))
-            return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+        {
+            stream->error_status = cHTTPX_StatusRequestHeaderFieldsTooLarge;
+            return 0;
+        }
         memcpy(stream->authority, value, valuelen);
         stream->authority[valuelen] = '\0';
         return 0;
@@ -150,7 +164,10 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream,
         return 0;
 
     if (stream->headers_count >= MAX_HEADERS || namelen >= MAX_HEADER_NAME || valuelen >= MAX_HEADER_VALUE)
-        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    {
+        stream->error_status = cHTTPX_StatusRequestHeaderFieldsTooLarge;
+        return 0;
+    }
 
     chttpx_header_t* header = &stream->headers[stream->headers_count++];
     memcpy(header->name, name, namelen);
@@ -186,11 +203,17 @@ static int h2_append_body(chttpx_h2_server_t* connection, chttpx_h2_stream_t* st
     if (!stream || (len && !data))
         return NGHTTP2_ERR_CALLBACK_FAILURE;
 
+    if (stream->error_status)
+        return 0;
+
     if (stream->body_limit == 0)
         stream->body_limit = h2_body_limit(connection, stream);
 
     if (stream->body_size > stream->body_limit || len > stream->body_limit - stream->body_size)
-        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    {
+        stream->error_status = cHTTPX_StatusPayloadTooLarge;
+        return 0;
+    }
 
     size_t required = stream->body_size + len + 1;
     if (required > stream->body_capacity)
@@ -439,6 +462,9 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
 {
     if (!connection || !stream || stream->responded)
         return 0;
+
+    if (stream->error_status)
+        return h2_submit_text_response(connection, stream, stream->error_status, cHTTPX_CTYPE_TEXT);
 
     char* headers = NULL;
     size_t header_size = 0;
@@ -761,6 +787,32 @@ static int h2_connect(const chttpx_h2_url_t* remote, chttpx_socket_t* connected)
 
     freeaddrinfo(result);
     return final_result;
+}
+
+static const char* h2_stable_content_type(const char* content_type)
+{
+    if (!content_type || !*content_type)
+        return cHTTPX_CTYPE_OCTET;
+#define CHTTPX_H2_MATCH_CTYPE(value) if (strcasecmp(content_type, value) == 0) return value
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_HTML);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_TEXT);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_XML);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_CSS);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_CSV);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_JSON);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_FORM);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_MULTI);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_OCTET);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_JS);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_PNG);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_JPEG);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_GIF);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_WEBP);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_SVG);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_MP3);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_MP4);
+#undef CHTTPX_H2_MATCH_CTYPE
+    return cHTTPX_CTYPE_OCTET;
 }
 
 static ssize_t h2_client_send(nghttp2_session* session,
@@ -1094,7 +1146,7 @@ int _chttpx_http2_call(chttpx_request_t* source,
     }
 
     *res = cHTTPX_ResBinary((uint16_t)client.status,
-                            client.content_type[0] ? client.content_type : cHTTPX_CTYPE_OCTET,
+                            h2_stable_content_type(client.content_type),
                             client.body,
                             client.body_size);
     if (!res->status)
