@@ -16,6 +16,7 @@ extern "C"
 #include "cHTTPX_request.h"
 
 #include <time.h>
+#include <stdio.h>
 
     struct chttpx_serv;
 
