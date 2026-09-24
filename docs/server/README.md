@@ -151,4 +151,4 @@ The worker count is intentionally not part of `chttpx_config_t` and cannot be ch
 
 ## HTTP model
 
-Current server behavior is HTTP/1.1 with one request per connection and explicit `Connection: close`. Fixed `Content-Length` and chunked request bodies are supported.
+Current server behavior is HTTP/2. Cleartext servers use h2c prior knowledge; TLS servers negotiate `h2` with ALPN. Multiple HTTP/2 streams may share one connection, while the public App/router/handler API remains unchanged.
