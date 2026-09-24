@@ -115,7 +115,7 @@ Pull the published runtime image:
 docker pull noneandundefined/libchttpx:latest
 ```
 
-The image contains the installed shared library, headers, pkg-config metadata, and the cJSON runtime.
+The image contains the installed shared library, headers, pkg-config metadata, and the cJSON, zlib, and nghttp2 runtimes.
 
 ```dockerfile
 FROM noneandundefined/libchttpx:latest
@@ -126,11 +126,11 @@ CMD ["/usr/local/bin/my-server"]
 
 ### Build from source on Linux
 
-Requirements: GCC, Make, pkg-config, cJSON development files, and zlib development files.
+Requirements: GCC, Make, pkg-config, cJSON development files, zlib development files, and nghttp2 development files.
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev libnghttp2-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -166,7 +166,7 @@ TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response com
 
 ### Build from source on Windows
 
-Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source and requires zlib (for MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
+Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source and requires zlib and nghttp2 (for MSYS2/MinGW64: `mingw-w64-x86_64-zlib` and `mingw-w64-x86_64-nghttp2`).
 
 ```powershell
 git clone https://github.com/netcorelink/libchttpx.git
