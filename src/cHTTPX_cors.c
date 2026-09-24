@@ -27,25 +27,33 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /**
- * Enable and configure CORS (Cross-Origin Resource Sharing).
+ * Compare two owned CORS origin strings for qsort().
  *
- * This function enables CORS support for the HTTP server and configures
- * which origins, HTTP methods, and request headers are allowed.
+ * @param left Pointer to the first origin pointer.
+ * @param right Pointer to the second origin pointer.
+ * @return Negative, zero, or positive value using strcmp ordering.
+ */
+static int compare_origins(const void* left, const void* right)
+{
+    const char* const* lhs = left;
+    const char* const* rhs = right;
+    return strcmp(*lhs, *rhs);
+}
+
+/**
+ * Enable and configure CORS for one initialized HTTP server.
  *
- * The CORS configuration is applied globally and is typically used together
- * with the built-in CORS middleware.
+ * The supplied strings are copied. Origins are sorted once during
+ * configuration so request-time checks can use binary search.
  *
- * @param origins        Array of allowed origin strings (e.g. "https://example.com").
- *                       Each origin must match exactly the value of the "Origin" header.
- * @param origins_count Number of elements in the origins array.
- * @param methods       Comma-separated list of allowed HTTP methods.
- *                       If NULL, defaults to:
- *                       "GET, POST, PUT, DELETE, OPTIONS"
- * @param headers       Comma-separated list of allowed request headers.
- *                       If NULL, defaults to:
- *                       "Content-Type"
+ * @param server Initialized HTTP server to configure.
+ * @param origins Array of exact allowed Origin header values.
+ * @param origins_count Number of elements in origins.
+ * @param methods Comma-separated allowed methods, or NULL for defaults.
+ * @param headers Comma-separated allowed request headers, or NULL for defaults.
  */
 void cHTTPX_Cors(chttpx_serv_t* server, const char** origins, size_t origins_count, const char* methods, const char* headers)
 {
@@ -72,6 +80,8 @@ void cHTTPX_Cors(chttpx_serv_t* server, const char** origins, size_t origins_cou
             goto memory_error;
         }
     }
+    if (origins_count > 1)
+        qsort(owned_origins, origins_count, sizeof(*owned_origins), compare_origins);
     for (size_t i = 0; i < server->cors.origins_count; i++)
         free((void*)server->cors.origins[i]);
     free((void*)server->cors.origins);

@@ -37,6 +37,7 @@ static void handler(chttpx_request_t* req, chttpx_response_t* res)
 
 static void test_request_lifecycle(void)
 {
+    cleanup_calls = 0;
     chttpx_request_t req = {0};
     char* text = cHTTPX_Strdup(&req, "owned");
     assert(text && strcmp(text, "owned") == 0);
@@ -52,6 +53,47 @@ static void test_request_lifecycle(void)
 
     cHTTPX_RequestCleanup(&req);
     assert(cleanup_calls == 5);
+}
+
+static void test_request_internal_indexes(void)
+{
+    chttpx_request_t req = {0};
+
+    for (size_t i = 0; i < 80; ++i)
+    {
+        char name[32];
+        snprintf(name, sizeof(name), "ctx-%zu", i);
+
+        int* value = malloc(sizeof(*value));
+        assert(value);
+        *value = (int)i;
+
+        assert(cHTTPX_ContextSet(&req, name, value, free) == 0);
+    }
+
+    for (size_t i = 0; i < 80; ++i)
+    {
+        char name[32];
+        snprintf(name, sizeof(name), "ctx-%zu", i);
+
+        int* value = cHTTPX_ContextGet(&req, name);
+        assert(value && *value == (int)i);
+    }
+
+    int* detached = cHTTPX_ContextDetach(&req, "ctx-40");
+    assert(detached && *detached == 40);
+    assert(cHTTPX_ContextGet(&req, "ctx-40") == NULL);
+    free(detached);
+
+    for (size_t i = 0; i < 96; ++i)
+    {
+        int* value = malloc(sizeof(*value));
+        assert(value);
+        *value = (int)i;
+        assert(cHTTPX_Defer(&req, value, free) == 0);
+    }
+
+    cHTTPX_RequestCleanup(&req);
 }
 
 static void test_typed_values(void)
@@ -84,9 +126,11 @@ static void test_typed_values(void)
 static void test_bind_and_json(void)
 {
     chttpx_request_t req = {0};
-    const char body[] = "{\"username\":\"  VALID_USER  \"}";
-    req.body = (unsigned char*)body;
-    req.body_size = strlen(body);
+    const char source[] = "{\"username\":\"  VALID_USER  \"}";
+    req.body_size = strlen(source);
+    req.body = malloc(req.body_size);
+    assert(req.body);
+    memcpy(req.body, source, req.body_size);
     strcpy(req.language, "en");
     char* username = NULL;
     chttpx_validation_t fields[] = {cHTTPX_StringField("username", &username, true, 3, 32, cHTTPX_TRIM | cHTTPX_LOWERCASE, username_validator)};
@@ -102,6 +146,8 @@ static void test_bind_and_json(void)
     assert(response.body_ownership == cHTTPX_BODY_OWNED);
     assert(strstr((const char*)response.body, "\\\"") != NULL);
     cHTTPX_ResponseCleanup(&response);
+    free(req.body);
+    req.body = NULL;
     cHTTPX_RequestCleanup(&req);
 }
 
@@ -369,6 +415,7 @@ static void test_helpers(void)
 int main(void)
 {
     test_request_lifecycle();
+    test_request_internal_indexes();
     test_typed_values();
     test_bind_and_json();
     test_multipart();
