@@ -26,6 +26,9 @@ extern "C"
 
     struct chttpx_app;
 
+/**
+ * Library-wide status codes.
+ */
     typedef enum
     {
         cHTTPX_OK = 0,
@@ -65,6 +68,9 @@ extern "C"
 #endif
 
 
+/**
+ * Server logging verbosity.
+ */
     typedef enum
     {
         cHTTPX_LOG_DEBUG,
@@ -84,6 +90,9 @@ extern "C"
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
+/**
+ * Address family binding mode for listeners.
+ */
     typedef enum
     {
         cHTTPX_NETWORK_IPV4 = 0,
@@ -97,6 +106,9 @@ extern "C"
 #define CHTTPX_NETWORK_DUAL cHTTPX_NETWORK_DUAL
 #endif
 
+/**
+ * Server TLS certificate configuration.
+ */
     typedef struct
     {
         bool enabled;
@@ -106,6 +118,9 @@ extern "C"
         bool require_client_cert;
     } chttpx_tls_config_t;
 
+/**
+ * Outbound TLS trust and client certificate settings.
+ */
     typedef struct
     {
         bool verify_peer;
@@ -114,6 +129,9 @@ extern "C"
         const char* client_key_file;
     } chttpx_tls_client_config_t;
 
+/**
+ * User-supplied server configuration.
+ */
     typedef struct
     {
         uint16_t port;
@@ -136,6 +154,9 @@ extern "C"
         void* logger_data;
     } chttpx_config_t;
 
+/**
+ * Route-level upload limits and allowed media types.
+ */
     typedef struct
     {
         size_t max_size;
@@ -143,6 +164,9 @@ extern "C"
         size_t allowed_types_count;
     } chttpx_upload_policy_t;
 
+/**
+ * Registered HTTP method, path, handler, and middleware chain.
+ */
     typedef struct chttpx_route
     {
         const char* method;
@@ -157,6 +181,9 @@ extern "C"
         bool compression_disabled;
     } chttpx_route_t;
 
+/**
+ * HTTP server instance with routes and runtime state.
+ */
     typedef struct chttpx_serv
     {
         struct chttpx_app* app;
@@ -205,12 +232,18 @@ extern "C"
         chttpx_cors_t cors;
     } chttpx_serv_t;
 
+/**
+ * Accepted client socket passed to worker jobs.
+ */
     typedef struct
     {
         chttpx_serv_t* server;
         chttpx_socket_t client_fd;
     } chttpx_client_ctx_t;
 
+/**
+ * Mutable route registration scope with middleware stacks.
+ */
     typedef struct chttpx_router
     {
         chttpx_serv_t* serv;

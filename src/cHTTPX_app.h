@@ -17,6 +17,9 @@ extern "C"
 #include <stdbool.h>
 #include <stddef.h>
 
+/**
+ * Owns local servers and remote call targets.
+ */
     typedef struct chttpx_app
     {
         void* _servers;
@@ -82,6 +85,9 @@ extern "C"
      */
     int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* method, const char* path, chttpx_response_t* res);
 
+/**
+ * Optional overrides for cHTTPX_CallEx().
+ */
     typedef struct
     {
         const void* body;

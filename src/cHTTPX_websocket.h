@@ -16,6 +16,7 @@
 #define CHTTPX_WSOCKET_OPCODE_PING 0x9
 #define CHTTPX_WSOCKET_OPCODE_PONG 0xA
 
+/** Parsed WebSocket frame header and payload view. */
 typedef struct
 {
     /* FIN - final fragment
@@ -34,20 +35,53 @@ typedef struct
     unsigned char* payload;
 } wsocket_frame_t;
 
+/** Connected WebSocket client handle. */
 typedef struct
 {
     int socket;
     int connected;
 } chttpx_wsocket_t;
 
+/** Callback invoked when a WebSocket message payload is received. */
 typedef void (*chttpx_wsocket_handler_t)(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
 
+/** Route handler invoked after a successful WebSocket upgrade. */
 typedef void (*chttpx_wsocket_route_t)(chttpx_wsocket_t* wsocket);
 
+/**
+ * Register a WebSocket route on a router.
+ *
+ * @param r Router that owns the route.
+ * @param path URL path template.
+ * @param handler Handler invoked after upgrade.
+ */
 void cHTTPX_WSocketRegisterRoute(chttpx_router_t* r, const char* path, chttpx_wsocket_route_t handler);
 
+/**
+ * Perform the HTTP Upgrade handshake for WebSocket (legacy API).
+ *
+ * @param client_socket Connected client socket.
+ * @param sec_wsocket_key Sec-WebSocket-Key header value.
+ * @return cHTTPX_OK on success or a negative error code.
+ */
 int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
 
+/**
+ * Send one WebSocket frame payload to the client.
+ *
+ * @param wsocket Connected WebSocket handle.
+ * @param data Payload bytes.
+ * @param len Payload length in bytes.
+ * @return cHTTPX_OK on success or a negative error code.
+ */
 int cHTTPX_WSocketSend(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
 
+/**
+ * Receive WebSocket payload bytes into a caller buffer.
+ *
+ * @param wsocket Connected WebSocket handle.
+ * @param buffer Output buffer.
+ * @param len Maximum bytes to read.
+ * @return Number of bytes read or a negative error code.
+ */
 int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t len);

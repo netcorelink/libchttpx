@@ -7,6 +7,9 @@
 #include <string.h>
 #include <time.h>
 
+/**
+ * Queued work item with enqueue timestamp.
+ */
 typedef struct
 {
     void* data;
@@ -42,6 +45,11 @@ struct chttpx_worker_pool
 #endif
 };
 
+/**
+ * Return a monotonic timestamp in nanoseconds.
+ *
+ * @return Monotonic timestamp in nanoseconds, or zero if unavailable.
+ */
 static uint64_t monotonic_ns(void)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -56,6 +64,11 @@ static uint64_t monotonic_ns(void)
 #endif
 }
 
+/**
+ * Acquire the worker pool mutex.
+ *
+ * @param pool Worker pool to operate on.
+ */
 static void pool_lock(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -65,6 +78,11 @@ static void pool_lock(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Release the worker pool mutex.
+ *
+ * @param pool Worker pool to operate on.
+ */
 static void pool_unlock(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -74,6 +92,11 @@ static void pool_unlock(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Wait on the worker pool condition variable.
+ *
+ * @param pool Worker pool to operate on.
+ */
 static void pool_wait(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -83,6 +106,11 @@ static void pool_wait(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Wake one worker thread.
+ *
+ * @param pool Worker pool to operate on.
+ */
 static void pool_signal(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -92,6 +120,11 @@ static void pool_signal(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Wake all worker threads.
+ *
+ * @param pool Worker pool to operate on.
+ */
 static void pool_broadcast(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -101,6 +134,12 @@ static void pool_broadcast(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Initialize worker pool mutex and condition variable.
+ *
+ * @param pool Worker pool to operate on.
+ * @return Zero on success or a negative error code.
+ */
 static int pool_sync_init(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -121,6 +160,11 @@ static int pool_sync_init(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Destroy worker pool synchronization objects.
+ *
+ * @param pool Worker pool to operate on.
+ */
 static void pool_sync_destroy(chttpx_worker_pool_t* pool)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -131,6 +175,13 @@ static void pool_sync_destroy(chttpx_worker_pool_t* pool)
 #endif
 }
 
+/**
+ * Dequeue the next job or return false when stopping.
+ *
+ * @param pool Worker pool to operate on.
+ * @param job Output job removed from the queue head.
+ * @return True when a job was dequeued, false when the pool is stopping.
+ */
 static bool worker_take(chttpx_worker_pool_t* pool, chttpx_worker_job_t* job)
 {
     pool_lock(pool);
@@ -158,6 +209,12 @@ static bool worker_take(chttpx_worker_pool_t* pool, chttpx_worker_job_t* job)
     return true;
 }
 
+/**
+ * Worker thread main loop.
+ *
+ * @param argument Worker pool handle passed to the thread entry.
+ * @return Always NULL; required by the thread API.
+ */
 static void* worker_main(void* argument)
 {
     chttpx_worker_pool_t* pool = argument;
@@ -183,10 +240,16 @@ static void* worker_main(void* argument)
     return NULL;
 }
 
-int _chttpx_worker_pool_create(chttpx_worker_pool_t** pool,
-                               size_t queue_capacity,
-                               chttpx_worker_execute_fn execute,
-                               void* context)
+/**
+ * Create a fixed-size worker thread pool with a bounded job queue.
+ *
+ * @param pool Out pointer receiving the created worker pool.
+ * @param queue_capacity Maximum queued jobs before submit rejects.
+ * @param execute Callback invoked for each dequeued job.
+ * @param context User context forwarded to the execute callback.
+ * @return Zero on success or -1 on failure.
+ */
+int _chttpx_worker_pool_create(chttpx_worker_pool_t** pool, size_t queue_capacity, chttpx_worker_execute_fn execute, void* context)
 {
     if (!pool || !queue_capacity || !execute)
         return -1;
@@ -237,6 +300,13 @@ int _chttpx_worker_pool_create(chttpx_worker_pool_t** pool,
     return 0;
 }
 
+/**
+ * Enqueue one job; returns false when stopping or the queue is full.
+ *
+ * @param pool Worker pool to operate on.
+ * @param job Opaque job pointer to enqueue.
+ * @return True when the job was queued, false when stopping or the queue is full.
+ */
 bool _chttpx_worker_submit(chttpx_worker_pool_t* pool, void* job)
 {
     if (!pool || !job)
@@ -261,6 +331,11 @@ bool _chttpx_worker_submit(chttpx_worker_pool_t* pool, void* job)
     return true;
 }
 
+/**
+ * Signal worker threads to drain the queue and exit.
+ *
+ * @param pool Worker pool to operate on.
+ */
 void _chttpx_worker_stop(chttpx_worker_pool_t* pool)
 {
     if (!pool)
@@ -272,6 +347,11 @@ void _chttpx_worker_stop(chttpx_worker_pool_t* pool)
     pool_unlock(pool);
 }
 
+/**
+ * Stop workers, join threads, and free pool resources.
+ *
+ * @param pool Worker pool to operate on.
+ */
 void _chttpx_worker_pool_destroy(chttpx_worker_pool_t* pool)
 {
     if (!pool)
@@ -287,6 +367,12 @@ void _chttpx_worker_pool_destroy(chttpx_worker_pool_t* pool)
     free(pool);
 }
 
+/**
+ * Snapshot queue depth and worker counters.
+ *
+ * @param pool Worker pool to operate on.
+ * @param stats Output buffer receiving worker statistics.
+ */
 void _chttpx_worker_stats(chttpx_worker_pool_t* pool, chttpx_worker_stats_t* stats)
 {
     if (!stats)

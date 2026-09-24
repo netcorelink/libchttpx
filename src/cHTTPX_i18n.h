@@ -20,12 +20,14 @@ extern "C"
 
     struct chttpx_serv;
 
+    /** One key/value translation entry loaded from a locale file. */
     typedef struct
     {
         char* key;
         char* value;
     } i18n_entry_t;
 
+    /** Translations for a single locale (e.g. "en", "ru"). */
     typedef struct
     {
         /* Language en, ru, es */
@@ -36,6 +38,7 @@ extern "C"
         size_t count;
     } i18n_locale_t;
 
+    /** In-memory table of loaded locale files. */
     typedef struct
     {
         i18n_locale_t locales[MAX_LOCALES];
@@ -43,6 +46,7 @@ extern "C"
         i18n_locale_t* default_locale;
     } i18n_manager_t;
 
+    /** Supported language codes for server negotiation. */
     typedef enum
     {
         LANG_EN,
@@ -52,6 +56,12 @@ extern "C"
         LANG_COUNT
     } i18n_language_t;
 
+    /**
+     * Map a language code string to i18n_language_t.
+     *
+     * @param code Language code (e.g. "en"); NULL defaults to LANG_EN.
+     * @return Matching language enum, or LANG_EN if unknown.
+     */
     i18n_language_t i18n_lang_from_string(const char* code);
 
     /**
@@ -59,50 +69,34 @@ extern "C"
      *
      * Loads all locale JSON files from the specified directory.
      * The file name determines the locale language:
-     * en.json -> "en"
-     * ru.json -> "ru"
-     * fr.json -> "fr"
+     * en.json -> "en", ru.json -> "ru", fr.json -> "fr".
      *
-     * All translations are stored globally in memory and are used by the cHTTPX_i18n_t() function.
+     * Memory is freed automatically at program exit.
      *
-     * The memory is automatically freed when the program ends.
-     *
-     * @param directory The path to the directory with locale JSON files.
-     *
-     * Example:
-     *   cHTTPX_i18n("public");
+     * @param directory Path to the directory with locale JSON files.
      */
     void cHTTPX_i18n(const char* directory);
 
     /**
      * Returns a translation by key and language.
      *
-     * Searches for a translation by key in the specified locale.
-     * If the language is not found, the default locale is used.
-     * If the key is not found, the key itself is returned.
+     * Uses the default locale when lang is NULL or unknown; returns key if not found.
+     * The returned string belongs to the i18n manager (not copied per call).
      *
-     * The function does not allocate memory — the returned string
-     * belongs to the i18n manager.
-     *
-     * @param key  Translation key (for example: "welcome").
+     * @param key Translation key (for example: "welcome").
      * @param lang Language code ("en", "ru", NULL for default).
-     *
-     * @return The translation string or key if the translation is not found.
-     *
-     * Example:
-     *   const char* text = cHTTPX_i18n_t("welcome", "ru");
+     * @return Translation string, or key if not found.
      */
     const char* cHTTPX_i18n_t(const char* key, const char* lang);
 
     /**
      * Configure the language preference list used for request negotiation.
      *
-     * @param languages Ordered array of supported language
-     * codes.
-     * @param count     Number of elements in languages.
-     * @param fallback  Fallback language code.
-     * @return cHTTPX_OK on
-     * success, otherwise a negative error code.
+     * @param server Initialized HTTP server.
+     * @param languages Ordered array of supported language codes.
+     * @param count Number of elements in languages.
+     * @param fallback Fallback language code.
+     * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_i18n_languages(struct chttpx_serv* server, const char** languages, size_t count, const char* fallback);
 

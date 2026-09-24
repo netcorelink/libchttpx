@@ -115,12 +115,7 @@ extern "C"
     void _chttpx_metrics_connection_opened(struct chttpx_serv* server);
     void _chttpx_metrics_connection_closed(struct chttpx_serv* server);
     void _chttpx_metrics_request_begin(struct chttpx_serv* server, size_t request_bytes);
-    void _chttpx_metrics_request_end(struct chttpx_serv* server,
-                                     const char* method,
-                                     const char* route_template,
-                                     int status,
-                                     size_t response_bytes,
-                                     double duration_seconds);
+    void _chttpx_metrics_request_end(struct chttpx_serv* server, const char* method, const char* route_template, int status, size_t response_bytes, double duration_seconds);
     void _chttpx_metrics_parser_failure(struct chttpx_serv* server);
     void _chttpx_metrics_timeout_failure(struct chttpx_serv* server);
     void _chttpx_metrics_rate_limit_failure(struct chttpx_serv* server);

@@ -19,8 +19,18 @@
 #include <openssl/ssl.h>
 #include <openssl/x509_vfy.h>
 
-static int chttpx_h2_alpn_select(SSL* ssl, const unsigned char** out, unsigned char* outlen,
-                                 const unsigned char* in, unsigned int inlen, void* arg)
+/**
+ * Select HTTP/2 during TLS ALPN negotiation.
+ *
+ * @param ssl OpenSSL session participating in ALPN selection.
+ * @param out Output pointer to the selected ALPN protocol bytes.
+ * @param outlen Output length of the selected ALPN protocol.
+ * @param in Client ALPN extension bytes offered during handshake.
+ * @param inlen Length of the client ALPN extension.
+ * @param arg Unused ALPN callback user argument.
+ * @return SSL_TLSEXT_ERR_OK when HTTP/2 is selected, otherwise a fatal alert code.
+ */
+static int chttpx_h2_alpn_select(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg)
 {
     (void)ssl;
     (void)arg;
@@ -44,6 +54,12 @@ static int chttpx_h2_alpn_select(SSL* ssl, const unsigned char** out, unsigned c
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
+/**
+ * Return whether the negotiated ALPN protocol is HTTP/2.
+ *
+ * @param ssl OpenSSL session after handshake completion.
+ * @return Non-zero when the negotiated ALPN protocol is HTTP/2.
+ */
 static int chttpx_tls_selected_h2(SSL* ssl)
 {
     const unsigned char* protocol = NULL;
@@ -53,6 +69,13 @@ static int chttpx_tls_selected_h2(SSL* ssl)
 }
 #endif
 
+/**
+ * Log a TLS failure through the server logger.
+ *
+ * @param server Server instance.
+ * @param request_id Request correlation id for logging.
+ * @param prefix Short failure prefix prepended to OpenSSL detail.
+ */
 void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const char* prefix)
 {
     if (!server || !server->logger || server->log_level > cHTTPX_LOG_ERROR)
@@ -75,6 +98,11 @@ void _chttpx_tls_log_error(chttpx_serv_t* server, const char* request_id, const 
 #endif
 }
 
+/**
+ * Return whether TLS support was compiled in.
+ *
+ * @return Non-zero when OpenSSL support is enabled at build time.
+ */
 int _chttpx_tls_available(void)
 {
 #ifdef CHTTPX_ENABLE_TLS
@@ -84,6 +112,11 @@ int _chttpx_tls_available(void)
 #endif
 }
 
+/**
+ * Free owned TLS path strings on a server.
+ *
+ * @param server Server instance.
+ */
 static void free_server_tls_strings(chttpx_serv_t* server)
 {
     if (!server)
@@ -95,6 +128,13 @@ static void free_server_tls_strings(chttpx_serv_t* server)
     memset(&server->tls, 0, sizeof(server->tls));
 }
 
+/**
+ * Load server certificate material and prepare the TLS context.
+ *
+ * @param server Server instance.
+ * @param config TLS configuration supplied by the caller.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* config)
 {
     if (!server || !config)
@@ -153,9 +193,7 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
         if (names)
             SSL_CTX_set_client_CA_list(ctx, names);
 
-        SSL_CTX_set_verify(ctx,
-                           server->tls.require_client_cert
-                               ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
+       SSL_CTX_set_verify(ctx, server->tls.require_client_cert, ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
                                : SSL_VERIFY_PEER,
                            NULL);
     }
@@ -179,6 +217,11 @@ tls_error:
 #endif
 }
 
+/**
+ * Release server TLS context and owned path strings.
+ *
+ * @param server Server instance.
+ */
 void _chttpx_tls_server_cleanup(chttpx_serv_t* server)
 {
     if (!server)
@@ -192,6 +235,14 @@ void _chttpx_tls_server_cleanup(chttpx_serv_t* server)
     free_server_tls_strings(server);
 }
 
+/**
+ * Perform a blocking TLS accept and require HTTP/2 ALPN.
+ *
+ * @param server Server instance.
+ * @param client_fd Connected client socket.
+ * @param session Out pointer receiving the accepted OpenSSL session.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** session)
 {
     if (!server || !session)
@@ -224,6 +275,14 @@ int _chttpx_tls_accept(chttpx_serv_t* server, chttpx_socket_t client_fd, void** 
 #endif
 }
 
+/**
+ * Allocate a TLS session and start a non-blocking accept handshake.
+ *
+ * @param server Server instance.
+ * @param client_fd Connected client socket.
+ * @param session Out pointer receiving the new OpenSSL session.
+ * @return Zero on success, WANT_READ/WANT_WRITE while pending, or an error code.
+ */
 int _chttpx_tls_accept_begin(chttpx_serv_t* server, chttpx_socket_t client_fd, void** session)
 {
     if (!server || !session)
@@ -249,6 +308,12 @@ int _chttpx_tls_accept_begin(chttpx_serv_t* server, chttpx_socket_t client_fd, v
 #endif
 }
 
+/**
+ * Advance a non-blocking TLS accept handshake.
+ *
+ * @param session OpenSSL session started by accept_begin.
+ * @return Zero when complete, WANT_READ/WANT_WRITE while pending, or an error code.
+ */
 int _chttpx_tls_accept_step(void* session)
 {
     if (!session)
@@ -268,6 +333,11 @@ int _chttpx_tls_accept_step(void* session)
 #endif
 }
 
+/**
+ * Shut down and free one TLS session.
+ *
+ * @param session OpenSSL session to shut down and free.
+ */
 void _chttpx_tls_session_close(void* session)
 {
 #ifdef CHTTPX_ENABLE_TLS
@@ -281,9 +351,17 @@ void _chttpx_tls_session_close(void* session)
 #endif
 }
 
-int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
-                               const chttpx_tls_client_config_t* config,
-                               void** context, void** session)
+/**
+ * Connect as a TLS client with HTTP/2 ALPN and optional mTLS.
+ *
+ * @param socket_fd Connected TCP socket.
+ * @param host Remote host name or IP literal.
+ * @param config TLS configuration supplied by the caller.
+ * @param context Out pointer receiving the client OpenSSL context.
+ * @param session Out pointer receiving the connected OpenSSL session.
+ * @return Zero on success or a negative error code.
+ */
+int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host, const chttpx_tls_client_config_t* config, void** context, void** session)
 {
     if (!host || !*host || !context || !session)
         return cHTTPX_ERR_INVALID_ARGUMENT;
@@ -311,8 +389,7 @@ int _chttpx_tls_client_connect(chttpx_socket_t socket_fd, const char* host,
     if (selected.verify_peer)
     {
         SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
-        int trust_ok = selected.ca_file
-                           ? SSL_CTX_load_verify_locations(ctx, selected.ca_file, NULL)
+        int trust_ok = selected.ca_file ? SSL_CTX_load_verify_locations(ctx, selected.ca_file, NULL)
                            : SSL_CTX_set_default_verify_paths(ctx);
         if (trust_ok != 1)
         {
@@ -383,6 +460,12 @@ error:
 #endif
 }
 
+/**
+ * Release client TLS session and context.
+ *
+ * @param context Client OpenSSL context returned from client_connect.
+ * @param session Client OpenSSL session returned from client_connect.
+ */
 void _chttpx_tls_client_close(void* context, void* session)
 {
 #ifdef CHTTPX_ENABLE_TLS
@@ -399,6 +482,15 @@ void _chttpx_tls_client_close(void* context, void* session)
 #endif
 }
 
+/**
+ * Blocking receive through TLS or plain socket.
+ *
+ * @param fd Socket descriptor.
+ * @param tls_session OpenSSL session for TLS I/O, or NULL for cleartext.
+ * @param buffer Memory buffer for socket receive or send.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t size)
 {
     if (!buffer || size == 0)
@@ -442,6 +534,15 @@ int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t 
     }
 }
 
+/**
+ * Non-blocking receive with WANT_READ/WANT_WRITE semantics.
+ *
+ * @param fd Socket descriptor.
+ * @param tls_session OpenSSL session for TLS I/O, or NULL for cleartext.
+ * @param buffer Memory buffer for socket receive or send.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_io_recv_nonblocking(chttpx_socket_t fd, void* tls_session, void* buffer, size_t size)
 {
     if (!buffer || size == 0)
@@ -483,6 +584,15 @@ int _chttpx_io_recv_nonblocking(chttpx_socket_t fd, void* tls_session, void* buf
     return cHTTPX_ERR_IO;
 }
 
+/**
+ * Non-blocking send with WANT_READ/WANT_WRITE semantics.
+ *
+ * @param fd Socket descriptor.
+ * @param tls_session OpenSSL session for TLS I/O, or NULL for cleartext.
+ * @param data Payload bytes for the current chunk.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const void* data, size_t size)
 {
     if (size > 0 && !data)
@@ -528,6 +638,15 @@ int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const voi
     return cHTTPX_ERR_IO;
 }
 
+/**
+ * Send an entire buffer, retrying through TLS or plain socket.
+ *
+ * @param fd Socket descriptor.
+ * @param tls_session OpenSSL session for TLS I/O, or NULL for cleartext.
+ * @param data Payload bytes for the current chunk.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_io_send_all(chttpx_socket_t fd, void* tls_session, const void* data, size_t size)
 {
     if (size > 0 && !data)

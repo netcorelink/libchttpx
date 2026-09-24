@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/** JSON builder backing store (cJSON node plus request arena ownership). */
 struct chttpx_json
 {
     chttpx_request_t* req;
@@ -40,6 +41,13 @@ struct chttpx_json
     bool array;
 };
 
+/**
+ * Escape a string for JSON output.
+ *
+ * @param req Request arena that owns the returned string.
+ * @param value Raw string to escape.
+ * @return Escaped string, or NULL on error.
+ */
 char* cHTTPX_JsonEscape(chttpx_request_t* req, const char* value)
 {
     if (!req || !value)
@@ -85,6 +93,13 @@ char* cHTTPX_JsonEscape(chttpx_request_t* req, const char* value)
     return escaped;
 }
 
+/**
+ * Allocate a JSON object or array builder on the request arena.
+ *
+ * @param req Request arena for allocation and cleanup.
+ * @param array True to create an array, false for an object.
+ * @return JSON builder, or NULL on error.
+ */
 static chttpx_json_t* json_create(chttpx_request_t* req, bool array)
 {
     if (!req)
@@ -104,16 +119,26 @@ static chttpx_json_t* json_create(chttpx_request_t* req, bool array)
     return json;
 }
 
+/** @copydoc cHTTPX_JsonObject */
 chttpx_json_t* cHTTPX_JsonObject(chttpx_request_t* req)
 {
     return json_create(req, false);
 }
 
+/** @copydoc cHTTPX_JsonArray */
 chttpx_json_t* cHTTPX_JsonArray(chttpx_request_t* req)
 {
     return json_create(req, true);
 }
 
+/**
+ * Attach a cJSON node to a JSON object builder.
+ *
+ * @param json Target object builder.
+ * @param key Property name.
+ * @param value cJSON node (freed on error).
+ * @return 0 on success, -1 on error.
+ */
 static int object_add(chttpx_json_t* json, const char* key, cJSON* value)
 {
     if (!json || json->array || !key || !value)
@@ -125,6 +150,13 @@ static int object_add(chttpx_json_t* json, const char* key, cJSON* value)
     return 0;
 }
 
+/**
+ * Append a cJSON node to a JSON array builder.
+ *
+ * @param json Target array builder.
+ * @param value cJSON node (freed on error).
+ * @return 0 on success, -1 on error.
+ */
 static int array_add(chttpx_json_t* json, cJSON* value)
 {
     if (!json || !json->array || !value)
@@ -136,26 +168,31 @@ static int array_add(chttpx_json_t* json, cJSON* value)
     return 0;
 }
 
+/** @copydoc cHTTPX_JsonString */
 int cHTTPX_JsonString(chttpx_json_t* json, const char* key, const char* value)
 {
     return object_add(json, key, cJSON_CreateString(value ? value : ""));
 }
 
+/** @copydoc cHTTPX_JsonNumber */
 int cHTTPX_JsonNumber(chttpx_json_t* json, const char* key, double value)
 {
     return object_add(json, key, cJSON_CreateNumber(value));
 }
 
+/** @copydoc cHTTPX_JsonBool */
 int cHTTPX_JsonBool(chttpx_json_t* json, const char* key, bool value)
 {
     return object_add(json, key, cJSON_CreateBool(value));
 }
 
+/** @copydoc cHTTPX_JsonNull */
 int cHTTPX_JsonNull(chttpx_json_t* json, const char* key)
 {
     return object_add(json, key, cJSON_CreateNull());
 }
 
+/** @copydoc cHTTPX_JsonChild */
 int cHTTPX_JsonChild(chttpx_json_t* json, const char* key, chttpx_json_t* child)
 {
     if (!json || !child || json->req != child->req || !cHTTPX_Detach(child->req, child->value))
@@ -163,26 +200,31 @@ int cHTTPX_JsonChild(chttpx_json_t* json, const char* key, chttpx_json_t* child)
     return object_add(json, key, child->value);
 }
 
+/** @copydoc cHTTPX_JsonArrayString */
 int cHTTPX_JsonArrayString(chttpx_json_t* json, const char* value)
 {
     return array_add(json, cJSON_CreateString(value ? value : ""));
 }
 
+/** @copydoc cHTTPX_JsonArrayNumber */
 int cHTTPX_JsonArrayNumber(chttpx_json_t* json, double value)
 {
     return array_add(json, cJSON_CreateNumber(value));
 }
 
+/** @copydoc cHTTPX_JsonArrayBool */
 int cHTTPX_JsonArrayBool(chttpx_json_t* json, bool value)
 {
     return array_add(json, cJSON_CreateBool(value));
 }
 
+/** @copydoc cHTTPX_JsonArrayNull */
 int cHTTPX_JsonArrayNull(chttpx_json_t* json)
 {
     return array_add(json, cJSON_CreateNull());
 }
 
+/** @copydoc cHTTPX_JsonArrayChild */
 int cHTTPX_JsonArrayChild(chttpx_json_t* json, chttpx_json_t* child)
 {
     if (!json || !child || json->req != child->req || !cHTTPX_Detach(child->req, child->value))
@@ -190,6 +232,7 @@ int cHTTPX_JsonArrayChild(chttpx_json_t* json, chttpx_json_t* child)
     return array_add(json, child->value);
 }
 
+/** @copydoc cHTTPX_ResJsonObject */
 chttpx_response_t cHTTPX_ResJsonObject(uint16_t status, chttpx_json_t* json)
 {
     if (!json || !json->value)
@@ -202,6 +245,14 @@ chttpx_response_t cHTTPX_ResJsonObject(uint16_t status, chttpx_json_t* json)
     return response;
 }
 
+/**
+ * Build a JSON object response with one string field.
+ *
+ * @param status HTTP status code.
+ * @param name JSON property name.
+ * @param message Property value.
+ * @return JSON HTTP response.
+ */
 static chttpx_response_t json_named_response(uint16_t status, const char* name, const char* message)
 {
     cJSON* object = cJSON_CreateObject();
@@ -217,11 +268,25 @@ static chttpx_response_t json_named_response(uint16_t status, const char* name, 
     return response;
 }
 
+/**
+ * JSON error response with an "error" string field.
+ *
+ * @param status HTTP status code.
+ * @param message Error message text.
+ * @return JSON HTTP response.
+ */
 chttpx_response_t cHTTPX_ResError(uint16_t status, const char* message)
 {
     return json_named_response(status, "error", message);
 }
 
+/**
+ * JSON response with a "message" string field.
+ *
+ * @param status HTTP status code.
+ * @param message Message text.
+ * @return JSON HTTP response.
+ */
 chttpx_response_t cHTTPX_ResMessage(uint16_t status, const char* message)
 {
     return json_named_response(status, "message", message);

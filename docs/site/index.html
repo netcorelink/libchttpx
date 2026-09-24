@@ -10,59 +10,50 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="container nav">
-      <a class="brand" href="index.html">libchttpx</a>
-
-      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
-
-      <nav class="nav-links" data-nav-links aria-label="Main navigation">
-        <a href="docs.html" data-nav-link>Docs</a>
-        <a href="examples.html" data-nav-link>Examples</a>
-        <a href="blog.html" data-nav-link>Blog</a>
-        <a href="support.html" data-nav-link>Support</a>
-        <a href="about.html" data-nav-link>About</a>
-      </nav>
-
-      <div class="nav-actions">
-        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-        <a class="btn btn-primary btn-small" href="support.html">Support ♥</a>
-      </div>
-    </div>
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#d32f2f" d="M12 2.2 21.2 7.5v9L12 21.8 2.8 16.5v-9L12 2.2z"/></svg>
+      libchttpx
+    </a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="site-menu" data-nav-links aria-label="Main navigation">
+      <a href="index.html" data-nav-link>Home</a>
+      <a href="docs.html" data-nav-link>Docs</a>
+      <a href="examples.html" data-nav-link>Examples</a>
+      <a href="blog.html" data-nav-link>Blog</a>
+      <a href="support.html" data-nav-link>Support</a>
+      <a href="about.html" data-nav-link>About</a>
+      <a href="https://github.com/netcorelink/libchttpx">GitHub</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="hero">
-      <div class="container hero-grid">
-        <div>
-          <p class="eyebrow">A fast and simple HTTP server library for C</p>
-          <h1>Build HTTP servers in C, the modern way</h1>
-          <p class="lead">
-            libchttpx is a compact HTTP/2 server library with routing, middleware,
-            JSON helpers, uploads, TLS, compression, built-in metrics and graceful shutdown.
-          </p>
-
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="docs.html">Get started →</a>
-            <a class="btn" href="https://github.com/netcorelink/libchttpx">View on GitHub ↗</a>
-          </div>
-
-          <div class="meta-line">Open source · BSD 3-Clause · C/C++ friendly</div>
+  <main class="home">
+    <section class="hero-grid">
+      <div>
+        <p class="eyebrow">HTTP/2 server library for C</p>
+        <h1>Build HTTP servers in C</h1>
+        <p class="lead">
+          A compact library with routing, middleware, JSON helpers, uploads,
+          TLS, compression, metrics and graceful shutdown.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="docs.html">Get started</a>
+          <a class="btn" href="https://github.com/netcorelink/libchttpx">GitHub</a>
         </div>
+        <p class="meta-line">Open source · BSD 3-Clause · Linux and Windows</p>
+      </div>
 
-        <div class="code-card">
-          <div class="code-card-header">
-            <span>example.c</span>
-            <button class="copy-button" type="button" data-copy-target="hero-code">Copy</button>
-          </div>
-          <pre id="hero-code"><code>#include &lt;libchttpx.h&gt;
+      <div class="code-card">
+        <div class="code-card-header">
+          <button class="copy-button" type="button" data-copy-target="hero-code">Copy</button>
+        </div>
+        <pre id="hero-code"><code>#include &lt;libchttpx.h&gt;
 
-static void health(chttpx_request_t* req,
-                   chttpx_response_t* res)
+static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
-    *res = cHTTPX_ResMessage(
-        cHTTPX_StatusOK, "healthy"
-    );
+    *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
 }
 
 int main(void)
@@ -73,51 +64,39 @@ int main(void)
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 8080;
 
-    chttpx_serv_t* server =
-        cHTTPX_AppServer(&amp;app, "main", &amp;config);
-
-    chttpx_router_t router =
-        cHTTPX_RoutePathPrefix(server, "");
-
+    chttpx_serv_t* server = cHTTPX_AppServer(&amp;app, "main", &amp;config);
+    chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     cHTTPX_Get(&amp;router, "/health", health);
     return cHTTPX_AppRun(&amp;app);
 }</code></pre>
-        </div>
       </div>
     </section>
 
-    <section class="container" aria-label="Features">
-      <div class="feature-grid">
-        <article class="feature">
-          <div class="feature-icon">⚡</div>
-          <h3>High performance</h3>
-          <p>Small C runtime with direct control over server behavior.</p>
-        </article>
-        <article class="feature">
-          <div class="feature-icon">◎</div>
-          <h3>Easy to use</h3>
-          <p>Routing, responses and helpers without repetitive HTTP plumbing.</p>
-        </article>
-        <article class="feature">
-          <div class="feature-icon">◇</div>
-          <h3>Flexible</h3>
-          <p>Middleware, TLS, gzip compression, metrics, JSON, uploads and custom server limits.</p>
-        </article>
-        <article class="feature">
-          <div class="feature-icon">▤</div>
-          <h3>Documented</h3>
-          <p>Module-by-module documentation and runnable examples.</p>
-        </article>
-        <article class="feature">
-          <div class="feature-icon">⌘</div>
-          <h3>Open source</h3>
-          <p>Read the code, contribute, fork it and build on top of it.</p>
-        </article>
-      </div>
+    <section class="feature-grid" aria-label="Features">
+      <article class="feature">
+        <h3>High performance</h3>
+        <p>Small C runtime with direct control over server behavior.</p>
+      </article>
+      <article class="feature">
+        <h3>Easy to use</h3>
+        <p>Routing, responses and helpers without repetitive HTTP plumbing.</p>
+      </article>
+      <article class="feature">
+        <h3>Flexible</h3>
+        <p>Middleware, TLS, gzip, metrics, JSON, uploads and custom limits.</p>
+      </article>
+      <article class="feature">
+        <h3>Documented</h3>
+        <p>Module-by-module documentation and runnable examples.</p>
+      </article>
+      <article class="feature">
+        <h3>Open source</h3>
+        <p>Read the code, contribute, fork it and build on top of it.</p>
+      </article>
     </section>
 
     <section class="stats-wrap">
-      <div class="container stats-grid">
+      <div class="stats-grid">
         <div class="stat">
           <span class="stat-value" data-repo-stat="stars">—</span>
           <span class="stat-label">GitHub stars</span>
@@ -137,61 +116,30 @@ int main(void)
       </div>
     </section>
 
-    <section class="section">
-      <div class="container two-column">
-        <div>
-          <p class="eyebrow">Why libchttpx?</p>
-          <h2>Keep HTTP code small and readable</h2>
-          <p class="section-copy">
-            The library is designed so handlers contain application logic instead of
-            repetitive request parsing, response building and server boilerplate.
-          </p>
-          <a class="btn btn-primary" href="docs.html">Read the documentation →</a>
-        </div>
-
-        <ul class="check-list">
-          <li>Embedded and internal HTTP services</li>
-          <li>Microservices and backend APIs</li>
-          <li>Route groups and middleware pipelines</li>
-          <li>JSON validation and response builders</li>
-          <li>Multipart forms and file uploads</li>
-          <li>Linux and Windows development</li>
-        </ul>
-      </div>
-    </section>
-
-    <section class="section section-muted">
-      <div class="container">
-        <p class="eyebrow">Support the project</p>
-        <h2>Use it for free. Pay only when you need help.</h2>
+    <section class="two-column">
+      <div>
+        <h2>Keep HTTP code small</h2>
         <p class="section-copy">
-          libchttpx stays open source. Commercial help, integration work and sponsorship
-          are separate ways to support continued development.
+          Handlers contain application logic instead of repetitive request
+          parsing, response building and server boilerplate.
         </p>
-
-        <div class="card-grid">
-          <article class="card">
-            <h3>♥ Sponsor development</h3>
-            <p>Interested in funding features or long-term maintenance?</p>
-            <a class="btn btn-primary" href="support.html#sponsor">Sponsor options</a>
-          </article>
-          <article class="card">
-            <h3>◌ Report an issue</h3>
-            <p>Found a bug or have a feature request? Open it publicly on GitHub.</p>
-            <a class="btn" href="https://github.com/netcorelink/libchttpx/issues">GitHub Issues ↗</a>
-          </article>
-          <article class="card">
-            <h3>▢ Professional support</h3>
-            <p>Need help with integration, debugging, review or a custom feature?</p>
-            <a class="btn" href="support.html#commercial">Contact</a>
-          </article>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="docs.html">Read the documentation</a>
         </div>
       </div>
+      <ul class="check-list">
+        <li>Embedded and internal HTTP services</li>
+        <li>Microservices and backend APIs</li>
+        <li>Route groups and middleware pipelines</li>
+        <li>JSON validation and response builders</li>
+        <li>Multipart forms and file uploads</li>
+        <li>Linux and Windows development</li>
+      </ul>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="container footer-row">
+    <div class="footer-row">
       <div>
         <a class="brand" href="index.html">libchttpx</a>
         <div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div>
@@ -201,7 +149,7 @@ int main(void)
         <a href="examples.html">Examples</a>
         <a href="support.html">Support</a>
         <a href="about.html">About</a>
-        <a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
+        <a href="https://github.com/netcorelink/libchttpx">GitHub</a>
       </div>
     </div>
   </footer>

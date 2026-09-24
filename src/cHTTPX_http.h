@@ -173,7 +173,6 @@ extern "C"
 #define cHTTPX_StatusInvalidSSLCertificate 526
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

@@ -32,6 +32,7 @@ typedef struct
     size_t header_size;
 } http_response_t;
 
+/** Parameterized route handler for metrics cardinality tests. */
 static void user_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     const char* id = cHTTPX_Param(req, "id");
@@ -40,6 +41,7 @@ static void user_handler(chttpx_request_t* req, chttpx_response_t* res)
     *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "text/plain", body, sizeof(body) - 1);
 }
 
+/** Fixed route handler registered for many /route/{i} paths. */
 static void static_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -47,6 +49,7 @@ static void static_handler(chttpx_request_t* req, chttpx_response_t* res)
     *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "text/plain", body, sizeof(body) - 1);
 }
 
+/** Polls until server->listening is true. */
 static void wait_until_listening(chttpx_serv_t* server)
 {
     for (int i = 0; i < 5000 && !__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE); i++)
@@ -55,12 +58,14 @@ static void wait_until_listening(chttpx_serv_t* server)
     assert(__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE));
 }
 
+/** @return Pointer to the response body inside a formatted http_response_t. */
 static const char* response_body(http_response_t* response)
 {
     assert(response && response->header_size <= response->size);
     return response->bytes + response->header_size;
 }
 
+/** Issues GET path against port via _chttpx_http2_call. */
 static http_response_t exchange(uint16_t port, const char* path)
 {
     http_response_t response;
@@ -86,6 +91,7 @@ static http_response_t exchange(uint16_t port, const char* path)
     return response;
 }
 
+/** Concurrent client hammering /users/{id} routes. */
 static void* worker(void* data)
 {
     worker_ctx_t* ctx = data;
@@ -99,6 +105,7 @@ static void* worker(void* data)
     return NULL;
 }
 
+/** Background thread reading metrics snapshots until stopped. */
 static void* snapshot_reader(void* data)
 {
     snapshot_ctx_t* ctx = data;
@@ -111,12 +118,14 @@ static void* snapshot_reader(void* data)
     return NULL;
 }
 
+/** @return Elapsed wall time between two CLOCK_MONOTONIC samples. */
 static double diff_seconds(struct timespec start, struct timespec end)
 {
     return (double)(end.tv_sec - start.tv_sec) +
            (double)(end.tv_nsec - start.tv_nsec) / 1000000000.0;
 }
 
+/** Validates counters, histograms, Prometheus scrape output, and snapshot speed. */
 int main(void)
 {
     chttpx_app_t app;

@@ -1,5 +1,6 @@
 #include <libchttpx.h>
 
+/** Accepts multipart field "avatar" and returns its size as JSON. */
 static void upload_avatar(chttpx_request_t* req, chttpx_response_t* res)
 {
     const chttpx_file_t* avatar = cHTTPX_FormFile(req, "avatar");
@@ -10,13 +11,10 @@ static void upload_avatar(chttpx_request_t* req, chttpx_response_t* res)
         return;
     }
 
-    *res = cHTTPX_ResJson(
-        cHTTPX_StatusOK,
-        "{\"size\":%llu}",
-        (unsigned long long)avatar->size
-    );
+    *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"size\":%llu}", (unsigned long long)avatar->size);
 }
 
+/** Avatar upload with JPEG/PNG type and 5 MiB size limits. */
 int main(void)
 {
     chttpx_app_t app;
@@ -35,8 +33,7 @@ int main(void)
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "/api");
 
-    chttpx_route_t* route =
-        cHTTPX_Post(&router, "/avatar", upload_avatar);
+    chttpx_route_t* route = cHTTPX_Post(&router, "/avatar", upload_avatar);
 
     const char* allowed[] = {"image/jpeg", "image/png"};
     chttpx_upload_policy_t policy = {

@@ -4,12 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/** TLS server health handler returning {"secure":true}. */
 static void secure_health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"secure\":true}");
 }
 
+/** Verifies TLS verify failure and trusted CA success for AppRemote CallEx. */
 int main(int argc, char** argv)
 {
     if (argc != 3)

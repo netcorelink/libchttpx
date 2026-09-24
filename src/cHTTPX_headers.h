@@ -27,20 +27,19 @@ extern "C"
     /**
      * Add a new HTTP header.
      *
-     * This function appends a header to the request/response header list.
-     * Unlike HeaderSet, it does NOT replace existing headers with the same name.
-     * This is required for headers like "Set-Cookie" that may appear multiple times.
+     * Appends a header to the response header list. Unlike HeaderSet, it does not
+     * replace existing headers with the same name (required for Set-Cookie).
      *
-     * @param res   Pointer to HTTP request/response structure.
-     * @param name  Header name.
+     * @param res Pointer to HTTP response structure.
+     * @param name Header name.
      * @param value Header value.
+     * @return 0 on success, -1 on error.
      */
     int cHTTPX_HeaderAdd(chttpx_response_t* res, const char* name, const char* value);
 
     /**
      * Set or add a request header.
-     * If header exists (case-insensitive), its value will be replaced.
-     * Otherwise a new header will be added.
+     * If a header exists (case-insensitive), its value is replaced; otherwise a new header is added.
      *
      * @param req Pointer to the HTTP request.
      * @param name Header name.
@@ -50,18 +49,23 @@ extern "C"
     int cHTTPX_HeaderSet(chttpx_request_t* req, const char* name, const char* value);
 
     /**
-     * Get the client's IP from the HEADER request.
+     * Get the client's IP from request headers (X-Forwarded-For or Remote-Addr).
      *
-     * @param req a pointer to the query structure
-     * @return const char* Client's IP
+     * @param req Pointer to the HTTP request.
+     * @return Client IP string, or NULL if not present.
      */
     const char* cHTTPX_ClientIP(chttpx_request_t* req);
 
-    /* Parse headers in request */
+    /**
+     * Parse HTTP headers from a raw request buffer.
+     *
+     * @param req Pointer to the HTTP request being parsed.
+     * @param buffer Raw bytes containing the request line and headers.
+     * @param buffer_len Length of buffer in bytes.
+     */
     void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len);
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

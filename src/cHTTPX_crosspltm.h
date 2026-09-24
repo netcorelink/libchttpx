@@ -34,12 +34,20 @@ extern "C"
 #endif
 
 #ifdef _WIN32
-    typedef SOCKET chttpx_socket_t;
+/** Socket handle type (Windows SOCKET, POSIX int). */
+typedef SOCKET chttpx_socket_t;
 #else
 typedef int chttpx_socket_t;
 #endif
 
 #ifdef CHTTPX_PLATFORM_WINDOWS
+    /**
+     * Thread-safe localtime (POSIX localtime_r on Windows).
+     *
+     * @param timep Input time value.
+     * @param result Output struct tm buffer.
+     * @return result on success.
+     */
     static inline struct tm* localtime_r(const time_t* timep, struct tm* result)
     {
         memset(result, 0, sizeof(*result));
@@ -47,6 +55,13 @@ typedef int chttpx_socket_t;
         return result;
     }
 
+    /**
+     * Thread-safe UTC breakdown (POSIX gmtime_r on Windows).
+     *
+     * @param timep Input time value.
+     * @param result Output struct tm buffer.
+     * @return result on success.
+     */
     static inline struct tm* gmtime_r(const time_t* timep, struct tm* result)
     {
         memset(result, 0, sizeof(*result));
@@ -54,6 +69,13 @@ typedef int chttpx_socket_t;
         return result;
     }
 
+    /**
+     * clock_gettime compatibility for Windows.
+     *
+     * @param clock_id CLOCK_MONOTONIC or real-time clock id.
+     * @param value Output timespec.
+     * @return 0 on success, -1 on error.
+     */
     static inline int chttpx_clock_gettime(int clock_id, struct timespec* value)
     {
         if (!value)
@@ -93,6 +115,15 @@ typedef int chttpx_socket_t;
 #define strcasecmp _stricmp
 #endif
 
+    /**
+     * Find a byte substring within a buffer (POSIX memmem when unavailable).
+     *
+     * @param haystack Buffer to search.
+     * @param haystacklen Length of haystack.
+     * @param needle Substring to find.
+     * @param needlelen Length of needle.
+     * @return Pointer into haystack, or NULL if not found.
+     */
     static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
     {
         if (!needlelen)

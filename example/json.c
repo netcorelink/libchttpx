@@ -6,29 +6,14 @@ typedef struct
     char* name;
 } create_user_t;
 
+/** Binds JSON body fields and returns a created-user JSON object. */
 static void create_user(chttpx_request_t* req, chttpx_response_t* res)
 {
     create_user_t payload = {0};
 
     chttpx_validation_t fields[] = {
-        cHTTPX_StringField(
-            "email",
-            &payload.email,
-            true,
-            3,
-            254,
-            cHTTPX_TRIM | cHTTPX_LOWERCASE,
-            NULL
-        ),
-        cHTTPX_StringField(
-            "name",
-            &payload.name,
-            true,
-            1,
-            64,
-            cHTTPX_TRIM,
-            NULL
-        ),
+        cHTTPX_StringField("email", &payload.email, true, 3, 254, cHTTPX_TRIM | cHTTPX_LOWERCASE, NULL),
+        cHTTPX_StringField("name", &payload.name, true, 1, 64, cHTTPX_TRIM, NULL),
     };
 
     if (!cHTTPX_BindJSON(req, res, fields, CHTTPX_ARRAY_LEN(fields)))
@@ -41,6 +26,7 @@ static void create_user(chttpx_request_t* req, chttpx_response_t* res)
     *res = cHTTPX_ResJsonObject(cHTTPX_StatusCreated, json);
 }
 
+/** POST /api/users with JSON validation and binding. */
 int main(void)
 {
     chttpx_app_t app;

@@ -40,6 +40,7 @@
 #define CHTTPX_CLEANUP_BLOCK_CAPACITY 32
 #define CHTTPX_CONTEXT_BUCKET_COUNT 32
 
+/** One deferred cleanup callback registered on a request. */
 typedef struct chttpx_cleanup_entry
 {
     void* resource;
@@ -47,6 +48,7 @@ typedef struct chttpx_cleanup_entry
     struct chttpx_cleanup_entry* next;
 } chttpx_cleanup_entry_t;
 
+/** Fixed-size pool block for cleanup entries. */
 typedef struct chttpx_cleanup_block
 {
     size_t used;
@@ -54,6 +56,7 @@ typedef struct chttpx_cleanup_block
     struct chttpx_cleanup_block* next;
 } chttpx_cleanup_block_t;
 
+/** Request-scoped list of deferred cleanup callbacks. */
 typedef struct
 {
     chttpx_cleanup_entry_t* head;
@@ -61,6 +64,7 @@ typedef struct
     chttpx_cleanup_block_t* extra_blocks;
 } chttpx_cleanup_state_t;
 
+/** Named context bucket entry in the request hash table. */
 typedef struct chttpx_context_entry
 {
     void* value;
@@ -69,6 +73,7 @@ typedef struct chttpx_context_entry
     char name[];
 } chttpx_context_entry_t;
 
+/** Open hash table of named request contexts. */
 typedef struct
 {
     chttpx_context_entry_t* buckets[CHTTPX_CONTEXT_BUCKET_COUNT];
@@ -122,6 +127,12 @@ static chttpx_cleanup_state_t* cleanup_state(chttpx_request_t* req, int create)
  *
  * @param state Cleanup state owned by the request.
  * @return Reusable cleanup entry or NULL on allocation failure.
+ */
+/**
+ * Cleanup entry alloc.
+ *
+ * @param state Parameter `state`.
+ * @return Pointer or NULL on failure.
  */
 static chttpx_cleanup_entry_t* cleanup_entry_alloc(chttpx_cleanup_state_t* state)
 {
@@ -503,6 +514,7 @@ int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, voi
     return 0;
 }
 
+/** Localized validation error message templates. */
 typedef struct
 {
     const char* required;
@@ -666,6 +678,12 @@ type_error:
 }
 
 /* Validator email string */
+/**
+ * Is valid email.
+ *
+ * @param email Parameter `email`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int is_valid_email(const char* email)
 {
     if (!email)
@@ -688,6 +706,16 @@ static int is_valid_email(const char* email)
     return 1;
 }
 
+/**
+ * Set error.
+ *
+ * @param error_msg Parameter `error_msg`.
+ * @param error_size Parameter `error_size`.
+ * @param lang Parameter `lang`.
+ * @param key Parameter `key`.
+ * @param field_name Parameter `field_name`.
+ * @param num Parameter `num`.
+ */
 static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, int key, const char* field_name, size_t num)
 {
     validation_messages_t* msg = messages[lang];
@@ -798,6 +826,15 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
     return 1;
 }
 
+/**
+ * Parse and validate a JSON request body, writing a 400 response on failure.
+ *
+ * @param req Current HTTP request.
+ * @param res Response populated when binding fails.
+ * @param fields Field definitions and output targets.
+ * @param field_count Number of field definitions.
+ * @return 1 on success, 0 on parsing or validation failure.
+ */
 int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_response_t* res, chttpx_validation_t* fields, size_t field_count)
 {
     if (!req || !res || !fields)

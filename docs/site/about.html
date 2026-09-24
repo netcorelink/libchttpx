@@ -10,48 +10,45 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="container nav">
-      <a class="brand" href="index.html">libchttpx</a>
-      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
-      <nav class="nav-links" data-nav-links aria-label="Main navigation">
-        <a href="docs.html" data-nav-link>Docs</a>
-        <a href="examples.html" data-nav-link>Examples</a>
-        <a href="blog.html" data-nav-link>Blog</a>
-        <a href="support.html" data-nav-link>Support</a>
-        <a href="about.html" data-nav-link>About</a>
-      </nav>
-      <div class="nav-actions">
-        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-        <a class="btn btn-primary btn-small" href="support.html">Support ♥</a>
-      </div>
-    </div>
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#d32f2f" d="M12 2.2 21.2 7.5v9L12 21.8 2.8 16.5v-9L12 2.2z"/></svg>
+      libchttpx
+    </a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="site-menu" data-nav-links aria-label="Main navigation">
+      <a href="index.html" data-nav-link>Home</a>
+      <a href="docs.html" data-nav-link>Docs</a>
+      <a href="examples.html" data-nav-link>Examples</a>
+      <a href="blog.html" data-nav-link>Blog</a>
+      <a href="support.html" data-nav-link>Support</a>
+      <a href="about.html" data-nav-link>About</a>
+      <a href="https://github.com/netcorelink/libchttpx">GitHub</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="page-hero">
-      <div class="container">
-        <p class="eyebrow">About</p>
-        <h1>A small C library focused on practical HTTP server work</h1>
-        <p class="page-lead">
-          libchttpx is maintained by netcorelink and developed in public on GitHub.
+  <div class="docs-frame">
+    <aside class="docs-sidebar" data-docs-sidebar aria-label="Documentation"></aside>
+    <main class="docs-main">
+      <article class="docs-article">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="index.html">Home</a>
+          <span class="crumb crumb-current">About</span>
+        </nav>
+
+        <h1>About</h1>
+        <p>
+          libchttpx is a small C library focused on practical HTTP server work.
+          It is maintained by netcorelink and developed in public on GitHub.
         </p>
-      </div>
-    </section>
 
-    <section class="section">
-      <div class="container two-column">
-        <div>
-          <h2>Project goal</h2>
-          <p class="section-copy">
-            Keep the API direct and C-like while providing the pieces commonly needed by real backend services:
-            routing, middleware, request parsing, JSON, uploads, CORS, cookies, logging, rate limiting and graceful shutdown.
-          </p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="https://github.com/netcorelink/libchttpx">Repository ↗</a>
-            <a class="btn" href="https://github.com/netcorelink/libchttpx/blob/main/LICENSE">License ↗</a>
-          </div>
-        </div>
-
+        <h2>Project goal</h2>
+        <p>
+          Keep the API direct and C-like while providing the pieces commonly needed
+          by real backend services: routing, middleware, request parsing, JSON,
+          uploads, CORS, cookies, logging, rate limiting and graceful shutdown.
+        </p>
         <ul class="check-list">
           <li>Written primarily in C</li>
           <li>Cross-platform Linux and Windows support</li>
@@ -60,32 +57,20 @@
           <li>Examples included in the repository</li>
           <li>Documentation versioned with the code</li>
         </ul>
-      </div>
-    </section>
 
-    <section class="section section-muted">
-      <div class="container">
         <h2>Maintained in public</h2>
-        <p class="section-copy">
-          Bugs, changes and releases are tracked on GitHub. This website is intentionally a simple front door to the project,
-          while the repository remains the source of truth.
+        <p>
+          Bugs, changes and releases are tracked on GitHub. This website is a
+          front door to the project; the repository remains the source of truth.
         </p>
-        <div class="card-grid">
-          <article class="card"><h3>Source</h3><p>Read the implementation and follow development.</p><a class="btn" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a></article>
-          <article class="card"><h3>Issues</h3><p>Report a bug or propose a feature.</p><a class="btn" href="https://github.com/netcorelink/libchttpx/issues">Issues ↗</a></article>
-          <article class="card"><h3>Releases</h3><p>Download stable published versions.</p><a class="btn" href="https://github.com/netcorelink/libchttpx/releases">Releases ↗</a></article>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container footer-row">
-      <div><a class="brand" href="index.html">libchttpx</a><div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div></div>
-      <div class="footer-links">
-        <a href="docs.html">Docs</a><a href="examples.html">Examples</a><a href="support.html">Support</a><a href="about.html">About</a><a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-      </div>
-    </div>
-  </footer>
+        <p>
+          <a href="https://github.com/netcorelink/libchttpx">Source</a> ·
+          <a href="https://github.com/netcorelink/libchttpx/issues">Issues</a> ·
+          <a href="https://github.com/netcorelink/libchttpx/releases">Releases</a> ·
+          <a href="https://github.com/netcorelink/libchttpx/blob/main/LICENSE">License</a>
+        </p>
+      </article>
+    </main>
+  </div>
 </body>
 </html>

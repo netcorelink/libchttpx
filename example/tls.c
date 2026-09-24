@@ -2,12 +2,14 @@
 
 #include <stdio.h>
 
+/** JSON health payload indicating HTTPS is active. */
 static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"https\":true}");
 }
 
+/** HTTPS server on port 8443; certificate and key paths are CLI arguments. */
 int main(int argc, char** argv)
 {
     if (argc != 3)

@@ -10,90 +10,65 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="container nav">
-      <a class="brand" href="index.html">libchttpx</a>
-      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
-      <nav class="nav-links" data-nav-links aria-label="Main navigation">
-        <a href="docs.html" data-nav-link>Docs</a>
-        <a href="examples.html" data-nav-link>Examples</a>
-        <a href="blog.html" data-nav-link>Blog</a>
-        <a href="support.html" data-nav-link>Support</a>
-        <a href="about.html" data-nav-link>About</a>
-      </nav>
-      <div class="nav-actions">
-        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-        <a class="btn btn-primary btn-small" href="support.html">Support ♥</a>
-      </div>
-    </div>
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#d32f2f" d="M12 2.2 21.2 7.5v9L12 21.8 2.8 16.5v-9L12 2.2z"/></svg>
+      libchttpx
+    </a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="site-menu" data-nav-links aria-label="Main navigation">
+      <a href="index.html" data-nav-link>Home</a>
+      <a href="docs.html" data-nav-link>Docs</a>
+      <a href="examples.html" data-nav-link>Examples</a>
+      <a href="blog.html" data-nav-link>Blog</a>
+      <a href="support.html" data-nav-link>Support</a>
+      <a href="about.html" data-nav-link>About</a>
+      <a href="https://github.com/netcorelink/libchttpx">GitHub</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="page-hero">
-      <div class="container">
-        <p class="eyebrow">Documentation</p>
-        <h1>Start small, add features when you need them</h1>
-        <p class="page-lead">
-          A short guide to installation, the first server and the full libchttpx module documentation.
+  <div class="docs-frame">
+    <aside class="docs-sidebar" data-docs-sidebar aria-label="Documentation"></aside>
+
+    <main class="docs-main">
+      <article class="docs-article">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="index.html">Home</a>
+          <span class="crumb crumb-current">Docs</span>
+        </nav>
+
+        <h1>Documentation</h1>
+        <p>
+          libchttpx is a compact HTTP/2 server library for C. This page covers
+          installation and the first server. Module details live in the sidebar.
         </p>
-      </div>
-    </section>
 
-    <section class="section">
-      <div class="container docs-layout">
-        <aside class="sidebar">
-          <strong>On this page</strong>
-          <a href="#install">Installation</a>
-          <a href="#first-server">First server</a>
-          <a href="#modules">Modules</a>
-          <a href="#compile">Compile</a>
-          <a href="#full-docs">Full documentation</a>
-        </aside>
-
-        <div class="docs-content">
-          <section id="install">
-            <h2>Installation</h2>
-            <p>For Debian and Ubuntu on amd64, add the libchttpx APT repository once and install the development package normally.</p>
-            <div class="code-card">
-              <div class="code-card-header">
-                <span>Debian / Ubuntu</span>
-                <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
-              </div>
-              <pre id="install-code"><code>curl -fsSL https://netcorelink.github.io/libchttpx/apt/libchttpx.sources \
+        <h2 id="install">Installation</h2>
+        <p>For Debian and Ubuntu on amd64, add the libchttpx APT repository once and install the development package.</p>
+        <div class="code-card">
+          <div class="code-card-header">
+            <button class="copy-button" type="button" data-copy-target="install-code">Copy</button>
+          </div>
+          <pre id="install-code"><code>curl -fsSL https://netcorelink.github.io/libchttpx/apt/libchttpx.sources \
   | sudo tee /etc/apt/sources.list.d/libchttpx.sources >/dev/null
 
 sudo apt update
 sudo apt install libchttpx-dev</code></pre>
-            </div>
+        </div>
 
-            <p>After that, future versions are installed through the normal APT update flow:</p>
-            <div class="code-card">
-              <div class="code-card-header">
-                <span>Update</span>
-                <button class="copy-button" type="button" data-copy-target="update-code">Copy</button>
-              </div>
-              <pre id="update-code"><code>sudo apt update
+        <p>After that, future versions are installed through the normal APT update flow:</p>
+        <pre id="update-code"><code>sudo apt update
 sudo apt upgrade</code></pre>
-            </div>
 
-            <p>To remove libchttpx:</p>
-            <div class="code-card">
-              <div class="code-card-header">
-                <span>Remove</span>
-                <button class="copy-button" type="button" data-copy-target="remove-code">Copy</button>
-              </div>
-              <pre id="remove-code"><code>sudo apt remove libchttpx-dev</code></pre>
-            </div>
+        <p>To remove libchttpx:</p>
+        <pre id="remove-code"><code>sudo apt remove libchttpx-dev</code></pre>
 
-            <p class="notice">The APT repository currently targets Debian/Ubuntu on <code>amd64</code> and uses <code>Trusted: yes</code>, so there is no separate GPG-key setup. Package signing can be added later.</p>
+        <p class="notice">The APT repository currently targets Debian/Ubuntu on <code>amd64</code> and uses <code>Trusted: yes</code>, so there is no separate GPG-key setup. Package signing can be added later.</p>
 
-            <h3>Build from source</h3>
-            <p>If you do not want to use the APT repository, the existing source installation remains available.</p>
-            <div class="code-card">
-              <div class="code-card-header">
-                <span>Source build</span>
-                <button class="copy-button" type="button" data-copy-target="source-install-code">Copy</button>
-              </div>
-              <pre id="source-install-code"><code>sudo apt update
+        <h3>Build from source</h3>
+        <p>If you do not want to use the APT repository, the existing source installation remains available.</p>
+        <pre id="source-install-code"><code>sudo apt update
 sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
@@ -101,21 +76,16 @@ cd libchttpx
 
 make lin-lib
 sudo make lib-install PREFIX=/usr/local DESTDIR=</code></pre>
-            </div>
-          </section>
 
-          <section id="first-server">
-            <h2>Your first server</h2>
-            <p>Create an app, configure a server, add a route, then run the app.</p>
-            <div class="code-card">
-              <div class="code-card-header">
-                <span>server.c</span>
-                <button class="copy-button" type="button" data-copy-target="first-server-code">Copy</button>
-              </div>
-              <pre id="first-server-code"><code>#include &lt;libchttpx.h&gt;
+        <h2 id="first-server">First server</h2>
+        <p>Create an app, configure a server, add a route, then run the app.</p>
+        <div class="code-card">
+          <div class="code-card-header">
+            <button class="copy-button" type="button" data-copy-target="first-server-code">Copy</button>
+          </div>
+          <pre id="first-server-code"><code>#include &lt;libchttpx.h&gt;
 
-static void health(chttpx_request_t* req,
-                   chttpx_response_t* res)
+static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
@@ -130,81 +100,47 @@ int main(void)
     chttpx_config_t config = cHTTPX_DefaultConfig();
     config.port = 8080;
 
-    chttpx_serv_t* server =
-        cHTTPX_AppServer(&amp;app, "main", &amp;config);
-
-    chttpx_router_t router =
-        cHTTPX_RoutePathPrefix(server, "");
-
+    chttpx_serv_t* server = cHTTPX_AppServer(&amp;app, "main", &amp;config);
+    chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     cHTTPX_Get(&amp;router, "/health", health);
 
     int result = cHTTPX_AppRun(&amp;app);
     cHTTPX_AppShutdown(&amp;app);
     return result == cHTTPX_OK ? 0 : 1;
 }</code></pre>
-            </div>
-          </section>
-
-          <section id="modules">
-            <h2>Modules</h2>
-            <p>Filter the list and open the full module documentation directly on this site.</p>
-            <input class="search-box" type="search" placeholder="Filter documentation…" aria-label="Filter documentation" data-doc-filter>
-
-            <div class="module-grid">
-              <a class="module-link" data-doc-item href="module.html?name=app"><strong>App runtime</strong><span>Multiple servers, local and remote calls.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=server"><strong>Server</strong><span>Configuration, lifecycle, limits and shutdown.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=tls"><strong>TLS / HTTPS</strong><span>Native OpenSSL HTTPS, verification and mTLS.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=compression"><strong>Compression</strong><span>gzip negotiation, MIME policy and providers.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=metrics"><strong>Metrics</strong><span>Thread-safe snapshots and Prometheus exporter.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=routing"><strong>Routing</strong><span>Routers, route groups, methods and parameters.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=middleware"><strong>Middleware</strong><span>Global, router and route middleware.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=request"><strong>Request</strong><span>Headers, params, query, bearer and body helpers.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=responses"><strong>Responses</strong><span>Status codes, response helpers, files and ownership.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=json"><strong>JSON</strong><span>Binding, validation, normalization and builders.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=memory"><strong>Memory</strong><span>Request-scoped allocation, defer and contexts.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=uploads"><strong>Uploads</strong><span>Multipart forms, files and upload policies.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=cors"><strong>CORS</strong><span>Origins, headers, methods and preflight.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=cookies"><strong>Cookies</strong><span>Read and write cookies and attributes.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=i18n"><strong>Request IDs &amp; i18n</strong><span>Request IDs, language negotiation and translations.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=logging"><strong>Logging</strong><span>Logger callbacks and request logging.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=rate-limiting"><strong>Rate limiting</strong><span>Per-server fixed-window limiting.</span></a>
-              <a class="module-link" data-doc-item href="module.html?name=websocket"><strong>WebSocket</strong><span>Experimental WebSocket API and limitations.</span></a>
-            </div>
-          </section>
-
-          <section id="compile">
-            <h2>Compile your application</h2>
-            <p>After installation, use pkg-config to get include and linker flags.</p>
-            <div class="code-card">
-              <div class="code-card-header">
-                <span>Terminal</span>
-                <button class="copy-button" type="button" data-copy-target="compile-code">Copy</button>
-              </div>
-              <pre id="compile-code"><code>gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
-./server</code></pre>
-            </div>
-          </section>
-
-          <section id="full-docs">
-            <h2>Full documentation</h2>
-            <p>All module documentation is available on this website. Start with the App runtime and move through the modules as needed.</p>
-            <div class="hero-actions">
-              <a class="btn btn-primary" href="module.html?name=app">Open App runtime docs →</a>
-              <a class="btn" href="module.html?name=server">Server configuration</a>
-            </div>
-          </section>
         </div>
-      </div>
-    </section>
-  </main>
 
-  <footer class="site-footer">
-    <div class="container footer-row">
-      <div><a class="brand" href="index.html">libchttpx</a><div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div></div>
-      <div class="footer-links">
-        <a href="docs.html">Docs</a><a href="examples.html">Examples</a><a href="support.html">Support</a><a href="about.html">About</a><a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-      </div>
-    </div>
-  </footer>
+        <h2 id="compile">Compile</h2>
+        <p>After installation, use pkg-config to get include and linker flags.</p>
+        <pre id="compile-code"><code>gcc server.c -o server $(pkg-config --cflags --libs libchttpx)
+./server</code></pre>
+
+        <h2 id="modules">Modules</h2>
+        <p>Filter the list and open the full module documentation.</p>
+        <input class="search-box" type="search" placeholder="Filter documentation" aria-label="Filter documentation" data-doc-filter>
+
+        <div class="module-grid">
+          <a class="module-link" data-doc-item href="module.html?name=app"><strong>App runtime</strong><span>Multiple servers, local and remote calls.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=server"><strong>Server</strong><span>Configuration, lifecycle, limits and shutdown.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=tls"><strong>TLS / HTTPS</strong><span>Native OpenSSL HTTPS, verification and mTLS.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=compression"><strong>Compression</strong><span>gzip negotiation, MIME policy and providers.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=metrics"><strong>Metrics</strong><span>Thread-safe snapshots and Prometheus exporter.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=routing"><strong>Routing</strong><span>Routers, route groups, methods and parameters.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=middleware"><strong>Middleware</strong><span>Global, router and route middleware.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=request"><strong>Request</strong><span>Headers, params, query, bearer and body helpers.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=responses"><strong>Responses</strong><span>Status codes, response helpers, files and ownership.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=json"><strong>JSON</strong><span>Binding, validation, normalization and builders.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=memory"><strong>Memory</strong><span>Request-scoped allocation, defer and contexts.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=uploads"><strong>Uploads</strong><span>Multipart forms, files and upload policies.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=cors"><strong>CORS</strong><span>Origins, headers, methods and preflight.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=cookies"><strong>Cookies</strong><span>Read and write cookies and attributes.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=i18n"><strong>Request IDs &amp; i18n</strong><span>Request IDs, language negotiation and translations.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=logging"><strong>Logging</strong><span>Logger callbacks and request logging.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=rate-limiting"><strong>Rate limiting</strong><span>Per-server fixed-window limiting.</span></a>
+          <a class="module-link" data-doc-item href="module.html?name=websocket"><strong>WebSocket</strong><span>Experimental WebSocket API and limitations.</span></a>
+        </div>
+      </article>
+    </main>
+  </div>
 </body>
 </html>

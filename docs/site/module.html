@@ -12,60 +12,38 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="container nav">
-      <a class="brand" href="index.html">libchttpx</a>
-      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
-      <nav class="nav-links" data-nav-links aria-label="Main navigation">
-        <a href="docs.html" data-nav-link>Docs</a>
-        <a href="examples.html" data-nav-link>Examples</a>
-        <a href="blog.html" data-nav-link>Blog</a>
-        <a href="support.html" data-nav-link>Support</a>
-        <a href="about.html" data-nav-link>About</a>
-      </nav>
-      <div class="nav-actions">
-        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-        <a class="btn btn-primary btn-small" href="support.html">Support ♥</a>
-      </div>
-    </div>
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#d32f2f" d="M12 2.2 21.2 7.5v9L12 21.8 2.8 16.5v-9L12 2.2z"/></svg>
+      libchttpx
+    </a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="site-menu" data-nav-links aria-label="Main navigation">
+      <a href="index.html" data-nav-link>Home</a>
+      <a href="docs.html" data-nav-link>Docs</a>
+      <a href="examples.html" data-nav-link>Examples</a>
+      <a href="blog.html" data-nav-link>Blog</a>
+      <a href="support.html" data-nav-link>Support</a>
+      <a href="about.html" data-nav-link>About</a>
+      <a href="https://github.com/netcorelink/libchttpx">GitHub</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="section">
-      <div class="container">
-        <div class="breadcrumbs">
-          <a href="docs.html">Documentation</a>
-          <span>›</span>
-          <span data-module-breadcrumb>Module</span>
+  <div class="docs-frame">
+    <aside class="docs-sidebar" data-docs-sidebar aria-label="Documentation"></aside>
+    <main class="docs-main">
+      <article class="docs-article doc-article">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="index.html">Home</a>
+          <a href="docs.html">Docs</a>
+          <span class="crumb crumb-current" data-module-breadcrumb>Module</span>
+        </nav>
+        <div data-module-content>
+          <div class="doc-loading">Loading documentation…</div>
         </div>
-
-        <div class="module-shell">
-          <aside class="module-nav" aria-label="Documentation modules">
-            <p class="module-nav-title">Modules</p>
-            <div data-module-nav></div>
-          </aside>
-
-          <article class="doc-article" data-module-content>
-            <div class="doc-loading">Loading documentation…</div>
-          </article>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container footer-row">
-      <div>
-        <a class="brand" href="index.html">libchttpx</a>
-        <div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div>
-      </div>
-      <div class="footer-links">
-        <a href="docs.html">Docs</a>
-        <a href="examples.html">Examples</a>
-        <a href="support.html">Support</a>
-        <a href="about.html">About</a>
-        <a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-      </div>
-    </div>
-  </footer>
+      </article>
+    </main>
+  </div>
 </body>
 </html>

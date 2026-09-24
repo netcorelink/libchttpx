@@ -22,6 +22,9 @@
 #define CHTTPX_H2_CALL_TIMEOUT_SEC 30
 #define CHTTPX_H2_MAX_AUTHORITY 512
 
+/**
+ * Per-stream HTTP/2 request/response state on the server.
+ */
 typedef struct chttpx_h2_stream
 {
     int32_t id;
@@ -42,6 +45,9 @@ typedef struct chttpx_h2_stream
     size_t response_body_sent;
 } chttpx_h2_stream_t;
 
+/**
+ * Server-side HTTP/2 session bound to one connection.
+ */
 typedef struct
 {
     chttpx_serv_t* server;
@@ -50,6 +56,9 @@ typedef struct
     nghttp2_session* session;
 } chttpx_h2_server_t;
 
+/**
+ * Client-side HTTP/2 session state for outbound calls.
+ */
 typedef struct
 {
     chttpx_socket_t fd;
@@ -66,6 +75,9 @@ typedef struct
     size_t body_capacity;
 } chttpx_h2_client_t;
 
+/**
+ * Streaming request body cursor for nghttp2 data provider.
+ */
 typedef struct
 {
     const unsigned char* body;
@@ -73,6 +85,9 @@ typedef struct
     size_t offset;
 } chttpx_h2_client_body_t;
 
+/**
+ * Parsed remote authority and path for HTTP/2 calls.
+ */
 typedef struct
 {
     bool tls;
@@ -81,6 +96,13 @@ typedef struct
     char base_path[CHTTPX_MAX_PATH];
 } chttpx_h2_url_t;
 
+/**
+ * Build one nghttp2 name/value pair from C strings.
+ *
+ * @param name Header name bytes as a null-terminated C string.
+ * @param value Header value bytes as a null-terminated C string.
+ * @return nghttp2 name/value pair referencing the given strings.
+ */
 static nghttp2_nv h2_nv(const char* name, const char* value)
 {
     return (nghttp2_nv){
@@ -92,6 +114,12 @@ static nghttp2_nv h2_nv(const char* name, const char* value)
     };
 }
 
+/**
+ * Return whether a header must not be forwarded on HTTP/2.
+ *
+ * @param name Header field name to test.
+ * @return True when the header must not be forwarded on HTTP/2.
+ */
 static bool h2_forbidden_header(const char* name)
 {
     return strcasecmp(name, "connection") == 0 ||
@@ -101,11 +129,23 @@ static bool h2_forbidden_header(const char* name)
            strcasecmp(name, "upgrade") == 0;
 }
 
+/**
+ * Fetch stream user data from an nghttp2 session.
+ *
+ * @param session nghttp2 session owning the stream.
+ * @param stream_id HTTP/2 stream id to look up.
+ * @return Stream user data for the id, or NULL when unset.
+ */
 static chttpx_h2_stream_t* h2_stream(nghttp2_session* session, int32_t stream_id)
 {
     return (chttpx_h2_stream_t*)nghttp2_session_get_stream_user_data(session, stream_id);
 }
 
+/**
+ * Release stream buffers and the stream object.
+ *
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ */
 static void h2_stream_free(chttpx_h2_stream_t* stream)
 {
     if (!stream)
@@ -115,11 +155,17 @@ static void h2_stream_free(chttpx_h2_stream_t* stream)
     free(stream);
 }
 
-static int h2_stream_add_header(chttpx_h2_stream_t* stream,
-                                const uint8_t* name,
-                                size_t namelen,
-                                const uint8_t* value,
-                                size_t valuelen)
+/**
+ * Decode one HPACK header into stream request state.
+ *
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @param name Header field name bytes.
+ * @param namelen Header name length in bytes.
+ * @param value Header field value bytes.
+ * @param valuelen Header value length in bytes.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_stream_add_header(chttpx_h2_stream_t* stream, const uint8_t* name, size_t namelen, const uint8_t* value, size_t valuelen)
 {
     if (!stream || !name || !value)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -177,6 +223,13 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream,
     return 0;
 }
 
+/**
+ * Look up a request header by case-insensitive name.
+ *
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @param name Header field name to match case-insensitively.
+ * @return Header value string, or NULL when the name is absent.
+ */
 static const char* h2_request_header(const chttpx_h2_stream_t* stream, const char* name)
 {
     if (!stream || !name)
@@ -187,6 +240,13 @@ static const char* h2_request_header(const chttpx_h2_stream_t* stream, const cha
     return NULL;
 }
 
+/**
+ * Choose max body size based on content type.
+ *
+ * @param connection Server-side HTTP/2 connection state.
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @return Zero on success or a negative error code.
+ */
 static size_t h2_body_limit(const chttpx_h2_server_t* connection, const chttpx_h2_stream_t* stream)
 {
     const char* content_type = h2_request_header(stream, "content-type");
@@ -198,6 +258,15 @@ static size_t h2_body_limit(const chttpx_h2_server_t* connection, const chttpx_h
     return connection->server->max_upload_size;
 }
 
+/**
+ * Append request body bytes with size enforcement.
+ *
+ * @param connection Server-side HTTP/2 connection state.
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @param data Payload bytes for the current chunk.
+ * @param len Number of payload bytes in the chunk.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_append_body(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream, const uint8_t* data, size_t len)
 {
     if (!stream || (len && !data))
@@ -242,10 +311,16 @@ static int h2_append_body(chttpx_h2_server_t* connection, chttpx_h2_stream_t* st
     return 0;
 }
 
-static int h2_build_request_text(const chttpx_h2_server_t* connection,
-                                 const chttpx_h2_stream_t* stream,
-                                 char** output,
-                                 size_t* output_size)
+/**
+ * Serialize stream state into an HTTP/1-style header block.
+ *
+ * @param connection Server-side HTTP/2 connection state.
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @param output Output pointer receiving allocated request header text.
+ * @param output_size Output length of the serialized header block.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_build_request_text(const chttpx_h2_server_t* connection, const chttpx_h2_stream_t* stream, char** output, size_t* output_size)
 {
     if (!connection || !stream || !output || !output_size || !stream->method[0] || !stream->path[0])
         return cHTTPX_ERR_PROTOCOL;
@@ -326,29 +401,40 @@ limit_error:
     return cHTTPX_ERR_LIMIT;
 }
 
-static ssize_t h2_server_send(nghttp2_session* session,
-                              const uint8_t* data,
-                              size_t length,
-                              int flags,
-                              void* user_data)
+/**
+ * nghttp2 send callback writing to the connection socket.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param data Payload bytes for the current chunk.
+ * @param length Buffer capacity or number of bytes to transfer.
+ * @param flags Frame or DATA flags supplied by nghttp2.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Bytes transferred or a negative nghttp2 status.
+ */
+static ssize_t h2_server_send(nghttp2_session* session, const uint8_t* data, size_t length, int flags, void* user_data)
 {
     (void)session;
     (void)flags;
     chttpx_h2_server_t* connection = user_data;
     if (!connection)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
-    return _chttpx_io_send_all(connection->fd, connection->tls_session, data, length) == cHTTPX_OK
-               ? (ssize_t)length
+    return _chttpx_io_send_all(connection->fd, connection->tls_session, data, length) == cHTTPX_OK ? (ssize_t)length
                : NGHTTP2_ERR_CALLBACK_FAILURE;
 }
 
-static ssize_t h2_response_read(nghttp2_session* session,
-                                int32_t stream_id,
-                                uint8_t* buf,
-                                size_t length,
-                                uint32_t* data_flags,
-                                nghttp2_data_source* source,
-                                void* user_data)
+/**
+ * nghttp2 data provider for serialized response bodies.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param stream_id HTTP/2 stream identifier.
+ * @param buf Output buffer filled by the nghttp2 data provider.
+ * @param length Buffer capacity or number of bytes to transfer.
+ * @param data_flags Out flags telling nghttp2 when body transmission ends.
+ * @param source Originating request for inherited metadata.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Bytes transferred or a negative nghttp2 status.
+ */
+static ssize_t h2_response_read(nghttp2_session* session, int32_t stream_id, uint8_t* buf, size_t length, uint32_t* data_flags, nghttp2_data_source* source, void* user_data)
 {
     (void)session;
     (void)stream_id;
@@ -368,10 +454,16 @@ static ssize_t h2_response_read(nghttp2_session* session,
     return (ssize_t)take;
 }
 
-static int h2_submit_text_response(chttpx_h2_server_t* connection,
-                                   chttpx_h2_stream_t* stream,
-                                   int status,
-                                   const char* content_type)
+/**
+ * Submit a minimal HTTP/2 response without a body.
+ *
+ * @param connection Server-side HTTP/2 connection state.
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @param status HTTP status code for the response.
+ * @param content_type Content-Type header value.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_submit_text_response(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream, int status, const char* content_type)
 {
     char status_text[4];
     snprintf(status_text, sizeof(status_text), "%03d", status);
@@ -389,6 +481,13 @@ static int h2_submit_text_response(chttpx_h2_server_t* connection,
     return rv;
 }
 
+/**
+ * Submit a full response parsed from HTTP/1 text.
+ *
+ * @param connection Server-side HTTP/2 connection state.
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_submit_serialized_response(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream)
 {
     if (!connection || !stream || !stream->response)
@@ -448,16 +547,19 @@ static int h2_submit_serialized_response(chttpx_h2_server_t* connection, chttpx_
         .read_callback = h2_response_read,
     };
 
-    int rv = nghttp2_submit_response(connection->session,
-                                     stream->id,
-                                     headers,
-                                     count,
-                                     body_size ? &provider : NULL);
+    int rv = nghttp2_submit_response(connection->session, stream->id, headers, count, body_size ? &provider : NULL);
     if (rv == 0)
         stream->responded = true;
     return rv;
 }
 
+/**
+ * Dispatch one complete HTTP/2 request to the server core.
+ *
+ * @param connection Server-side HTTP/2 connection state.
+ * @param stream HTTP/2 stream being decoded, buffered, or responded to.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream)
 {
     if (!connection || !stream || stream->responded)
@@ -470,10 +572,9 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
     size_t header_size = 0;
     int build_result = h2_build_request_text(connection, stream, &headers, &header_size);
     if (build_result != cHTTPX_OK)
-        return h2_submit_text_response(connection,
-                                       stream,
-                                       build_result == cHTTPX_ERR_LIMIT ? cHTTPX_StatusRequestHeaderFieldsTooLarge : cHTTPX_StatusBadRequest,
-                                       cHTTPX_CTYPE_TEXT);
+        return h2_submit_text_response(connection, stream,
+            build_result == cHTTPX_ERR_LIMIT ? cHTTPX_StatusRequestHeaderFieldsTooLarge : cHTTPX_StatusBadRequest,
+            cHTTPX_CTYPE_TEXT);
 
     unsigned char* body = stream->body;
     size_t body_size = stream->body_size;
@@ -483,17 +584,8 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
 
     char* response = NULL;
     size_t response_size = 0;
-    int execute_result = _chttpx_execute_prefetched(connection->server,
-                                                    connection->fd,
-                                                    connection->tls_session,
-                                                    headers,
-                                                    header_size,
-                                                    body,
-                                                    body_size,
-                                                    NULL,
-                                                    body_size,
-                                                    &response,
-                                                    &response_size);
+    int execute_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session,
+        headers, header_size, body, body_size, NULL, body_size, &response, &response_size);
     free(headers);
 
     if (execute_result != cHTTPX_OK || !response)
@@ -507,6 +599,14 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
     return h2_submit_serialized_response(connection, stream);
 }
 
+/**
+ * Allocate stream state when request headers begin.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param frame Incoming nghttp2 frame metadata.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame* frame, void* user_data)
 {
     (void)user_data;
@@ -527,14 +627,20 @@ static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame
     return 0;
 }
 
-static int h2_server_header(nghttp2_session* session,
-                            const nghttp2_frame* frame,
-                            const uint8_t* name,
-                            size_t namelen,
-                            const uint8_t* value,
-                            size_t valuelen,
-                            uint8_t flags,
-                            void* user_data)
+/**
+ * Handle one request header field on the server session.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param frame Incoming nghttp2 frame metadata.
+ * @param name Header field name bytes.
+ * @param namelen Header name length in bytes.
+ * @param value Header field value bytes.
+ * @param valuelen Header value length in bytes.
+ * @param flags Frame or DATA flags supplied by nghttp2.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_server_header(nghttp2_session* session, const nghttp2_frame* frame, const uint8_t* name, size_t namelen, const uint8_t* value, size_t valuelen, uint8_t flags, void* user_data)
 {
     (void)flags;
     (void)user_data;
@@ -544,12 +650,18 @@ static int h2_server_header(nghttp2_session* session,
     return h2_stream_add_header(stream, name, namelen, value, valuelen);
 }
 
-static int h2_server_data(nghttp2_session* session,
-                          uint8_t flags,
-                          int32_t stream_id,
-                          const uint8_t* data,
-                          size_t len,
-                          void* user_data)
+/**
+ * Handle one request DATA chunk on the server session.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param flags Frame or DATA flags supplied by nghttp2.
+ * @param stream_id HTTP/2 stream identifier.
+ * @param data Payload bytes for the current chunk.
+ * @param len Number of payload bytes in the chunk.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_server_data(nghttp2_session* session, uint8_t flags, int32_t stream_id, const uint8_t* data, size_t len, void* user_data)
 {
     (void)flags;
     chttpx_h2_server_t* connection = user_data;
@@ -557,6 +669,14 @@ static int h2_server_data(nghttp2_session* session,
     return h2_append_body(connection, stream, data, len);
 }
 
+/**
+ * Finalize request handling when END_STREAM is seen.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param frame Incoming nghttp2 frame metadata.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* frame, void* user_data)
 {
     chttpx_h2_server_t* connection = user_data;
@@ -577,10 +697,16 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
     return rv == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
 }
 
-static int h2_server_stream_close(nghttp2_session* session,
-                                  int32_t stream_id,
-                                  uint32_t error_code,
-                                  void* user_data)
+/**
+ * Free stream state when nghttp2 closes a stream.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param stream_id HTTP/2 stream identifier.
+ * @param error_code nghttp2 stream error code reported on close.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_server_stream_close(nghttp2_session* session, int32_t stream_id, uint32_t error_code, void* user_data)
 {
     (void)error_code;
     (void)user_data;
@@ -593,6 +719,14 @@ static int h2_server_stream_close(nghttp2_session* session,
     return 0;
 }
 
+/**
+ * Serve one HTTP/2 connection until shutdown or I/O failure.
+ *
+ * @param server Server instance.
+ * @param client_fd Connected client socket.
+ * @param tls_session OpenSSL session for TLS I/O, or NULL for cleartext.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session)
 {
     if (!server)
@@ -673,6 +807,13 @@ done:
     return result;
 }
 
+/**
+ * Parse http(s) base URL into host, port, and path.
+ *
+ * @param base_url Remote http(s) base URL.
+ * @param parsed Output structure receiving parsed URL fields.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_parse_url(const char* base_url, chttpx_h2_url_t* parsed)
 {
     if (!base_url || !parsed)
@@ -729,6 +870,12 @@ static int h2_parse_url(const char* base_url, chttpx_h2_url_t* parsed)
     return 1;
 }
 
+/**
+ * Apply outbound call read/write timeouts on a socket.
+ *
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_set_call_timeouts(chttpx_socket_t fd)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -745,6 +892,13 @@ static int h2_set_call_timeouts(chttpx_socket_t fd)
     return cHTTPX_OK;
 }
 
+/**
+ * TCP-connect to a parsed remote URL.
+ *
+ * @param remote Parsed remote host, port, and base path.
+ * @param connected Output socket set when TCP connect succeeds.
+ * @return Zero on success or a negative error code.
+ */
 static int h2_connect(const chttpx_h2_url_t* remote, chttpx_socket_t* connected)
 {
     if (!remote || !connected)
@@ -789,6 +943,12 @@ static int h2_connect(const chttpx_h2_url_t* remote, chttpx_socket_t* connected)
     return final_result;
 }
 
+/**
+ * Map arbitrary content types to library constants.
+ *
+ * @param content_type Content-Type value from the remote response.
+ * @return Stable library Content-Type constant for the given value.
+ */
 static const char* h2_stable_content_type(const char* content_type)
 {
     if (!content_type || !*content_type)
@@ -815,30 +975,41 @@ static const char* h2_stable_content_type(const char* content_type)
     return cHTTPX_CTYPE_OCTET;
 }
 
-static ssize_t h2_client_send(nghttp2_session* session,
-                              const uint8_t* data,
-                              size_t length,
-                              int flags,
-                              void* user_data)
+/**
+ * nghttp2 send callback for outbound client sessions.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param data Payload bytes for the current chunk.
+ * @param length Buffer capacity or number of bytes to transfer.
+ * @param flags Frame or DATA flags supplied by nghttp2.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Bytes transferred or a negative nghttp2 status.
+ */
+static ssize_t h2_client_send(nghttp2_session* session, const uint8_t* data, size_t length, int flags, void* user_data)
 {
     (void)session;
     (void)flags;
     chttpx_h2_client_t* client = user_data;
     if (!client)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
-    return _chttpx_io_send_all(client->fd, client->tls_session, data, length) == cHTTPX_OK
-               ? (ssize_t)length
+    return _chttpx_io_send_all(client->fd, client->tls_session, data, length) == cHTTPX_OK ? (ssize_t)length
                : NGHTTP2_ERR_CALLBACK_FAILURE;
 }
 
-static int h2_client_header(nghttp2_session* session,
-                            const nghttp2_frame* frame,
-                            const uint8_t* name,
-                            size_t namelen,
-                            const uint8_t* value,
-                            size_t valuelen,
-                            uint8_t flags,
-                            void* user_data)
+/**
+ * Collect response headers for an outbound HTTP/2 call.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param frame Incoming nghttp2 frame metadata.
+ * @param name Header field name bytes.
+ * @param namelen Header name length in bytes.
+ * @param value Header field value bytes.
+ * @param valuelen Header value length in bytes.
+ * @param flags Frame or DATA flags supplied by nghttp2.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_client_header(nghttp2_session* session, const nghttp2_frame* frame, const uint8_t* name, size_t namelen, const uint8_t* value, size_t valuelen, uint8_t flags, void* user_data)
 {
     (void)session;
     (void)flags;
@@ -885,12 +1056,18 @@ static int h2_client_header(nghttp2_session* session,
     return 0;
 }
 
-static int h2_client_data(nghttp2_session* session,
-                          uint8_t flags,
-                          int32_t stream_id,
-                          const uint8_t* data,
-                          size_t len,
-                          void* user_data)
+/**
+ * Buffer response body bytes for an outbound HTTP/2 call.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param flags Frame or DATA flags supplied by nghttp2.
+ * @param stream_id HTTP/2 stream identifier.
+ * @param data Payload bytes for the current chunk.
+ * @param len Number of payload bytes in the chunk.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_client_data(nghttp2_session* session, uint8_t flags, int32_t stream_id, const uint8_t* data, size_t len, void* user_data)
 {
     (void)session;
     (void)flags;
@@ -928,10 +1105,16 @@ static int h2_client_data(nghttp2_session* session,
     return 0;
 }
 
-static int h2_client_stream_close(nghttp2_session* session,
-                                  int32_t stream_id,
-                                  uint32_t error_code,
-                                  void* user_data)
+/**
+ * Mark client stream complete when nghttp2 closes it.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param stream_id HTTP/2 stream identifier.
+ * @param error_code nghttp2 stream error code reported on close.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Zero on success or a negative error code.
+ */
+static int h2_client_stream_close(nghttp2_session* session, int32_t stream_id, uint32_t error_code, void* user_data)
 {
     (void)session;
     (void)error_code;
@@ -941,13 +1124,19 @@ static int h2_client_stream_close(nghttp2_session* session,
     return 0;
 }
 
-static ssize_t h2_client_body_read(nghttp2_session* session,
-                                   int32_t stream_id,
-                                   uint8_t* buf,
-                                   size_t length,
-                                   uint32_t* data_flags,
-                                   nghttp2_data_source* source,
-                                   void* user_data)
+/**
+ * nghttp2 data provider for outbound request bodies.
+ *
+ * @param session Active nghttp2 session for the callback.
+ * @param stream_id HTTP/2 stream identifier.
+ * @param buf Output buffer filled by the nghttp2 data provider.
+ * @param length Buffer capacity or number of bytes to transfer.
+ * @param data_flags Out flags telling nghttp2 when body transmission ends.
+ * @param source Originating request for inherited metadata.
+ * @param user_data User pointer registered with the nghttp2 callback.
+ * @return Bytes transferred or a negative nghttp2 status.
+ */
+static ssize_t h2_client_body_read(nghttp2_session* session, int32_t stream_id, uint8_t* buf, size_t length, uint32_t* data_flags, nghttp2_data_source* source, void* user_data)
 {
     (void)session;
     (void)stream_id;
@@ -966,14 +1155,8 @@ static ssize_t h2_client_body_read(nghttp2_session* session,
     return (ssize_t)take;
 }
 
-int _chttpx_http2_call(chttpx_request_t* source,
-                       const char* base_url,
-                       const chttpx_tls_client_config_t* tls_config,
-                       const char* method,
-                       const char* path,
-                       const void* body,
-                       size_t body_size,
-                       const char* content_type,
+int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const chttpx_tls_client_config_t* tls_config,
+                       const char* method, const char* path, const void* body, size_t body_size, const char* content_type,
                        chttpx_response_t* res)
 {
     if (!source || !base_url || !method || !path || !res || (body_size && !body))
@@ -1061,9 +1244,8 @@ int _chttpx_http2_call(chttpx_request_t* source,
     char content_length[32];
     snprintf(content_length, sizeof(content_length), "%zu", body_size);
 
-    const char* selected_content_type = content_type && *content_type
-                                            ? content_type
-                                            : (source->content_type[0] ? source->content_type : cHTTPX_CTYPE_JSON);
+    const char* selected_content_type = content_type && *content_type ? content_type
+        : (source->content_type[0] ? source->content_type : cHTTPX_CTYPE_JSON);
 
     nghttp2_nv headers[MAX_HEADERS + 8];
     char lowercase_names[MAX_HEADERS][MAX_HEADER_NAME];
@@ -1110,12 +1292,7 @@ int _chttpx_http2_call(chttpx_request_t* source,
         .read_callback = h2_client_body_read,
     };
 
-    client.stream_id = nghttp2_submit_request(client.session,
-                                              NULL,
-                                              headers,
-                                              count,
-                                              body_size ? &provider : NULL,
-                                              NULL);
+    client.stream_id = nghttp2_submit_request(client.session, NULL, headers, count, body_size ? &provider : NULL, NULL);
     if (client.stream_id < 0 || nghttp2_session_send(client.session) != 0)
     {
         result = cHTTPX_ERR_PROTOCOL;
@@ -1157,10 +1334,7 @@ int _chttpx_http2_call(chttpx_request_t* source,
         goto done;
     }
 
-    *res = cHTTPX_ResBinary((uint16_t)client.status,
-                            h2_stable_content_type(client.content_type),
-                            client.body,
-                            client.body_size);
+    *res = cHTTPX_ResBinary((uint16_t)client.status, h2_stable_content_type(client.content_type), client.body, client.body_size);
     if (!res->status)
     {
         result = cHTTPX_ERR_MEMORY;

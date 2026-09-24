@@ -22,6 +22,7 @@
 #include <pthread.h>
 #endif
 
+/** Per-route request and status-class counters. */
 typedef struct
 {
     const char* method;
@@ -30,6 +31,7 @@ typedef struct
     uint64_t status_class[5];
 } chttpx_route_metrics_entry_t;
 
+/** Internal metrics state (atomics, route table, mutex). */
 typedef struct
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -250,9 +252,15 @@ static int route_metrics_rehash(chttpx_metrics_state_t* state, size_t capacity)
  * @param route_template Registered route template.
  * @return Route metrics entry or NULL on allocation failure.
  */
-static chttpx_route_metrics_entry_t* route_metrics_entry(chttpx_metrics_state_t* state,
-                                                         const char* method,
-                                                         const char* route_template)
+/**
+ * Route metrics entry.
+ *
+ * @param state Parameter `state`.
+ * @param method Parameter `method`.
+ * @param route_template Parameter `route_template`.
+ * @return Pointer or NULL on failure.
+ */
+static chttpx_route_metrics_entry_t* route_metrics_entry(chttpx_metrics_state_t* state, const char* method, const char* route_template)
 {
     if (!state || !method || !route_template)
         return NULL;
@@ -460,12 +468,17 @@ void _chttpx_metrics_request_begin(chttpx_serv_t* server, size_t request_bytes)
  * @param response_bytes Response body size in bytes.
  * @param duration_seconds Request duration in seconds.
  */
-void _chttpx_metrics_request_end(chttpx_serv_t* server,
-                                 const char* method,
-                                 const char* route_template,
-                                 int status,
-                                 size_t response_bytes,
-                                 double duration_seconds)
+/**
+ * Metrics request end.
+ *
+ * @param server HTTP server instance.
+ * @param method Parameter `method`.
+ * @param route_template Parameter `route_template`.
+ * @param status Parameter `status`.
+ * @param response_bytes Parameter `response_bytes`.
+ * @param duration_seconds Parameter `duration_seconds`.
+ */
+void _chttpx_metrics_request_end(chttpx_serv_t* server, const char* method, const char* route_template, int status, size_t response_bytes, double duration_seconds)
 {
     chttpx_metrics_state_t* state = metrics_state(server);
     if (!state)
@@ -595,6 +608,13 @@ typedef struct
     size_t capacity;
 } prometheus_buffer_t;
 
+/**
+ * Prometheus reserve.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param extra Parameter `extra`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int prometheus_reserve(prometheus_buffer_t* buffer, size_t extra)
 {
     if (!buffer || extra > SIZE_MAX - buffer->length - 1)
@@ -624,6 +644,13 @@ static int prometheus_reserve(prometheus_buffer_t* buffer, size_t extra)
     return 1;
 }
 
+/**
+ * Prometheus append.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param text Parameter `text`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int prometheus_append(prometheus_buffer_t* buffer, const char* text)
 {
     size_t length = strlen(text);
@@ -635,6 +662,13 @@ static int prometheus_append(prometheus_buffer_t* buffer, const char* text)
     return 1;
 }
 
+/**
+ * Prometheus appendf.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param format Parameter `format`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int prometheus_appendf(prometheus_buffer_t* buffer, const char* format, ...)
 {
     va_list args;
@@ -664,6 +698,13 @@ static int prometheus_appendf(prometheus_buffer_t* buffer, const char* format, .
     return 1;
 }
 
+/**
+ * Prometheus append label value.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param value Parameter `value`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int prometheus_append_label_value(prometheus_buffer_t* buffer, const char* value)
 {
     if (!value)
@@ -698,8 +739,14 @@ static int prometheus_append_label_value(prometheus_buffer_t* buffer, const char
     return 1;
 }
 
-static int prometheus_global_metrics(prometheus_buffer_t* buffer,
-                                     const chttpx_metrics_t* metrics)
+/**
+ * Prometheus global metrics.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param metrics Parameter `metrics`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
+static int prometheus_global_metrics(prometheus_buffer_t* buffer, const chttpx_metrics_t* metrics)
 {
     static const char* bucket_labels[] = {
         "0.001",
@@ -777,8 +824,14 @@ static int prometheus_global_metrics(prometheus_buffer_t* buffer,
                               (unsigned long long)metrics->request_duration_count);
 }
 
-static int prometheus_runtime_metrics(prometheus_buffer_t* buffer,
-                                      const chttpx_runtime_metrics_t* metrics)
+/**
+ * Prometheus runtime metrics.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param metrics Parameter `metrics`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
+static int prometheus_runtime_metrics(prometheus_buffer_t* buffer, const chttpx_runtime_metrics_t* metrics)
 {
     if (!metrics)
         return 1;
@@ -802,8 +855,14 @@ static int prometheus_runtime_metrics(prometheus_buffer_t* buffer,
                               (double)metrics->queue_wait_nanoseconds_total / 1000000000.0);
 }
 
-static int prometheus_route_metrics(prometheus_buffer_t* buffer,
-                                    chttpx_metrics_state_t* state)
+/**
+ * Prometheus route metrics.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param state Parameter `state`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
+static int prometheus_route_metrics(prometheus_buffer_t* buffer, chttpx_metrics_state_t* state)
 {
     if (!prometheus_append(buffer,
                            "# HELP libchttpx_route_requests_total HTTP requests grouped by registered route template, method and status class.\n"
@@ -836,6 +895,12 @@ static int prometheus_route_metrics(prometheus_buffer_t* buffer,
     return 1;
 }
 
+/**
+ * Metrics handler.
+ *
+ * @param req Current HTTP request.
+ * @param response HTTP response.
+ */
 static void metrics_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;
