@@ -42,7 +42,7 @@ CORS config копируется в server state.
 ## Preflight
 
 ```http
-OPTIONS /api/v2/users HTTP/1.1
+OPTIONS /api/v2/users HTTP/2
 Origin: https://example.com
 Access-Control-Request-Method: POST
 ```
