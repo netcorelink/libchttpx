@@ -54,6 +54,8 @@ typedef struct
     bool done;
     int status;
     char content_type[512];
+    chttpx_header_t headers[MAX_HEADERS];
+    size_t headers_count;
     unsigned char* body;
     size_t body_size;
     size_t body_capacity;
@@ -800,11 +802,21 @@ static int h2_client_header(nghttp2_session* session,
         memcpy(status, value, 3);
         client->status = atoi(status);
     }
-    else if (namelen == 12 && memcmp(name, "content-type", 12) == 0)
+    else if (namelen > 0 && name[0] != ':' && client->headers_count < MAX_HEADERS &&
+             namelen < MAX_HEADER_NAME && valuelen < MAX_HEADER_VALUE)
     {
-        size_t copy = valuelen < sizeof(client->content_type) - 1 ? valuelen : sizeof(client->content_type) - 1;
-        memcpy(client->content_type, value, copy);
-        client->content_type[copy] = '\0';
+        chttpx_header_t* header = &client->headers[client->headers_count++];
+        memcpy(header->name, name, namelen);
+        header->name[namelen] = '\0';
+        memcpy(header->value, value, valuelen);
+        header->value[valuelen] = '\0';
+
+        if (namelen == 12 && memcmp(name, "content-type", 12) == 0)
+        {
+            size_t copy = valuelen < sizeof(client->content_type) - 1 ? valuelen : sizeof(client->content_type) - 1;
+            memcpy(client->content_type, value, copy);
+            client->content_type[copy] = '\0';
+        }
     }
     return 0;
 }
@@ -988,9 +1000,9 @@ int _chttpx_http2_call(chttpx_request_t* source,
     const char* selected_content_type = content_type && *content_type
                                             ? content_type
                                             : (source->content_type[0] ? source->content_type : cHTTPX_CTYPE_JSON);
-    const char* authorization = cHTTPX_HeaderGet(source, "Authorization");
 
-    nghttp2_nv headers[10];
+    nghttp2_nv headers[MAX_HEADERS + 8];
+    char lowercase_names[MAX_HEADERS][MAX_HEADER_NAME];
     size_t count = 0;
     headers[count++] = h2_nv(":method", method);
     headers[count++] = h2_nv(":scheme", remote.tls ? "https" : "http");
@@ -998,12 +1010,32 @@ int _chttpx_http2_call(chttpx_request_t* source,
     headers[count++] = h2_nv(":path", full_path);
     headers[count++] = h2_nv("content-type", selected_content_type);
     headers[count++] = h2_nv("content-length", content_length);
-    if (source->request_id[0])
+
+    if (source->request_id[0] && !cHTTPX_HeaderGet(source, "X-Request-ID"))
         headers[count++] = h2_nv("x-request-id", source->request_id);
-    if (source->language[0])
+    if (source->language[0] && !cHTTPX_HeaderGet(source, "Accept-Language"))
         headers[count++] = h2_nv("accept-language", source->language);
-    if (authorization && *authorization)
-        headers[count++] = h2_nv("authorization", authorization);
+
+    size_t copied_names = 0;
+    for (size_t i = 0; i < source->headers_count && count < CHTTPX_ARRAY_LEN(headers); i++)
+    {
+        const char* name = source->headers[i].name;
+        const char* value = source->headers[i].value;
+        if (!name[0] || name[0] == ':' || h2_forbidden_header(name) ||
+            strcasecmp(name, "host") == 0 ||
+            strcasecmp(name, "content-length") == 0 ||
+            strcasecmp(name, "content-type") == 0)
+            continue;
+
+        size_t name_len = strlen(name);
+        if (name_len >= MAX_HEADER_NAME || copied_names >= MAX_HEADERS)
+            continue;
+        for (size_t j = 0; j < name_len; j++)
+            lowercase_names[copied_names][j] = (char)tolower((unsigned char)name[j]);
+        lowercase_names[copied_names][name_len] = '\0';
+        headers[count++] = h2_nv(lowercase_names[copied_names], value);
+        copied_names++;
+    }
 
     chttpx_h2_client_body_t request_body = {
         .body = body,
@@ -1069,6 +1101,17 @@ int _chttpx_http2_call(chttpx_request_t* source,
     {
         result = cHTTPX_ERR_MEMORY;
         goto done;
+    }
+
+    for (size_t i = 0; i < client.headers_count; i++)
+    {
+        if (cHTTPX_HeaderAdd(res, client.headers[i].name, client.headers[i].value) != 0)
+        {
+            cHTTPX_ResponseCleanup(res);
+            memset(res, 0, sizeof(*res));
+            result = cHTTPX_ERR_LIMIT;
+            goto done;
+        }
     }
     result = cHTTPX_OK;
 
