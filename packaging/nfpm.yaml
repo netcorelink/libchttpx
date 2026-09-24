@@ -11,7 +11,7 @@ vendor: netcorelink
 homepage: https://github.com/netcorelink/libchttpx
 license: BSD-3-Clause
 description: |
-  Development package for libchttpx, a compact cross-platform HTTP/1.1
+  Development package for libchttpx, a compact cross-platform HTTP/2
   server library for C/C++ with routing, middleware, JSON, uploads,
   request-scoped memory, CORS, cookies, i18n, logging and graceful shutdown.
 
@@ -77,15 +77,19 @@ overrides:
     depends:
       - libcjson1
       - zlib1g
+      - libnghttp2-14
   rpm:
     depends:
       - cjson
       - zlib
+      - libnghttp2
   archlinux:
     depends:
       - cjson
       - zlib
+      - libnghttp2
   apk:
     depends:
       - cjson
       - zlib
+      - nghttp2-libs
