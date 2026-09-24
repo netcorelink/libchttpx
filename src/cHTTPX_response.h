@@ -72,6 +72,11 @@ extern "C"
     /* Internal route dispatcher shared by socket requests and cHTTPX_Call(). */
     int _chttpx_dispatch(struct chttpx_serv* server, chttpx_request_t* req, chttpx_response_t* res);
 
+    /* Internal adapter used by the HTTP/2 transport to reuse the public request/handler API. */
+    int _chttpx_execute_prefetched(struct chttpx_serv* server, chttpx_socket_t client_fd, void* tls_session,
+                                   char* headers, size_t header_size, unsigned char* body, size_t body_size,
+                                   FILE* body_stream, size_t content_length, char** output, size_t* output_size);
+
     /**
      * Create a JSON HTTP response with formatted content.
      *
