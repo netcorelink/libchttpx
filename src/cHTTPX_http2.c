@@ -854,20 +854,32 @@ static int h2_client_header(nghttp2_session* session,
         memcpy(status, value, 3);
         client->status = atoi(status);
     }
-    else if (namelen > 0 && name[0] != ':' && client->headers_count < MAX_HEADERS &&
-             namelen < MAX_HEADER_NAME && valuelen < MAX_HEADER_VALUE)
+    else if (namelen > 0 && name[0] != ':')
     {
-        chttpx_header_t* header = &client->headers[client->headers_count++];
-        memcpy(header->name, name, namelen);
-        header->name[namelen] = '\0';
-        memcpy(header->value, value, valuelen);
-        header->value[valuelen] = '\0';
-
         if (namelen == 12 && memcmp(name, "content-type", 12) == 0)
         {
             size_t copy = valuelen < sizeof(client->content_type) - 1 ? valuelen : sizeof(client->content_type) - 1;
             memcpy(client->content_type, value, copy);
             client->content_type[copy] = '\0';
+            return 0;
+        }
+
+        /*
+         * chttpx_response_t owns representation metadata separately from the
+         * generic header array. Copying Content-Length here would make a
+         * proxied response emit two content-length fields when it is serialized
+         * again by the receiving server.
+         */
+        if (namelen == 14 && memcmp(name, "content-length", 14) == 0)
+            return 0;
+
+        if (client->headers_count < MAX_HEADERS && namelen < MAX_HEADER_NAME && valuelen < MAX_HEADER_VALUE)
+        {
+            chttpx_header_t* header = &client->headers[client->headers_count++];
+            memcpy(header->name, name, namelen);
+            header->name[namelen] = '\0';
+            memcpy(header->value, value, valuelen);
+            header->value[valuelen] = '\0';
         }
     }
     return 0;
