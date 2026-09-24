@@ -1,6 +1,6 @@
 # libchttpx
 
-`libchttpx` is a compact cross-platform HTTP/1.1 server library for C. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
+`libchttpx` is a compact cross-platform HTTP/2 server library for C. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
 
 The library is designed so handlers contain application logic instead of repetitive HTTP plumbing.
 
