@@ -5,6 +5,7 @@
 #include "cHTTPX_http.h"
 #include "cHTTPX_metrics.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_http2.h"
 #include "cHTTPX_utils.h"
 
 #include <errno.h>
@@ -13,6 +14,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef CHTTPX_PLATFORM_POSIX
+#include <fcntl.h>
+#endif
 
 #define CHTTPX_RUNTIME_EVENTS 256
 #define CHTTPX_CHUNK_LINE_MAX 128
@@ -94,7 +98,6 @@ typedef struct chttpx_runtime
     chttpx_connection_t* connections;
 } chttpx_runtime_t;
 
-int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size);
 
 static bool runtime_is_stopping(chttpx_runtime_t* runtime)
 {
@@ -108,6 +111,38 @@ static bool socket_valid(chttpx_socket_t fd)
 #else
     return fd >= 0;
 #endif
+}
+
+static int connection_set_blocking(chttpx_connection_t* connection)
+{
+    if (!connection)
+        return -1;
+
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    u_long mode = 0;
+    if (ioctlsocket(connection->fd, FIONBIO, &mode) != 0)
+        return -1;
+
+    DWORD read_timeout_ms = (DWORD)connection->server->read_timeout_sec * 1000U;
+    DWORD write_timeout_ms = (DWORD)connection->server->write_timeout_sec * 1000U;
+    if (setsockopt(connection->fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms)) != 0 ||
+        setsockopt(connection->fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms)) != 0)
+        return -1;
+#else
+    int flags = fcntl(connection->fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(connection->fd, F_SETFL, flags & ~O_NONBLOCK) != 0)
+        return -1;
+
+    struct timeval timeout = {.tv_usec = 0};
+    timeout.tv_sec = connection->server->read_timeout_sec;
+    if (setsockopt(connection->fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0)
+        return -1;
+    timeout.tv_sec = connection->server->write_timeout_sec;
+    if (setsockopt(connection->fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
+        return -1;
+#endif
+
+    return 0;
 }
 
 static uint64_t monotonic_ms(void)
@@ -181,29 +216,10 @@ static void runtime_worker_execute(void* job, void* context)
     chttpx_connection_t* connection = job;
     chttpx_runtime_t* runtime = context;
 
-    unsigned char* body = connection->body;
-    FILE* stream = connection->body_stream;
-    connection->body = NULL;
-    connection->body_stream = NULL;
-
     if (runtime_is_stopping(runtime))
-    {
-        free(body);
-
-        if (stream)
-            fclose(stream);
-
         connection->worker_result = cHTTPX_ERR_STATE;
-    }
     else
-    {
-        connection->worker_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session, connection->headers, connection->header_end, body, connection->body_size, stream, connection->content_length, &connection->write_buffer, &connection->write_size);
-    }
-
-    free(connection->headers);
-    connection->headers = NULL;
-    connection->header_size = 0;
-    connection->header_capacity = 0;
+        connection->worker_result = _chttpx_http2_serve(connection->server, connection->fd, connection->tls_session);
 
     completion_push(runtime, connection);
 }
@@ -591,45 +607,22 @@ static bool connection_body_complete(chttpx_connection_t* connection)
 
 static int connection_error_response(chttpx_runtime_t* runtime, chttpx_connection_t* connection, int status)
 {
-    const char* reason = cHTTPX_StatusReason((uint16_t)status);
-    char buffer[256];
-    int size = snprintf(buffer, sizeof(buffer), "HTTP/1.1 %d %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", status, reason);
-    if (size <= 0 || (size_t)size >= sizeof(buffer))
-    {
-        connection_close(runtime, connection);
-        return 0;
-    }
-    connection->write_buffer = malloc((size_t)size);
-    if (!connection->write_buffer)
-    {
-        connection_close(runtime, connection);
-        return 0;
-    }
-    memcpy(connection->write_buffer, buffer, (size_t)size);
-    connection->write_size = (size_t)size;
-    connection->write_offset = 0;
-    connection->state = CHTTPX_CONN_WRITING;
-    connection_touch(connection);
-    if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
-    {
-        connection_close(runtime, connection);
-        return 0;
-    }
-    return 1;
+    (void)status;
+    connection_close(runtime, connection);
+    return 0;
 }
 
 static int connection_submit(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
-    if (connection->body_stream)
-    {
-        if (fflush(connection->body_stream) != 0 || fseek(connection->body_stream, 0, SEEK_SET) != 0)
-        {
-            connection_error_response(runtime, connection, cHTTPX_StatusInternalServerError);
-            return 0;
-        }
-    }
     _chttpx_event_del(runtime->event_loop, connection->fd);
+    if (connection_set_blocking(connection) != 0)
+    {
+        connection_close(runtime, connection);
+        return 0;
+    }
+
     connection->state = CHTTPX_CONN_PROCESSING;
+    connection_touch(connection);
     if (!_chttpx_worker_submit(runtime->worker_pool, connection))
     {
         connection_close(runtime, connection);
@@ -746,16 +739,7 @@ static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* c
 {
     int result = _chttpx_tls_accept_step(connection->tls_session);
     if (result == cHTTPX_OK)
-    {
-        connection->state = CHTTPX_CONN_READING_HEADERS;
-        connection_touch(connection);
-        if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
-        {
-            connection_close(runtime, connection);
-            return 0;
-        }
-        return 1;
-    }
+        return connection_submit(runtime, connection);
     if (result == CHTTPX_IO_WANT_READ)
     {
         if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
@@ -870,16 +854,7 @@ static void drain_completions(chttpx_runtime_t* runtime)
     {
         chttpx_connection_t* next = connection->completion_next;
         connection->completion_next = NULL;
-        if (runtime_is_stopping(runtime) || connection->worker_result != cHTTPX_OK || !connection->write_buffer)
-            connection_close(runtime, connection);
-        else
-        {
-            connection->state = CHTTPX_CONN_WRITING;
-            connection->write_offset = 0;
-            connection_touch(connection);
-            if (_chttpx_event_add(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
-                connection_close(runtime, connection);
-        }
+        connection_close(runtime, connection);
         connection = next;
     }
 }
@@ -907,11 +882,6 @@ static void accept_connections(chttpx_runtime_t* runtime)
 
         if (runtime_is_stopping(runtime) || __atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
         {
-            if (!server->tls.enabled)
-            {
-                static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                send(fd, busy, (int)(sizeof(busy) - 1), 0);
-            }
             _chttpx_metrics_connection_rejected(server);
             chttpx_close(fd);
             continue;
@@ -950,26 +920,30 @@ static void accept_connections(chttpx_runtime_t* runtime)
             continue;
         }
 
-        uint32_t interest = CHTTPX_EVENT_READ;
-        if (server->tls.enabled)
+        if (!server->tls.enabled)
         {
-            int step = _chttpx_tls_accept_step(connection->tls_session);
-            if (step == cHTTPX_OK)
-                connection->state = CHTTPX_CONN_READING_HEADERS;
-            else if (step == CHTTPX_IO_WANT_READ)
-                interest = CHTTPX_EVENT_READ;
-            else if (step == CHTTPX_IO_WANT_WRITE)
-                interest = CHTTPX_EVENT_WRITE;
-            else
-            {
-                _chttpx_metrics_connection_rejected(server);
-                _chttpx_tls_log_error(server, "-", "TLS handshake failed");
-                connection_close(runtime, connection);
-                continue;
-            }
+            connection_submit(runtime, connection);
+            continue;
         }
+
+        uint32_t interest = CHTTPX_EVENT_READ;
+        int step = _chttpx_tls_accept_step(connection->tls_session);
+        if (step == cHTTPX_OK)
+        {
+            connection_submit(runtime, connection);
+            continue;
+        }
+        if (step == CHTTPX_IO_WANT_READ)
+            interest = CHTTPX_EVENT_READ;
+        else if (step == CHTTPX_IO_WANT_WRITE)
+            interest = CHTTPX_EVENT_WRITE;
         else
-            connection->state = CHTTPX_CONN_READING_HEADERS;
+        {
+            _chttpx_metrics_connection_rejected(server);
+            _chttpx_tls_log_error(server, "-", "TLS handshake failed");
+            connection_close(runtime, connection);
+            continue;
+        }
 
         if (_chttpx_event_add(runtime->event_loop, fd, interest, connection) != 0)
         {
