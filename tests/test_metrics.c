@@ -94,7 +94,7 @@ static void* worker(void* data)
         char path[64];
         snprintf(path, sizeof(path), "/users/%d", i);
         http_response_t response = exchange(ctx->port, path);
-        assert(strncmp(response.bytes, "HTTP/2 200 OK", 15) == 0);
+        assert(strncmp(response.bytes, "HTTP/2 200 OK", strlen("HTTP/2 200 OK")) == 0);
     }
     return NULL;
 }
@@ -181,7 +181,7 @@ int main(void)
         char path[64];
         snprintf(path, sizeof(path), "/route/%zu", i);
         http_response_t response = exchange(server->port, path);
-        assert(strncmp(response.bytes, "HTTP/2 200 OK", 15) == 0);
+        assert(strncmp(response.bytes, "HTTP/2 200 OK", strlen("HTTP/2 200 OK")) == 0);
     }
 
     __atomic_store_n(&snapshot_ctx.stop, 1, __ATOMIC_RELEASE);
@@ -207,7 +207,7 @@ int main(void)
     assert(runtime_metrics.rejected_jobs_total == 0);
 
     http_response_t scrape = exchange(server->port, "/metrics");
-    assert(strncmp(scrape.bytes, "HTTP/2 200 OK", 15) == 0);
+    assert(strncmp(scrape.bytes, "HTTP/2 200 OK", strlen("HTTP/2 200 OK")) == 0);
 
     const char* body = response_body(&scrape);
     assert(strstr(body, "# TYPE libchttpx_requests_total counter"));
