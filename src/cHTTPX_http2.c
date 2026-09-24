@@ -594,7 +594,6 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
 
     nghttp2_settings_entry settings[] = {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 128},
-        {NGHTTP2_SETTINGS_ENABLE_PUSH, 0},
     };
     if (nghttp2_submit_settings(connection.session, NGHTTP2_FLAG_NONE, settings, CHTTPX_ARRAY_LEN(settings)) != 0 ||
         nghttp2_session_send(connection.session) != 0)
