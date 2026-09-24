@@ -179,7 +179,7 @@ static void test_multipart(void)
 static void test_header_boundary(void)
 {
     chttpx_request_t req = {0};
-    char request[] = "POST /body HTTP/1.1\r\n"
+    char request[] = "POST /body HTTP/2\r\n"
                      "Host: localhost\r\n"
                      "Content-Length: 13\r\n\r\n"
                      "Fake: header\r\n";
@@ -205,7 +205,7 @@ static void test_request_framing(void)
     strcpy(req.headers[1].name, "Content-Length");
     strcpy(req.headers[1].value, "6");
     req.headers_count = 2;
-    char request[] = "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
+    char request[] = "POST / HTTP/2\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
     _parse_req_body(&req, 0, request, strlen(request));
     assert(req._parse_status == cHTTPX_StatusBadRequest);
 
@@ -235,7 +235,7 @@ static void test_streamed_raw_chunked_upload(void)
     strcpy(req.headers[1].value, "chunked");
     req.headers_count = 2;
 
-    char request[] = "POST /upload HTTP/1.1\r\n"
+    char request[] = "POST /upload HTTP/2\r\n"
                      "Content-Type: application/octet-stream\r\n"
                      "Transfer-Encoding: chunked\r\n\r\n"
                      "8\r\nRAW-DATA\r\n0\r\n\r\n";
@@ -281,7 +281,7 @@ static void test_streamed_multipart(void)
     char request[2048];
     int body_size = (int)strlen(body);
     int request_size = snprintf(request, sizeof(request),
-                                "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                                "POST /upload HTTP/2\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
                                 "Content-Length: %d\r\n\r\n%s",
                                 body_size, body);
     assert(request_size > 0 && (size_t)request_size < sizeof(request));
@@ -314,7 +314,7 @@ static void test_streamed_multipart(void)
     assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
 
     request_size = snprintf(request, sizeof(request),
-                            "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                            "POST /upload HTTP/2\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
                             "Transfer-Encoding: chunked\r\n\r\n%s",
                             chunked_body);
     assert(request_size > 0 && (size_t)request_size < sizeof(request));
