@@ -633,7 +633,7 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
     unsigned char buffer[BUFFER_SIZE];
     int result = cHTTPX_OK;
 
-    while (!server->shutdown_requested && (nghttp2_session_want_read(connection.session) || nghttp2_session_want_write(connection.session)))
+    while (!__atomic_load_n(&server->shutdown_requested, __ATOMIC_ACQUIRE) && (nghttp2_session_want_read(connection.session) || nghttp2_session_want_write(connection.session)))
     {
         int received = _chttpx_io_recv(client_fd, tls_session, buffer, sizeof(buffer));
         if (received == 0)
