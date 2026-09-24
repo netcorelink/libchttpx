@@ -24,6 +24,7 @@
 typedef enum
 {
     CHTTPX_CONN_TLS,
+    CHTTPX_CONN_HTTP2_READY,
     CHTTPX_CONN_READING_HEADERS,
     CHTTPX_CONN_READING_BODY,
     CHTTPX_CONN_PROCESSING,
@@ -739,7 +740,16 @@ static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* c
 {
     int result = _chttpx_tls_accept_step(connection->tls_session);
     if (result == cHTTPX_OK)
-        return connection_submit(runtime, connection);
+    {
+        connection->state = CHTTPX_CONN_HTTP2_READY;
+        connection_touch(connection);
+        if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
+        {
+            connection_close(runtime, connection);
+            return 0;
+        }
+        return 1;
+    }
     if (result == CHTTPX_IO_WANT_READ)
     {
         if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
@@ -922,7 +932,9 @@ static void accept_connections(chttpx_runtime_t* runtime)
 
         if (!server->tls.enabled)
         {
-            connection_submit(runtime, connection);
+            connection->state = CHTTPX_CONN_HTTP2_READY;
+            if (_chttpx_event_add(runtime->event_loop, fd, CHTTPX_EVENT_READ, connection) != 0)
+                connection_close(runtime, connection);
             continue;
         }
 
@@ -930,7 +942,9 @@ static void accept_connections(chttpx_runtime_t* runtime)
         int step = _chttpx_tls_accept_step(connection->tls_session);
         if (step == cHTTPX_OK)
         {
-            connection_submit(runtime, connection);
+            connection->state = CHTTPX_CONN_HTTP2_READY;
+            if (_chttpx_event_add(runtime->event_loop, fd, CHTTPX_EVENT_READ, connection) != 0)
+                connection_close(runtime, connection);
             continue;
         }
         if (step == CHTTPX_IO_WANT_READ)
@@ -1077,6 +1091,8 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
             int alive = 1;
             if (connection->state == CHTTPX_CONN_TLS)
                 alive = connection_tls_step(runtime, connection);
+            else if (connection->state == CHTTPX_CONN_HTTP2_READY)
+                alive = connection_submit(runtime, connection);
             else if (connection->state == CHTTPX_CONN_READING_HEADERS || connection->state == CHTTPX_CONN_READING_BODY)
                 alive = connection_read_ready(runtime, connection);
             else if (connection->state == CHTTPX_CONN_WRITING)
