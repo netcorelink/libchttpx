@@ -15,6 +15,12 @@ struct chttpx_event_loop
     volatile LONG wake_pending;
 };
 
+/**
+ * Translate portable event flags to poll/epoll/kqueue flags.
+ *
+ * @param events Poll interest mask or output event array.
+ * @return Zero on success or a negative error code.
+ */
 static short native_events(uint32_t events)
 {
     short value = 0;
@@ -25,6 +31,13 @@ static short native_events(uint32_t events)
     return value;
 }
 
+/**
+ * Grow pollfd tables for the fallback event loop.
+ *
+ * @param loop Event loop instance.
+ * @param capacity Initial capacity when growing an internal table.
+ * @return Zero on success or a negative error code.
+ */
 static int ensure_capacity(chttpx_event_loop_t* loop, size_t capacity)
 {
     if (capacity <= loop->capacity)
@@ -47,6 +60,13 @@ static int ensure_capacity(chttpx_event_loop_t* loop, size_t capacity)
     return 1;
 }
 
+/**
+ * Find the index of a registered socket descriptor.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 static ptrdiff_t find_fd(chttpx_event_loop_t* loop, chttpx_socket_t fd)
 {
     for (size_t i = 0; i < loop->count; i++)
@@ -55,11 +75,20 @@ static ptrdiff_t find_fd(chttpx_event_loop_t* loop, chttpx_socket_t fd)
     return -1;
 }
 
+/**
+ * Allocate a platform-specific event loop.
+ * @return New event loop, or NULL on allocation failure.
+ */
 chttpx_event_loop_t* _chttpx_event_create(void)
 {
     return calloc(1, sizeof(chttpx_event_loop_t));
 }
 
+/**
+ * Free an event loop and registered state.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_destroy(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -69,6 +98,15 @@ void _chttpx_event_destroy(chttpx_event_loop_t* loop)
     free(loop);
 }
 
+/**
+ * Register a socket for read/write monitoring.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop || find_fd(loop, fd) >= 0 || !ensure_capacity(loop, loop->count + 1))
@@ -81,6 +119,15 @@ int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return 0;
 }
 
+/**
+ * Update interest flags or user data for a socket.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop)
@@ -93,6 +140,12 @@ int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return 0;
 }
 
+/**
+ * Remove a socket from the event loop.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ */
 void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
 {
     if (!loop)
@@ -110,6 +163,15 @@ void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
     loop->count--;
 }
 
+/**
+ * Wait for ready sockets or a wake signal.
+ *
+ * @param loop Event loop instance.
+ * @param events Poll interest mask or output event array.
+ * @param max_events Capacity of the output event array.
+ * @param timeout_ms Maximum wait in milliseconds, or -1 to block indefinitely.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t max_events, int timeout_ms)
 {
     if (!loop || !events || max_events == 0)
@@ -151,12 +213,23 @@ int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t
     return (int)output;
 }
 
+/**
+ * Interrupt a blocking event wait.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_wake(chttpx_event_loop_t* loop)
 {
     if (loop)
         InterlockedExchange(&loop->wake_pending, 1);
 }
 
+/**
+ * Set a socket to non-blocking mode.
+ *
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_socket_set_nonblocking(chttpx_socket_t fd)
 {
     u_long mode = 1;
@@ -177,6 +250,12 @@ struct chttpx_event_loop
     int wake_fd;
 };
 
+/**
+ * Translate portable event flags to poll/epoll/kqueue flags.
+ *
+ * @param events Portable read/write interest flags to translate.
+ * @return Native epoll interest mask for the portable flags.
+ */
 static uint32_t native_events(uint32_t events)
 {
     uint32_t value = EPOLLRDHUP;
@@ -187,6 +266,10 @@ static uint32_t native_events(uint32_t events)
     return value;
 }
 
+/**
+ * Allocate a platform-specific event loop.
+ * @return New event loop, or NULL on allocation failure.
+ */
 chttpx_event_loop_t* _chttpx_event_create(void)
 {
     chttpx_event_loop_t* loop = calloc(1, sizeof(*loop));
@@ -209,6 +292,11 @@ error:
     return NULL;
 }
 
+/**
+ * Free an event loop and registered state.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_destroy(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -218,6 +306,15 @@ void _chttpx_event_destroy(chttpx_event_loop_t* loop)
     free(loop);
 }
 
+/**
+ * Register a socket for read/write monitoring.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop)
@@ -226,6 +323,15 @@ int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return epoll_ctl(loop->fd, EPOLL_CTL_ADD, fd, &event);
 }
 
+/**
+ * Update interest flags or user data for a socket.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop)
@@ -234,12 +340,27 @@ int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return epoll_ctl(loop->fd, EPOLL_CTL_MOD, fd, &event);
 }
 
+/**
+ * Remove a socket from the event loop.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ */
 void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
 {
     if (loop)
         epoll_ctl(loop->fd, EPOLL_CTL_DEL, fd, NULL);
 }
 
+/**
+ * Wait for ready sockets or a wake signal.
+ *
+ * @param loop Event loop instance.
+ * @param events Poll interest mask or output event array.
+ * @param max_events Capacity of the output event array.
+ * @param timeout_ms Maximum wait in milliseconds, or -1 to block indefinitely.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t max_events, int timeout_ms)
 {
     if (!loop || !events || max_events == 0)
@@ -279,6 +400,11 @@ int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t
     return output;
 }
 
+/**
+ * Interrupt a blocking event wait.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_wake(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -288,6 +414,12 @@ void _chttpx_event_wake(chttpx_event_loop_t* loop)
     (void)ignored;
 }
 
+/**
+ * Set a socket to non-blocking mode.
+ *
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_socket_set_nonblocking(chttpx_socket_t fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -309,6 +441,16 @@ struct chttpx_event_loop
     int fd;
 };
 
+/**
+ * Add, enable, or disable one kqueue filter for a socket.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param filter Optional event filter passed to the polling backend.
+ * @param enabled Whether the socket should use non-blocking I/O.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 static int change_filter(chttpx_event_loop_t* loop, chttpx_socket_t fd, int16_t filter, bool enabled, void* data)
 {
     struct kevent change;
@@ -316,6 +458,10 @@ static int change_filter(chttpx_event_loop_t* loop, chttpx_socket_t fd, int16_t 
     return kevent(loop->fd, &change, 1, NULL, 0, NULL);
 }
 
+/**
+ * Allocate a platform-specific event loop.
+ * @return New event loop, or NULL on allocation failure.
+ */
 chttpx_event_loop_t* _chttpx_event_create(void)
 {
     chttpx_event_loop_t* loop = calloc(1, sizeof(*loop));
@@ -338,6 +484,11 @@ chttpx_event_loop_t* _chttpx_event_create(void)
     return loop;
 }
 
+/**
+ * Free an event loop and registered state.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_destroy(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -346,6 +497,15 @@ void _chttpx_event_destroy(chttpx_event_loop_t* loop)
     free(loop);
 }
 
+/**
+ * Register a socket for read/write monitoring.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop)
@@ -360,6 +520,15 @@ int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return 0;
 }
 
+/**
+ * Update interest flags or user data for a socket.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop)
@@ -369,6 +538,12 @@ int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return change_filter(loop, fd, EVFILT_WRITE, (events & CHTTPX_EVENT_WRITE) != 0, data);
 }
 
+/**
+ * Remove a socket from the event loop.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ */
 void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
 {
     if (!loop)
@@ -379,6 +554,15 @@ void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
     kevent(loop->fd, changes, 2, NULL, 0, NULL);
 }
 
+/**
+ * Wait for ready sockets or a wake signal.
+ *
+ * @param loop Event loop instance.
+ * @param events Poll interest mask or output event array.
+ * @param max_events Capacity of the output event array.
+ * @param timeout_ms Maximum wait in milliseconds, or -1 to block indefinitely.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t max_events, int timeout_ms)
 {
     if (!loop || !events || max_events == 0)
@@ -432,6 +616,11 @@ int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t
     return (int)output;
 }
 
+/**
+ * Interrupt a blocking event wait.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_wake(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -441,6 +630,12 @@ void _chttpx_event_wake(chttpx_event_loop_t* loop)
     kevent(loop->fd, &wake, 1, NULL, 0, NULL);
 }
 
+/**
+ * Set a socket to non-blocking mode.
+ *
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_socket_set_nonblocking(chttpx_socket_t fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -465,6 +660,12 @@ struct chttpx_event_loop
     int wake_pipe[2];
 };
 
+/**
+ * Translate portable event flags to poll/epoll/kqueue flags.
+ *
+ * @param events Poll interest mask or output event array.
+ * @return Zero on success or a negative error code.
+ */
 static short native_events(uint32_t events)
 {
     short value = 0;
@@ -475,6 +676,13 @@ static short native_events(uint32_t events)
     return value;
 }
 
+/**
+ * Grow pollfd tables for the fallback event loop.
+ *
+ * @param loop Event loop instance.
+ * @param capacity Initial capacity when growing an internal table.
+ * @return Zero on success or a negative error code.
+ */
 static int ensure_capacity(chttpx_event_loop_t* loop, size_t capacity)
 {
     if (capacity <= loop->capacity)
@@ -497,6 +705,13 @@ static int ensure_capacity(chttpx_event_loop_t* loop, size_t capacity)
     return 1;
 }
 
+/**
+ * Find the index of a registered socket descriptor.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 static ptrdiff_t find_fd(chttpx_event_loop_t* loop, chttpx_socket_t fd)
 {
     for (size_t i = 0; i < loop->count; i++)
@@ -505,6 +720,10 @@ static ptrdiff_t find_fd(chttpx_event_loop_t* loop, chttpx_socket_t fd)
     return -1;
 }
 
+/**
+ * Allocate a platform-specific event loop.
+ * @return New event loop, or NULL on allocation failure.
+ */
 chttpx_event_loop_t* _chttpx_event_create(void)
 {
     chttpx_event_loop_t* loop = calloc(1, sizeof(*loop));
@@ -528,6 +747,11 @@ chttpx_event_loop_t* _chttpx_event_create(void)
     return loop;
 }
 
+/**
+ * Free an event loop and registered state.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_destroy(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -539,6 +763,15 @@ void _chttpx_event_destroy(chttpx_event_loop_t* loop)
     free(loop);
 }
 
+/**
+ * Register a socket for read/write monitoring.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop || find_fd(loop, fd) >= 0 || !ensure_capacity(loop, loop->count + 1))
@@ -549,6 +782,15 @@ int _chttpx_event_add(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return 0;
 }
 
+/**
+ * Update interest flags or user data for a socket.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ * @param events Poll interest mask or output event array.
+ * @param data Payload bytes for the current chunk.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t events, void* data)
 {
     if (!loop)
@@ -561,6 +803,12 @@ int _chttpx_event_mod(chttpx_event_loop_t* loop, chttpx_socket_t fd, uint32_t ev
     return 0;
 }
 
+/**
+ * Remove a socket from the event loop.
+ *
+ * @param loop Event loop instance.
+ * @param fd Socket descriptor.
+ */
 void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
 {
     if (!loop)
@@ -578,6 +826,15 @@ void _chttpx_event_del(chttpx_event_loop_t* loop, chttpx_socket_t fd)
     loop->count--;
 }
 
+/**
+ * Wait for ready sockets or a wake signal.
+ *
+ * @param loop Event loop instance.
+ * @param events Poll interest mask or output event array.
+ * @param max_events Capacity of the output event array.
+ * @param timeout_ms Maximum wait in milliseconds, or -1 to block indefinitely.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t max_events, int timeout_ms)
 {
     if (!loop || !events || max_events == 0)
@@ -617,6 +874,11 @@ int _chttpx_event_wait(chttpx_event_loop_t* loop, chttpx_event_t* events, size_t
     return (int)output;
 }
 
+/**
+ * Interrupt a blocking event wait.
+ *
+ * @param loop Event loop instance.
+ */
 void _chttpx_event_wake(chttpx_event_loop_t* loop)
 {
     if (!loop)
@@ -626,6 +888,12 @@ void _chttpx_event_wake(chttpx_event_loop_t* loop)
     (void)ignored;
 }
 
+/**
+ * Set a socket to non-blocking mode.
+ *
+ * @param fd Socket descriptor.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_socket_set_nonblocking(chttpx_socket_t fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);

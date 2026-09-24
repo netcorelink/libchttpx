@@ -12,6 +12,7 @@
 #include "cHTTPX_queries.h"
 #include "cHTTPX_utils.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_http2.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -25,6 +26,9 @@
 
 #define CHTTPX_CALL_TIMEOUT_SEC 30
 
+/**
+ * Local server entry with optional listener thread.
+ */
 typedef struct
 {
     chttpx_serv_t* server;
@@ -32,6 +36,9 @@ typedef struct
     bool thread_started;
 } chttpx_app_server_t;
 
+/**
+ * Named remote base URL and TLS settings.
+ */
 typedef struct
 {
     char* name;
@@ -39,16 +46,35 @@ typedef struct
     chttpx_tls_client_config_t tls;
 } chttpx_app_remote_t;
 
+/**
+ * Return the local server table backing an app.
+ *
+ * @param app Application instance.
+ * @return Pointer to the internal local server table.
+ */
 static chttpx_app_server_t* app_servers(chttpx_app_t* app)
 {
     return (chttpx_app_server_t*)app->_servers;
 }
 
+/**
+ * Return the remote server table backing an app.
+ *
+ * @param app Application instance.
+ * @return Pointer to the internal remote target table.
+ */
 static chttpx_app_remote_t* app_remotes(chttpx_app_t* app)
 {
     return (chttpx_app_remote_t*)app->_remotes;
 }
 
+/**
+ * Find a registered local server by name.
+ *
+ * @param app Application instance.
+ * @param name Registered local server name.
+ * @return Matching server, or NULL when the name is unknown.
+ */
 static chttpx_serv_t* find_server(chttpx_app_t* app, const char* name)
 {
     if (!app || !name)
@@ -64,6 +90,13 @@ static chttpx_serv_t* find_server(chttpx_app_t* app, const char* name)
     return NULL;
 }
 
+/**
+ * Find a registered remote target by name.
+ *
+ * @param app Application instance.
+ * @param name Registered remote service name.
+ * @return Matching remote registration, or NULL when the name is unknown.
+ */
 static chttpx_app_remote_t* find_remote(chttpx_app_t* app, const char* name)
 {
     if (!app || !name)
@@ -79,6 +112,12 @@ static chttpx_app_remote_t* find_remote(chttpx_app_t* app, const char* name)
     return NULL;
 }
 
+/**
+ * Grow the local server table when needed.
+ *
+ * @param app Application instance.
+ * @return Zero on success or a negative error code.
+ */
 static int ensure_server_capacity(chttpx_app_t* app)
 {
     if (app->_servers_count < app->_servers_capacity)
@@ -99,6 +138,12 @@ static int ensure_server_capacity(chttpx_app_t* app)
     return cHTTPX_OK;
 }
 
+/**
+ * Grow the remote server table when needed.
+ *
+ * @param app Application instance.
+ * @return Zero on success or a negative error code.
+ */
 static int ensure_remote_capacity(chttpx_app_t* app)
 {
     if (app->_remotes_count < app->_remotes_capacity)
@@ -119,6 +164,12 @@ static int ensure_remote_capacity(chttpx_app_t* app)
     return cHTTPX_OK;
 }
 
+/**
+ * Initialize application state and platform networking.
+ *
+ * @param app Application instance.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_AppInit(chttpx_app_t* app)
 {
     if (!app)
@@ -137,6 +188,14 @@ int cHTTPX_AppInit(chttpx_app_t* app)
     return cHTTPX_OK;
 }
 
+/**
+ * Create and register a named local HTTP server.
+ *
+ * @param app Application instance.
+ * @param name Unique server name within the application.
+ * @param config Server listen and resource limit configuration.
+ * @return Initialized server registered with the app, or NULL on failure.
+ */
 chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttpx_config_t* config)
 {
     if (!app || !app->_initialized || app->_started || !name || !*name || !config)
@@ -165,6 +224,11 @@ chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttp
 }
 
 
+/**
+ * Return default outbound TLS client settings.
+ *
+ * @return TLS client defaults with peer verification enabled.
+ */
 chttpx_tls_client_config_t cHTTPX_DefaultTLSClientConfig(void)
 {
     return (chttpx_tls_client_config_t){
@@ -172,6 +236,11 @@ chttpx_tls_client_config_t cHTTPX_DefaultTLSClientConfig(void)
     };
 }
 
+/**
+ * Free owned strings inside a remote TLS config copy.
+ *
+ * @param tls TLS client settings for outbound calls.
+ */
 static void free_remote_tls_config(chttpx_tls_client_config_t* tls)
 {
     if (!tls)
@@ -231,18 +300,38 @@ int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url
     return cHTTPX_OK;
 }
 
+/**
+ * Register a remote base URL using default TLS client settings.
+ *
+ * @param app Application instance.
+ * @param name Unique remote service name within the application.
+ * @param base_url Remote http(s) base URL.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_AppRemote(chttpx_app_t* app, const char* name, const char* base_url)
 {
     chttpx_tls_client_config_t tls = cHTTPX_DefaultTLSClientConfig();
     return cHTTPX_AppRemoteEx(app, name, base_url, &tls);
 }
 
+/**
+ * Thread entry that runs one server listen loop.
+ *
+ * @param arg Server whose listen loop should run on this thread.
+ * @return Always NULL; required by the thread API.
+ */
 static void* app_listener(void* arg)
 {
     _chttpx_server_listen((chttpx_serv_t*)arg);
     return NULL;
 }
 
+/**
+ * Start listener threads for all registered servers.
+ *
+ * @param app Application instance.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_AppStart(chttpx_app_t* app)
 {
     if (!app || !app->_initialized || app->_started)
@@ -279,6 +368,12 @@ int cHTTPX_AppStart(chttpx_app_t* app)
     return cHTTPX_OK;
 }
 
+/**
+ * Join all server listener threads.
+ *
+ * @param app Application instance.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_AppWait(chttpx_app_t* app)
 {
     if (!app || !app->_initialized || !app->_started)
@@ -299,6 +394,12 @@ int cHTTPX_AppWait(chttpx_app_t* app)
     return cHTTPX_OK;
 }
 
+/**
+ * Start servers and block until they stop.
+ *
+ * @param app Application instance.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_AppRun(chttpx_app_t* app)
 {
     int result = cHTTPX_AppStart(app);
@@ -308,6 +409,11 @@ int cHTTPX_AppRun(chttpx_app_t* app)
     return cHTTPX_AppWait(app);
 }
 
+/**
+ * Stop servers and release all application resources.
+ *
+ * @param app Application instance.
+ */
 void cHTTPX_AppShutdown(chttpx_app_t* app)
 {
     if (!app || !app->_initialized)
@@ -352,6 +458,11 @@ void cHTTPX_AppShutdown(chttpx_app_t* app)
     memset(app, 0, sizeof(*app));
 }
 
+/**
+ * Release heap data owned by a synthetic internal request.
+ *
+ * @param req Current inbound HTTP request.
+ */
 static void free_internal_request(chttpx_request_t* req)
 {
     if (!req)
@@ -373,6 +484,12 @@ static void free_internal_request(chttpx_request_t* req)
     free(req->query);
 }
 
+/**
+ * Copy borrowed response bodies into owned storage.
+ *
+ * @param res Response object filled by the outbound HTTP/2 call.
+ * @return Zero on success or a negative error code.
+ */
 static int stabilize_response(chttpx_response_t* res)
 {
     if (!res || !res->body || res->body_size == 0 || res->body_ownership == cHTTPX_BODY_OWNED)
@@ -475,6 +592,9 @@ static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const cha
     return result;
 }
 
+/**
+ * Parsed host, port, and path for remote HTTP calls.
+ */
 typedef struct
 {
     char host[256];
@@ -483,6 +603,13 @@ typedef struct
     bool tls;
 } chttpx_remote_url_t;
 
+/**
+ * Parse http(s) URL pieces for legacy remote helpers.
+ *
+ * @param url URL string to parse.
+ * @param parsed Output structure receiving parsed URL fields.
+ * @return Zero on success or a negative error code.
+ */
 static int parse_remote_url(const char* url, chttpx_remote_url_t* parsed)
 {
     if (!url || !parsed)
@@ -561,6 +688,10 @@ static int parse_remote_url(const char* url, chttpx_remote_url_t* parsed)
     return 1;
 }
 
+/**
+ * Return the last socket error code for the platform.
+ * @return Zero on success or a negative error code.
+ */
 static int socket_last_error(void)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -570,6 +701,12 @@ static int socket_last_error(void)
 #endif
 }
 
+/**
+ * Return whether a socket error indicates timeout.
+ *
+ * @param error Platform or library error code to classify.
+ * @return True when the descriptor refers to an open socket.
+ */
 static bool socket_error_is_timeout(int error)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -579,6 +716,12 @@ static bool socket_error_is_timeout(int error)
 #endif
 }
 
+/**
+ * Return whether connect is still in progress.
+ *
+ * @param error Platform or library error code to classify.
+ * @return True when the error indicates a non-blocking connect is still pending.
+ */
 static bool socket_error_is_in_progress(int error)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -588,6 +731,13 @@ static bool socket_error_is_in_progress(int error)
 #endif
 }
 
+/**
+ * Toggle non-blocking mode on a socket.
+ *
+ * @param socket_fd Connected TCP socket.
+ * @param enabled Whether the socket should use non-blocking I/O.
+ * @return Zero on success or a negative error code.
+ */
 static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -607,6 +757,12 @@ static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
 #endif
 }
 
+/**
+ * Apply call timeouts to a connected socket.
+ *
+ * @param socket_fd Connected TCP socket.
+ * @return Zero on success or a negative error code.
+ */
 static int socket_set_call_timeouts(chttpx_socket_t socket_fd)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -625,6 +781,12 @@ static int socket_set_call_timeouts(chttpx_socket_t socket_fd)
     return cHTTPX_OK;
 }
 
+/**
+ * Wait for a non-blocking connect to finish.
+ *
+ * @param socket_fd Connected TCP socket.
+ * @return Zero on success or a negative error code.
+ */
 static int wait_for_connect(chttpx_socket_t socket_fd)
 {
     fd_set write_set;
@@ -670,6 +832,13 @@ static int wait_for_connect(chttpx_socket_t socket_fd)
     return socket_error_is_timeout(socket_error) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
 }
 
+/**
+ * Establish a TCP connection to a parsed remote URL.
+ *
+ * @param remote Parsed remote host, port, and base path.
+ * @param connected Output socket set when TCP connect succeeds.
+ * @return Zero on success or a negative error code.
+ */
 static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* connected)
 {
     if (!remote || !connected)
@@ -746,6 +915,12 @@ static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* co
     return final_result;
 }
 
+/**
+ * Normalize remote Content-Type for local responses.
+ *
+ * @param value Content-Type header value from a remote response.
+ * @return Stable library Content-Type constant for the given value.
+ */
 static const char* remote_response_content_type(const char* value)
 {
     if (!value)
@@ -759,6 +934,12 @@ static const char* remote_response_content_type(const char* value)
     return cHTTPX_CTYPE_OCTET;
 }
 
+/**
+ * Extract Content-Type from a raw HTTP header block.
+ *
+ * @param headers Raw HTTP response headers including the status line.
+ * @return Content-Type field value within headers, or NULL when absent.
+ */
 static const char* find_remote_content_type(char* headers)
 {
     char* line = strstr(headers, "\r\n");
@@ -788,6 +969,12 @@ static const char* find_remote_content_type(char* headers)
     return NULL;
 }
 
+/**
+ * Log remote TLS failures through the source server logger.
+ *
+ * @param source Originating request for inherited metadata.
+ * @param message Log message text.
+ */
 static void log_remote_tls_error(chttpx_request_t* source, const char* message)
 {
     chttpx_serv_t* server = source ? source->_server : NULL;
@@ -801,208 +988,9 @@ static int remote_call(chttpx_request_t* source, const chttpx_app_remote_t* targ
     if (!source || !target)
         return cHTTPX_ERR_INVALID_ARGUMENT;
 
-    chttpx_remote_url_t remote;
-    if (!parse_remote_url(target->base_url, &remote))
-        return cHTTPX_ERR_PROTOCOL;
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    chttpx_socket_t socket_fd = INVALID_SOCKET;
-#else
-    chttpx_socket_t socket_fd = -1;
-#endif
-
-    int result = connect_remote(&remote, &socket_fd);
-    if (result != cHTTPX_OK)
-        return result;
-
-    void* tls_ctx = NULL;
-    void* tls_session = NULL;
-    char* response = NULL;
-
-    if (remote.tls)
-    {
-        result = _chttpx_tls_client_connect(socket_fd, remote.host, &target->tls, &tls_ctx, &tls_session);
-        if (result != cHTTPX_OK)
-        {
-            log_remote_tls_error(source, "remote TLS handshake or certificate verification failed");
-            goto done;
-        }
-    }
-
-    char full_path[CHTTPX_MAX_PATH];
-    if (snprintf(full_path, sizeof(full_path), "%s%s", remote.base_path, path) >= (int)sizeof(full_path))
-    {
-        result = cHTTPX_ERR_LIMIT;
-        goto done;
-    }
-
-    char host_header[320];
-    int host_header_size = strchr(remote.host, ':')
-                               ? snprintf(host_header, sizeof(host_header), "[%s]:%s", remote.host, remote.port)
-                               : snprintf(host_header, sizeof(host_header), "%s:%s", remote.host, remote.port);
-    if (host_header_size < 0 || (size_t)host_header_size >= sizeof(host_header))
-    {
-        result = cHTTPX_ERR_LIMIT;
-        goto done;
-    }
-
-    const char* selected_content_type =
-        content_type && *content_type ? content_type : (source->content_type[0] ? source->content_type : cHTTPX_CTYPE_JSON);
-    const char* authorization = cHTTPX_HeaderGet(source, "Authorization");
-
-    char header[8192];
-    int header_size = snprintf(header, sizeof(header),
-                               "%s %s HTTP/1.1\r\n"
-                               "Host: %s\r\n"
-                               "Connection: close\r\n"
-                               "Content-Type: %s\r\n"
-                               "Content-Length: %zu\r\n"
-                               "X-Request-ID: %s\r\n"
-                               "Accept-Language: %s\r\n",
-                               method, full_path, host_header, selected_content_type, body_size,
-                               source->request_id, source->language);
-
-    if (header_size < 0 || (size_t)header_size >= sizeof(header))
-    {
-        result = cHTTPX_ERR_LIMIT;
-        goto done;
-    }
-
-    size_t used = (size_t)header_size;
-    if (authorization && *authorization)
-    {
-        int added = snprintf(header + used, sizeof(header) - used, "Authorization: %s\r\n", authorization);
-        if (added < 0 || (size_t)added >= sizeof(header) - used)
-        {
-            result = cHTTPX_ERR_LIMIT;
-            goto done;
-        }
-        used += (size_t)added;
-    }
-
-    if (used + 2 > sizeof(header))
-    {
-        result = cHTTPX_ERR_LIMIT;
-        goto done;
-    }
-
-    memcpy(header + used, "\r\n", 2);
-    used += 2;
-
-    int send_result = _chttpx_io_send_all(socket_fd, tls_session, header, used);
-    if (send_result == cHTTPX_OK && body_size)
-        send_result = _chttpx_io_send_all(socket_fd, tls_session, body, body_size);
-
-    if (send_result != cHTTPX_OK)
-    {
-        if (remote.tls)
-        {
-            log_remote_tls_error(source, "remote TLS write failed");
-            result = cHTTPX_ERR_TLS;
-        }
-        else
-        {
-            int error = socket_last_error();
-            result = socket_error_is_timeout(error) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
-        }
-        goto done;
-    }
-
-    size_t limit = source->_server->max_body_size ? source->_server->max_body_size + 64 * 1024 : 10 * 1024 * 1024;
-    size_t capacity = 8192;
-    if (capacity > limit)
-        capacity = limit;
-
-    response = malloc(capacity + 1);
-    if (!response)
-    {
-        result = cHTTPX_ERR_MEMORY;
-        goto done;
-    }
-
-    size_t total = 0;
-    for (;;)
-    {
-        if (total == capacity)
-        {
-            if (capacity >= limit)
-            {
-                result = cHTTPX_ERR_LIMIT;
-                goto done;
-            }
-
-            size_t next = capacity * 2;
-            if (next > limit)
-                next = limit;
-
-            char* resized = realloc(response, next + 1);
-            if (!resized)
-            {
-                result = cHTTPX_ERR_MEMORY;
-                goto done;
-            }
-
-            response = resized;
-            capacity = next;
-        }
-
-        int received = _chttpx_io_recv(socket_fd, tls_session, response + total, capacity - total);
-        if (received < 0)
-        {
-            if (remote.tls)
-            {
-                log_remote_tls_error(source, "remote TLS read failed");
-                result = cHTTPX_ERR_TLS;
-            }
-            else
-            {
-                int error = socket_last_error();
-                result = socket_error_is_timeout(error) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
-            }
-            goto done;
-        }
-
-        if (received == 0)
-        {
-            if (total == 0)
-            {
-                result = cHTTPX_ERR_UNAVAILABLE;
-                goto done;
-            }
-            break;
-        }
-
-        total += (size_t)received;
-    }
-
-    response[total] = '\0';
-
-    int status = 0;
-    if (sscanf(response, "HTTP/%*s %d", &status) != 1 || status < 100 || status > 599)
-    {
-        result = cHTTPX_ERR_PROTOCOL;
-        goto done;
-    }
-
-    char* delimiter = chttpx_memmem(response, total, "\r\n\r\n", 4);
-    if (!delimiter)
-    {
-        result = cHTTPX_ERR_PROTOCOL;
-        goto done;
-    }
-
-    size_t header_bytes = (size_t)(delimiter - response) + 4;
-    char* body_start = response + header_bytes;
-    size_t response_body_size = total - header_bytes;
-
-    const char* response_type = remote_response_content_type(find_remote_content_type(response));
-    *res = cHTTPX_ResBinary((uint16_t)status, response_type, (const unsigned char*)body_start, response_body_size);
-    result = res->status ? cHTTPX_OK : cHTTPX_ERR_MEMORY;
-
-done:
-    free(response);
-    _chttpx_tls_client_close(tls_ctx, tls_session);
-    chttpx_close(socket_fd);
+    int result = _chttpx_http2_call(source, target->base_url, &target->tls, method, path, body, body_size, content_type, res);
+    if (result == cHTTPX_ERR_TLS)
+        log_remote_tls_error(source, "remote HTTP/2 TLS handshake, ALPN, or certificate verification failed");
     return result;
 }
 
@@ -1030,6 +1018,16 @@ int cHTTPX_CallEx(chttpx_request_t* source, const char* server_name, const char*
     return cHTTPX_ERR_NOT_FOUND;
 }
 
+/**
+ * Dispatch a request to a local or remote app server by name.
+ *
+ * @param req Current inbound HTTP request.
+ * @param server_name Server name as a null-terminated C string.
+ * @param method HTTP method name.
+ * @param path Request path or route pattern.
+ * @param res Response object filled by the outbound HTTP/2 call.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_Call(chttpx_request_t* req, const char* server_name, const char* method, const char* path, chttpx_response_t* res)
 {
     if (!req)

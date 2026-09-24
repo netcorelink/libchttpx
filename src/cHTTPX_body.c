@@ -34,6 +34,13 @@
 #include <string.h>
 #include <limits.h>
 
+/**
+ * Parse content length value.
+ *
+ * @param value Parameter `value`.
+ * @param content_length Parameter `content_length`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int parse_content_length_value(const char* value, size_t* content_length)
 {
     if (!value || !content_length || !*value || *value == '-')
@@ -49,6 +56,12 @@ static int parse_content_length_value(const char* value, size_t* content_length)
     return 1;
 }
 
+/**
+ * Transfer encoding is chunked.
+ *
+ * @param value Parameter `value`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int transfer_encoding_is_chunked(const char* value)
 {
     if (!value)
@@ -64,6 +77,14 @@ static int transfer_encoding_is_chunked(const char* value)
     return length == 7 && strncasecmp(value, "chunked", 7) == 0;
 }
 
+/**
+ * Parse request framing.
+ *
+ * @param req Current HTTP request.
+ * @param content_length Parameter `content_length`.
+ * @param chunked Parameter `chunked`.
+ * @return 1 when framing is valid, 0 when headers are inconsistent or invalid.
+ */
 static int parse_request_framing(chttpx_request_t* req, size_t* content_length, bool* chunked)
 {
     if (!req || !content_length || !chunked)
@@ -105,6 +126,13 @@ static int parse_request_framing(chttpx_request_t* req, size_t* content_length, 
     return 1;
 }
 
+/**
+ * Content type matches.
+ *
+ * @param value Parameter `value`.
+ * @param expected Parameter `expected`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int content_type_matches(const char* value, const char* expected)
 {
     if (!value || !expected)
@@ -118,6 +146,17 @@ static int content_type_matches(const char* value, const char* expected)
     return suffix == '\0' || suffix == ';' || suffix == ' ' || suffix == '\t';
 }
 
+/**
+ * Append bytes.
+ *
+ * @param data Parameter `data`.
+ * @param size Parameter `size`.
+ * @param capacity Parameter `capacity`.
+ * @param bytes Parameter `bytes`.
+ * @param count Parameter `count`.
+ * @param limit Parameter `limit`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int append_bytes(unsigned char** data, size_t* size, size_t* capacity, const unsigned char* bytes, size_t count, size_t limit)
 {
     if (*size > limit || count > limit - *size || *size == SIZE_MAX || count > SIZE_MAX - *size - 1)
@@ -150,6 +189,9 @@ static int append_bytes(unsigned char** data, size_t* size, size_t* capacity, co
     return 1;
 }
 
+/**
+ * Incremental reader for chunked request bodies over TLS or plain sockets.
+ */
 typedef struct
 {
     chttpx_socket_t client_fd;
@@ -161,6 +203,14 @@ typedef struct
     size_t initial_offset;
 } chunked_reader_t;
 
+/**
+ * Chunked reader read.
+ *
+ * @param reader Parameter `reader`.
+ * @param output Parameter `output`.
+ * @param output_size Parameter `output_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int chunked_reader_read(chunked_reader_t* reader, unsigned char* output, size_t output_size)
 {
     if (!reader || !output || output_size == 0)
@@ -186,6 +236,14 @@ static int chunked_reader_read(chunked_reader_t* reader, unsigned char* output, 
     return result;
 }
 
+/**
+ * Chunked reader exact.
+ *
+ * @param reader Parameter `reader`.
+ * @param output Parameter `output`.
+ * @param output_size Parameter `output_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int chunked_reader_exact(chunked_reader_t* reader, unsigned char* output, size_t output_size)
 {
     size_t offset = 0;
@@ -199,6 +257,14 @@ static int chunked_reader_exact(chunked_reader_t* reader, unsigned char* output,
     return 1;
 }
 
+/**
+ * Chunked reader line.
+ *
+ * @param reader Parameter `reader`.
+ * @param line Parameter `line`.
+ * @param line_size Parameter `line_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int chunked_reader_line(chunked_reader_t* reader, char* line, size_t line_size)
 {
     if (!reader || !line || line_size < 2)
@@ -232,14 +298,29 @@ static int chunked_reader_line(chunked_reader_t* reader, char* line, size_t line
     }
 }
 
+/**
+ * Close stream.
+ *
+ * @param resource Parameter `resource`.
+ */
 static void close_stream(void* resource)
 {
     if (resource)
         fclose((FILE*)resource);
 }
 
-static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, const unsigned char* initial, size_t initial_size, size_t limit,
-                          bool spool_to_disk)
+/**
+ * Decode chunked.
+ *
+ * @param req Current HTTP request.
+ * @param client_fd Parameter `client_fd`.
+ * @param initial Parameter `initial`.
+ * @param initial_size Parameter `initial_size`.
+ * @param limit Parameter `limit`.
+ * @param spool_to_disk Parameter `spool_to_disk`.
+ * @return true on success, false otherwise.
+ */
+static int decode_chunked(chttpx_request_t* req, chttpx_socket_t client_fd, const unsigned char* initial, size_t initial_size, size_t limit, bool spool_to_disk)
 {
     unsigned char* decoded = NULL;
     size_t decoded_size = 0;
@@ -364,6 +445,15 @@ fail:
     return 0;
 }
 
+/**
+ * Spool multipart body.
+ *
+ * @param req Current HTTP request.
+ * @param client_fd Parameter `client_fd`.
+ * @param initial Parameter `initial`.
+ * @param initial_size Parameter `initial_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int spool_multipart_body(chttpx_request_t* req, chttpx_socket_t client_fd, const unsigned char* initial, size_t initial_size)
 {
     FILE* spool = tmpfile();
@@ -425,6 +515,14 @@ static int spool_multipart_body(chttpx_request_t* req, chttpx_socket_t client_fd
 }
 
 /* Parse body in request */
+/**
+ * Parse req body.
+ *
+ * @param req Current HTTP request.
+ * @param client_fd Connected client socket.
+ * @param buffer Initial receive buffer containing request headers.
+ * @param buffer_len Size of buffer in bytes.
+ */
 void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buffer, size_t buffer_len)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;

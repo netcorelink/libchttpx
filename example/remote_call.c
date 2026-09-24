@@ -1,14 +1,9 @@
 #include <libchttpx.h>
 
+/** Forwards payment creation to a remote AppRemote target. */
 static void create_payment(chttpx_request_t* req, chttpx_response_t* res)
 {
-    int result = cHTTPX_Call(
-        req,
-        "payments",
-        cHTTPX_MethodPost,
-        "/payments/create",
-        res
-    );
+    int result = cHTTPX_Call(req, "payments", cHTTPX_MethodPost, "/payments/create", res);
 
     if (result == cHTTPX_ERR_UNAVAILABLE)
     {
@@ -26,6 +21,7 @@ static void create_payment(chttpx_request_t* req, chttpx_response_t* res)
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "payments call failed");
 }
 
+/** Registers a remote payments service and exposes a local proxy route. */
 int main(void)
 {
     chttpx_app_t app;

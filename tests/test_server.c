@@ -1,4 +1,5 @@
 #include "libchttpx.h"
+#include "cHTTPX_http2.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -15,6 +16,7 @@ static uint16_t public_port;
 static uint16_t internal_port;
 static int last_remote_call_result;
 
+/** Records body, language, and request id; returns 200 "done". */
 static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     __atomic_fetch_add(&handler_calls, 1, __ATOMIC_SEQ_CST);
@@ -24,12 +26,14 @@ static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "done");
 }
 
+/** Captures client_ip and returns 204. */
 static void ip_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     snprintf(observed_client_ip, sizeof(observed_client_ip), "%s", req->client_ip);
     *res = cHTTPX_ResNoContent();
 }
 
+/** OPTIONS handler for CORS preflight bypass tests. */
 static void options_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -37,25 +41,29 @@ static void options_handler(chttpx_request_t* req, chttpx_response_t* res)
     *res = cHTTPX_ResNoContent();
 }
 
+/** Intentionally leaves res unset to trigger a 500. */
 static void empty_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     (void)res;
 }
 
+/** Internal target for cHTTPX_Call; echoes accepted JSON with observed body. */
 static void internal_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
-    snprintf(internal_observed_body, sizeof(internal_observed_body), "%.*s", (int)req->body_size,
-             req->body ? (const char*)req->body : "");
+    snprintf(internal_observed_body, sizeof(internal_observed_body), "%.*s",
+             (int)req->body_size, req->body ? (const char*)req->body : "");
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"server\":\"internal\",\"accepted\":true}");
 }
 
+/** Local cHTTPX_Call proxy to the "internal" server. */
 static void proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     if (cHTTPX_Call(req, "internal", cHTTPX_MethodPost, "/process", res) != cHTTPX_OK)
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "internal server call failed");
 }
 
+/** Proxies to AppRemote "remote-payments". */
 static void remote_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     last_remote_call_result = cHTTPX_Call(req, "remote-payments", cHTTPX_MethodPost, "/process", res);
@@ -63,12 +71,14 @@ static void remote_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote server call failed");
 }
 
+/** Remote server handler that always returns 500. */
 static void remote_error_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "remote error");
 }
 
+/** Proxies to remote /error and maps failures to 502. */
 static void remote_error_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     last_remote_call_result = cHTTPX_Call(req, "remote-payments", cHTTPX_MethodPost, "/error", res);
@@ -76,6 +86,7 @@ static void remote_error_proxy_handler(chttpx_request_t* req, chttpx_response_t*
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "remote server call failed");
 }
 
+/** Maps cHTTPX_ERR_UNAVAILABLE from Call to 503. */
 static void unavailable_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     last_remote_call_result = cHTTPX_Call(req, "unavailable", cHTTPX_MethodPost, "/process", res);
@@ -88,6 +99,7 @@ static void unavailable_proxy_handler(chttpx_request_t* req, chttpx_response_t* 
     *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "unexpected call result");
 }
 
+/** cHTTPX_CallEx with a custom JSON body override. */
 static void custom_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     static const char custom_body[] = "{\"custom\":true}";
@@ -101,62 +113,104 @@ static void custom_proxy_handler(chttpx_request_t* req, chttpx_response_t* res)
         *res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "custom internal call failed");
 }
 
+/** Builds an HTTP/2 request, dispatches via _chttpx_http2_call, formats raw response. */
 static void exchange_family(uint16_t port, int family, const char* request, char* response, size_t response_size)
 {
-    chttpx_socket_t socket_fd = socket(family, SOCK_STREAM, 0);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    assert(socket_fd != INVALID_SOCKET);
-#else
-    assert(socket_fd >= 0);
-#endif
+    assert(request && response && response_size > 0);
 
-    struct sockaddr_storage storage = {0};
-    socklen_t address_size = 0;
+    const char* line_end = strstr(request, "\r\n");
+    const char* header_end = strstr(request, "\r\n\r\n");
+    assert(line_end && header_end);
 
-    if (family == AF_INET)
+    char first_line[CHTTPX_MAX_PATH + 64];
+    size_t first_line_size = (size_t)(line_end - request);
+    assert(first_line_size < sizeof(first_line));
+    memcpy(first_line, request, first_line_size);
+    first_line[first_line_size] = '\0';
+
+    char method[16];
+    char path[CHTTPX_MAX_PATH];
+    char protocol[16];
+    assert(sscanf(first_line, "%15s %4095s %15s", method, path, protocol) == 3);
+    assert(strcmp(protocol, "HTTP/2") == 0);
+
+    chttpx_request_t source = {0};
+    const char* cursor = line_end + 2;
+    while (cursor < header_end)
     {
-        struct sockaddr_in* address = (struct sockaddr_in*)&storage;
-        address->sin_family = AF_INET;
-        address->sin_port = htons(port);
-        address->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        address_size = sizeof(*address);
-    }
-    else
-    {
-        struct sockaddr_in6* address = (struct sockaddr_in6*)&storage;
-        address->sin6_family = AF_INET6;
-        address->sin6_port = htons(port);
-        assert(inet_pton(AF_INET6, "::1", &address->sin6_addr) == 1);
-        address_size = sizeof(*address);
-    }
-
-    assert(connect(socket_fd, (struct sockaddr*)&storage, address_size) == 0);
-    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == cHTTPX_OK);
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    shutdown(socket_fd, SD_SEND);
-#else
-    shutdown(socket_fd, SHUT_WR);
-#endif
-
-    size_t total = 0;
-    while (total + 1 < response_size)
-    {
-        int received = recv(socket_fd, response + total, response_size - total - 1, 0);
-        if (received <= 0)
+        const char* next = strstr(cursor, "\r\n");
+        assert(next && next <= header_end);
+        if (next == cursor)
             break;
-        total += (size_t)received;
+
+        const char* colon = memchr(cursor, ':', (size_t)(next - cursor));
+        assert(colon);
+        size_t name_size = (size_t)(colon - cursor);
+        const char* value = colon + 1;
+        while (value < next && (*value == ' ' || *value == '\t'))
+            value++;
+        size_t value_size = (size_t)(next - value);
+        assert(source.headers_count < MAX_HEADERS);
+        assert(name_size < MAX_HEADER_NAME && value_size < MAX_HEADER_VALUE);
+
+        chttpx_header_t* header = &source.headers[source.headers_count++];
+        memcpy(header->name, cursor, name_size);
+        header->name[name_size] = '\0';
+        memcpy(header->value, value, value_size);
+        header->value[value_size] = '\0';
+
+        if (strcasecmp(header->name, "Content-Type") == 0)
+            snprintf(source.content_type, sizeof(source.content_type), "%s", header->value);
+        cursor = next + 2;
     }
 
-    response[total] = '\0';
-    chttpx_close(socket_fd);
+    const unsigned char* body = (const unsigned char*)header_end + 4;
+    size_t body_size = strlen((const char*)body);
+    char base_url[160];
+    if (family == AF_INET6)
+        snprintf(base_url, sizeof(base_url), "http://[::1]:%u", port);
+    else
+        snprintf(base_url, sizeof(base_url), "http://127.0.0.1:%u", port);
+
+    chttpx_response_t result = {0};
+    assert(_chttpx_http2_call(&source, base_url, NULL, method, path, body, body_size,
+                              source.content_type[0] ? source.content_type : NULL, &result) == cHTTPX_OK);
+
+    size_t used = 0;
+    int written = snprintf(response, response_size, "HTTP/2 %d %s\r\n", result.status, cHTTPX_StatusReason((uint16_t)result.status));
+    assert(written > 0 && (size_t)written < response_size);
+    used = (size_t)written;
+
+    for (size_t i = 0; i < result.headers_count; i++)
+    {
+        written = snprintf(response + used, response_size - used, "%s: %s\r\n", result.headers[i].name, result.headers[i].value);
+        assert(written >= 0 && (size_t)written < response_size - used);
+        used += (size_t)written;
+    }
+
+    assert(used + 2 + result.body_size < response_size);
+    memcpy(response + used, "\r\n", 2);
+    used += 2;
+    if (result.body_size)
+        memcpy(response + used, result.body, result.body_size);
+    used += result.body_size;
+    response[used] = '\0';
+    cHTTPX_ResponseCleanup(&result);
 }
 
+/** IPv4 loopback wrapper around exchange_family. */
 static void exchange(uint16_t port, const char* request, char* response, size_t response_size)
 {
     exchange_family(port, AF_INET, request, response, response_size);
 }
 
+/** IPv6 loopback wrapper around exchange_family. */
+static void exchange_ipv6(uint16_t port, const char* request, char* response, size_t response_size)
+{
+    exchange_family(port, AF_INET6, request, response, response_size);
+}
+
+/** Opens a TCP connection left idle to exercise concurrency limits. */
 static chttpx_socket_t open_idle_connection(uint16_t port)
 {
     chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -174,11 +228,7 @@ static chttpx_socket_t open_idle_connection(uint16_t port)
 }
 
 
-static void exchange_ipv6(uint16_t port, const char* request, char* response, size_t response_size)
-{
-    exchange_family(port, AF_INET6, request, response, response_size);
-}
-
+/** Polls until server->listening is true. */
 static void wait_until_listening(chttpx_serv_t* server)
 {
     for (int i = 0; i < 5000 && !__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE); i++)
@@ -193,6 +243,7 @@ static void wait_until_listening(chttpx_serv_t* server)
     assert(__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE));
 }
 
+/** Multi-server App integration: CORS, Call, remote proxies, and limits. */
 int main(void)
 {
     chttpx_app_t remote_app;
@@ -280,145 +331,86 @@ int main(void)
     struct timespec concurrency_start;
     struct timespec concurrency_end;
     clock_gettime(CLOCK_MONOTONIC, &concurrency_start);
-    exchange(public_port, "GET /ip HTTP/1.1\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    exchange(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
     clock_gettime(CLOCK_MONOTONIC, &concurrency_end);
     double concurrency_seconds = (double)(concurrency_end.tv_sec - concurrency_start.tv_sec) + (double)(concurrency_end.tv_nsec - concurrency_start.tv_nsec) / 1000000000.0;
-    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    assert(strstr(response, "HTTP/2 204 No Content") != NULL);
     assert(concurrency_seconds < 1.0);
 
     for (size_t i = 0; i < CHTTPX_ARRAY_LEN(idle_connections); i++)
         chttpx_close(idle_connections[i]);
 
-    exchange_ipv6(public_port,
-                  "GET /ip HTTP/1.1\r\n"
-                  "Host: localhost\r\n"
-                  "\r\n",
-                  response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    exchange_ipv6(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/2 204 No Content") != NULL);
     assert(strcmp(observed_client_ip, "::1") == 0);
 
-    exchange(public_port,
-             "GET /ip HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "\r\n",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    exchange(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/2 204 No Content") != NULL);
     assert(strcmp(observed_client_ip, "127.0.0.1") == 0);
 
     exchange(public_port,
-             "OPTIONS /body HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Origin: https://example.com\r\n"
-             "Access-Control-Request-Method: POST\r\n"
-             "\r\n",
+             "OPTIONS /body HTTP/2\r\nHost: localhost\r\nOrigin: https://example.com\r\nAccess-Control-Request-Method: POST\r\n\r\n",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
-    assert(strstr(response, "Access-Control-Allow-Origin: https://example.com") != NULL);
+    assert(strstr(response, "HTTP/2 204 No Content") != NULL);
+    assert(strstr(response, "access-control-allow-origin: https://example.com") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 0);
 
-    exchange(public_port,
-             "OPTIONS /body HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "\r\n",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    exchange(public_port, "OPTIONS /body HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/2 204 No Content") != NULL);
     assert(__atomic_load_n(&options_handler_calls, __ATOMIC_SEQ_CST) == 1);
 
-    exchange(public_port,
-             "GET /empty HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "\r\n",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 500 Internal Server Error") != NULL);
-    assert(strstr(response, "Connection: close") != NULL);
+    exchange(public_port, "GET /empty HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/2 500 Internal Server Error") != NULL);
+    assert(strstr(response, "connection:") == NULL);
 
     exchange(public_port,
-             "POST /body HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: text/plain\r\n"
-             "Transfer-Encoding: chunked\r\n"
-             "Accept-Language: en;q=0.2, ru-RU;q=0.9\r\n"
-             "X-Request-ID: integration-123\r\n"
-             "\r\n"
-             "5\r\nhello\r\n0\r\n\r\n",
+             "POST /body HTTP/2\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nAccept-Language: en;q=0.2, ru-RU;q=0.9\r\nX-Request-ID: integration-123\r\n\r\nhello",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
     assert(strcmp(observed_body, "hello") == 0);
     assert(strcmp(observed_language, "ru") == 0);
     assert(strcmp(observed_request_id, "integration-123") == 0);
 
     exchange(public_port,
-             "POST /proxy HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: application/json\r\n"
-             "Content-Length: 18\r\n"
-             "\r\n"
-             "{\"plan\":\"premium\"}",
+             "POST /proxy HTTP/2\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n\r\n{\"plan\":\"premium\"}",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
     assert(strstr(response, "\"server\":\"internal\"") != NULL);
     assert(strcmp(internal_observed_body, "{\"plan\":\"premium\"}") == 0);
 
     exchange(public_port,
-             "POST /proxy-remote HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: application/json\r\n"
-             "Content-Length: 18\r\n"
-             "\r\n"
-             "{\"plan\":\"premium\"}",
+             "POST /proxy-remote HTTP/2\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n\r\n{\"plan\":\"premium\"}",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
     assert(strstr(response, "\"server\":\"internal\"") != NULL);
     assert(last_remote_call_result == cHTTPX_OK);
 
-    exchange(public_port,
-             "POST /proxy-remote-error HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Length: 0\r\n"
-             "\r\n",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 500 Internal Server Error") != NULL);
+    exchange(public_port, "POST /proxy-remote-error HTTP/2\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n", response,
+             sizeof(response));
+    assert(strstr(response, "HTTP/2 500 Internal Server Error") != NULL);
     assert(last_remote_call_result == cHTTPX_OK);
 
-    exchange(public_port,
-             "POST /proxy-unavailable HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Length: 0\r\n"
-             "\r\n",
-             response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 503 Service Unavailable") != NULL);
+    exchange(public_port, "POST /proxy-unavailable HTTP/2\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n", response,
+             sizeof(response));
+    assert(strstr(response, "HTTP/2 503 Service Unavailable") != NULL);
     assert(last_remote_call_result == cHTTPX_ERR_UNAVAILABLE);
 
     exchange(public_port,
-             "POST /proxy-custom HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: application/json\r\n"
-             "Content-Length: 18\r\n"
-             "\r\n"
-             "{\"plan\":\"premium\"}",
+             "POST /proxy-custom HTTP/2\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 18\r\n\r\n{\"plan\":\"premium\"}",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
     assert(strcmp(internal_observed_body, "{\"custom\":true}") == 0);
 
     exchange(internal_port,
-             "POST /process HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: text/plain\r\n"
-             "Content-Length: 4\r\n"
-             "\r\n"
-             "ping",
+             "POST /process HTTP/2\r\nHost: localhost\r\nContent-Type: text/plain\r\nContent-Length: 4\r\n\r\nping",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
     assert(strcmp(internal_observed_body, "ping") == 0);
 
     exchange(public_port,
-             "POST /body HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Content-Type: application/json\r\n"
-             "Content-Length: 100\r\n"
-             "\r\n",
+             "POST /body HTTP/2\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 40\r\n\r\n0123456789012345678901234567890123456789",
              response, sizeof(response));
-    assert(strstr(response, "HTTP/1.1 413 Payload Too Large") != NULL);
+    assert(strstr(response, "HTTP/2 413 Payload Too Large") != NULL);
 
     cHTTPX_AppShutdown(&app);
     cHTTPX_AppShutdown(&remote_app);

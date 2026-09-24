@@ -40,6 +40,17 @@
 #define MULTIPART_FORM_VALUE_LIMIT (1024 * 1024)
 #define MULTIPART_MAX_PARTS 256
 
+/**
+ * Append part value.
+ *
+ * @param data Parameter `data`.
+ * @param size Parameter `size`.
+ * @param capacity Parameter `capacity`.
+ * @param bytes Parameter `bytes`.
+ * @param count Parameter `count`.
+ * @param limit Parameter `limit`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int append_part_value(unsigned char** data, size_t* size, size_t* capacity, const unsigned char* bytes, size_t count, size_t limit)
 {
     if (*size > limit || count > limit - *size || *size == SIZE_MAX || count > SIZE_MAX - *size - 1)
@@ -71,6 +82,11 @@ static int append_part_value(unsigned char** data, size_t* size, size_t* capacit
     return 1;
 }
 
+/**
+ * Remove temporary file.
+ *
+ * @param resource Parameter `resource`.
+ */
 static void remove_temporary_file(void* resource)
 {
     char* path = resource;
@@ -81,6 +97,13 @@ static void remove_temporary_file(void* resource)
     }
 }
 
+/**
+ * Create temporary file.
+ *
+ * @param path Parameter `path`.
+ * @param path_size Parameter `path_size`.
+ * @return Open temporary file or NULL on failure.
+ */
 static FILE* create_temporary_file(char* path, size_t path_size)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -106,8 +129,18 @@ static FILE* create_temporary_file(char* path, size_t path_size)
 #endif
 }
 
-static int track_file(chttpx_request_t* req, const char* path, const char* field_name, const char* original_name, const char* content_type,
-                      size_t size)
+/**
+ * Track file.
+ *
+ * @param req Current HTTP request.
+ * @param path Parameter `path`.
+ * @param field_name Parameter `field_name`.
+ * @param original_name Parameter `original_name`.
+ * @param content_type Parameter `content_type`.
+ * @param size Parameter `size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
+static int track_file(chttpx_request_t* req, const char* path, const char* field_name, const char* original_name, const char* content_type, size_t size)
 {
     chttpx_file_t* files = cHTTPX_Alloc(req, sizeof(*files) * (req->files_count + 1));
     if (!files)
@@ -139,6 +172,17 @@ static int track_file(chttpx_request_t* req, const char* path, const char* field
     return file->field_name && file->original_name && file->content_type;
 }
 
+/**
+ * Add form value.
+ *
+ * @param req Current HTTP request.
+ * @param name Parameter `name`.
+ * @param name_size Parameter `name_size`.
+ * @param value Parameter `value`.
+ * @param value_size Parameter `value_size`.
+ * @param decode Parameter `decode`.
+ * @return true on success, false otherwise.
+ */
 static int add_form_value(chttpx_request_t* req, const char* name, size_t name_size, const char* value, size_t value_size, bool decode)
 {
     chttpx_query_t* values = cHTTPX_Alloc(req, sizeof(*values) * (req->form_values_count + 1));
@@ -177,6 +221,11 @@ static int add_form_value(chttpx_request_t* req, const char* name, size_t name_s
     return 1;
 }
 
+/**
+ * Parse urlencoded.
+ *
+ * @param req Current HTTP request.
+ */
 static void parse_urlencoded(chttpx_request_t* req)
 {
     const char* cursor = (const char*)req->body;
@@ -195,6 +244,16 @@ static void parse_urlencoded(chttpx_request_t* req)
     }
 }
 
+/**
+ * Header attribute.
+ *
+ * @param headers Parameter `headers`.
+ * @param headers_size Parameter `headers_size`.
+ * @param attribute Parameter `attribute`.
+ * @param output Parameter `output`.
+ * @param output_size Parameter `output_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int header_attribute(const char* headers, size_t headers_size, const char* attribute, char* output, size_t output_size)
 {
     const char* found = memmem_case(headers, headers_size, attribute, strlen(attribute));
@@ -209,6 +268,14 @@ static int header_attribute(const char* headers, size_t headers_size, const char
     return 1;
 }
 
+/**
+ * Multipart boundary.
+ *
+ * @param req Current HTTP request.
+ * @param boundary Parameter `boundary`.
+ * @param boundary_size Parameter `boundary_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int multipart_boundary(const chttpx_request_t* req, char* boundary, size_t boundary_size)
 {
     if (!req)
@@ -251,8 +318,20 @@ static int multipart_boundary(const chttpx_request_t* req, char* boundary, size_
     return 0;
 }
 
-static void parse_part_headers(const char* headers, size_t headers_size, char* name, size_t name_size, char* filename, size_t filename_size,
-                               int* has_filename, char* content_type, size_t content_type_size)
+/**
+ * Parse part headers.
+ *
+ * @param headers Parameter `headers`.
+ * @param headers_size Parameter `headers_size`.
+ * @param name Parameter `name`.
+ * @param name_size Parameter `name_size`.
+ * @param filename Parameter `filename`.
+ * @param filename_size Parameter `filename_size`.
+ * @param has_filename Parameter `has_filename`.
+ * @param content_type Parameter `content_type`.
+ * @param content_type_size Parameter `content_type_size`.
+ */
+static void parse_part_headers(const char* headers, size_t headers_size, char* name, size_t name_size, char* filename, size_t filename_size, int* has_filename, char* content_type, size_t content_type_size)
 {
     name[0] = '\0';
     filename[0] = '\0';
@@ -277,6 +356,11 @@ static void parse_part_headers(const char* headers, size_t headers_size, char* n
     content_type[size] = '\0';
 }
 
+/**
+ * Parse multipart buffered.
+ *
+ * @param req Current HTTP request.
+ */
 static void parse_multipart_buffered(chttpx_request_t* req)
 {
     char boundary[204];
@@ -319,8 +403,7 @@ static void parse_multipart_buffered(chttpx_request_t* req)
         size_t data_size = next_offset - 2;
         char name[256], filename[512], content_type[512];
         int has_filename = 0;
-        parse_part_headers((const char*)part, headers_size, name, sizeof(name), filename, sizeof(filename), &has_filename, content_type,
-                           sizeof(content_type));
+        parse_part_headers((const char*)part, headers_size, name, sizeof(name), filename, sizeof(filename), &has_filename, content_type, sizeof(content_type));
         if (!name[0])
             goto bad_request;
 
@@ -356,6 +439,14 @@ bad_request:
     req->_parse_status = cHTTPX_StatusBadRequest;
 }
 
+/**
+ * Read line.
+ *
+ * @param stream Parameter `stream`.
+ * @param line Parameter `line`.
+ * @param capacity Parameter `capacity`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int read_line(FILE* stream, char* line, size_t capacity)
 {
     size_t size = 0;
@@ -374,6 +465,15 @@ static int read_line(FILE* stream, char* line, size_t capacity)
     return 1;
 }
 
+/**
+ * Read stream headers.
+ *
+ * @param stream Parameter `stream`.
+ * @param headers Parameter `headers`.
+ * @param capacity Parameter `capacity`.
+ * @param headers_size Parameter `headers_size`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int read_stream_headers(FILE* stream, char* headers, size_t capacity, size_t* headers_size)
 {
     *headers_size = 0;
@@ -394,8 +494,19 @@ static int read_stream_headers(FILE* stream, char* headers, size_t capacity, siz
     }
 }
 
-static int multipart_copy_part(FILE* stream, const char* boundary, FILE* output, unsigned char** value, size_t* value_size, size_t value_limit,
-                               int* final_boundary)
+/**
+ * Multipart copy part.
+ *
+ * @param stream Parameter `stream`.
+ * @param boundary Parameter `boundary`.
+ * @param output Parameter `output`.
+ * @param value Parameter `value`.
+ * @param value_size Parameter `value_size`.
+ * @param value_limit Parameter `value_limit`.
+ * @param final_boundary Parameter `final_boundary`.
+ * @return Open temporary file or NULL on failure.
+ */
+static int multipart_copy_part(FILE* stream, const char* boundary, FILE* output, unsigned char** value, size_t* value_size, size_t value_limit, int* final_boundary)
 {
     char next_marker[256];
     char final_marker[256];
@@ -499,6 +610,12 @@ done:
     return ok;
 }
 
+/**
+ * Parse multipart stream.
+ *
+ * @param req Current HTTP request.
+ * @param stream Parameter `stream`.
+ */
 static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;
@@ -531,8 +648,7 @@ static void parse_multipart_stream(chttpx_request_t* req, FILE* stream)
 
         char name[256], filename[512], content_type[512];
         int has_filename = 0;
-        parse_part_headers(headers, headers_size, name, sizeof(name), filename, sizeof(filename), &has_filename, content_type,
-                           sizeof(content_type));
+        parse_part_headers(headers, headers_size, name, sizeof(name), filename, sizeof(filename), &has_filename, content_type, sizeof(content_type));
         if (!name[0])
             goto bad_request;
 
@@ -601,6 +717,12 @@ internal_error:
     req->_parse_status = cHTTPX_StatusInternalServerError;
 }
 
+/**
+ * Save raw upload stream.
+ *
+ * @param req Current HTTP request.
+ * @param stream Parameter `stream`.
+ */
 static void save_raw_upload_stream(chttpx_request_t* req, FILE* stream)
 {
     if (!req || !stream || fseek(stream, 0, SEEK_SET) != 0)
@@ -647,6 +769,13 @@ internal_error:
     req->_parse_status = cHTTPX_StatusInternalServerError;
 }
 
+/**
+ * Save raw upload.
+ *
+ * @param req Current HTTP request.
+ * @param initial_buffer Parameter `initial_buffer`.
+ * @param initial_len Parameter `initial_len`.
+ */
 static void save_raw_upload(chttpx_request_t* req, char* initial_buffer, size_t initial_len)
 {
     char path[512];
@@ -697,6 +826,13 @@ bad_request:
     req->_parse_status = cHTTPX_StatusBadRequest;
 }
 
+/**
+ * Parse media.
+ *
+ * @param req Current HTTP request.
+ * @param buffer Parameter `buffer`.
+ * @param buffer_len Parameter `buffer_len`.
+ */
 void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
 {
     if (!req || !req->content_type[0] || req->_parse_status)
@@ -738,11 +874,13 @@ void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len)
     }
 }
 
+/** @copydoc cHTTPX_RequestFile */
 const chttpx_file_t* cHTTPX_RequestFile(chttpx_request_t* req)
 {
     return req && req->files_count ? &req->files[0] : NULL;
 }
 
+/** @copydoc cHTTPX_FormFile */
 const chttpx_file_t* cHTTPX_FormFile(chttpx_request_t* req, const char* name)
 {
     if (!req || !name)
@@ -755,6 +893,7 @@ const chttpx_file_t* cHTTPX_FormFile(chttpx_request_t* req, const char* name)
     return NULL;
 }
 
+/** @copydoc cHTTPX_FormValue */
 const char* cHTTPX_FormValue(chttpx_request_t* req, const char* name)
 {
     if (!req || !name)
@@ -767,6 +906,7 @@ const char* cHTTPX_FormValue(chttpx_request_t* req, const char* name)
     return NULL;
 }
 
+/** @copydoc cHTTPX_FileDetach */
 int cHTTPX_FileDetach(chttpx_request_t* req, const chttpx_file_t* file)
 {
     if (!req || !file || !file->path || !cHTTPX_Detach(req, (void*)file->path))
@@ -791,12 +931,14 @@ int cHTTPX_FileDetach(chttpx_request_t* req, const chttpx_file_t* file)
     return 1;
 }
 
+/** @copydoc cHTTPX_FileKeep */
 int cHTTPX_FileKeep(chttpx_request_t* req)
 {
     const chttpx_file_t* file = cHTTPX_RequestFile(req);
     return file ? cHTTPX_FileDetach(req, file) : 0;
 }
 
+/** @copydoc cHTTPX_MimeMatch */
 bool cHTTPX_MimeMatch(const char* mime, const char* pattern)
 {
     if (!mime || !pattern)
@@ -809,16 +951,19 @@ bool cHTTPX_MimeMatch(const char* mime, const char* pattern)
     return mime_size == pattern_size && strncasecmp(mime, pattern, mime_size) == 0;
 }
 
+/** @copydoc cHTTPX_MimeIsImage */
 bool cHTTPX_MimeIsImage(const char* mime)
 {
     return cHTTPX_MimeMatch(mime, "image/*");
 }
 
+/** @copydoc cHTTPX_MimeIsVideo */
 bool cHTTPX_MimeIsVideo(const char* mime)
 {
     return cHTTPX_MimeMatch(mime, "video/*");
 }
 
+/** @copydoc cHTTPX_MimeIsAudio */
 bool cHTTPX_MimeIsAudio(const char* mime)
 {
     return cHTTPX_MimeMatch(mime, "audio/*");

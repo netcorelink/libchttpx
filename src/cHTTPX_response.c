@@ -32,6 +32,7 @@
 #include "cHTTPX_queries.h"
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_http2.h"
 #include "cHTTPX_metrics.h"
 
 #include <errno.h>
@@ -203,6 +204,15 @@ const char* cHTTPX_StatusReason(uint16_t status)
 
 chttpx_response_t cHTTPX_ResJson(uint16_t status, const char* fmt, ...);
 
+/**
+ * Match route.
+ *
+ * @param template Parameter `template`.
+ * @param path Parameter `path`.
+ * @param params Parameter `params`.
+ * @param param_count Parameter `param_count`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int match_route(const char* template, const char* path, chttpx_param_t* params, int* param_count)
 {
     int count = 0;
@@ -283,6 +293,11 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
     return NULL;
 }
 
+/**
+ * Socket read timed out.
+ *
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int socket_read_timed_out(void)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -293,6 +308,16 @@ static int socket_read_timed_out(void)
 #endif
 }
 
+/**
+ * Read req.
+ *
+ * @param server HTTP server instance.
+ * @param fd Parameter `fd`.
+ * @param tls_session Parameter `tls_session`.
+ * @param buffer Parameter `buffer`.
+ * @param buffer_size Parameter `buffer_size`.
+ * @return Bytes read or a negative error code.
+ */
 static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_session, char* buffer, size_t buffer_size)
 {
     size_t total = 0;
@@ -340,6 +365,12 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_ses
     }
 }
 
+/**
+ * Set client timeout.
+ *
+ * @param server HTTP server instance.
+ * @param client_fd Parameter `client_fd`.
+ */
 static void set_client_timeout(chttpx_serv_t* server, chttpx_socket_t client_fd)
 {
     if (!server)
@@ -392,8 +423,24 @@ static const char* allowed_origin_cors(chttpx_serv_t* server, const char* req_or
 }
 
 /* Etag for response cache */
+/**
+ * Generate etag.
+ *
+ * @param body Parameter `body`.
+ * @param body_size Parameter `body_size`.
+ * @return Pointer or NULL on failure.
+ */
 static const char* generate_etag(const unsigned char* body, size_t body_size);
 
+/**
+ * Append response header.
+ *
+ * @param buffer Parameter `buffer`.
+ * @param capacity Parameter `capacity`.
+ * @param length Parameter `length`.
+ * @param format Parameter `format`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int append_response_header(char* buffer, size_t capacity, size_t* length, const char* format, ...)
 {
     if (*length >= capacity)
@@ -414,7 +461,7 @@ static int append_response_header(char* buffer, size_t capacity, size_t* length,
  * @param res httpx_response_t structure containing status, content type, and body.
  * @param client_fd File descriptor of the connected client socket.
  *
- * This function formats the HTTP response headers and body according to HTTP/1.1.
+ * This function serializes the application response for the HTTP/2 transport.
  */
 static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, char** output, size_t* output_size)
 {
@@ -448,7 +495,7 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
     size_t length = 0;
     const char* allowed_origin = server && server->cors.enabled ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
 
-    if (!append_response_header(header, capacity, &length, "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n", res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
+    if (!append_response_header(header, capacity, &length, "HTTP/2 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n", res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
         goto limit_error;
 
     const char* etag = generate_etag(res.body, res.body_size);
@@ -500,6 +547,12 @@ limit_error:
     return cHTTPX_ERR_LIMIT;
 }
 
+/**
+ * Send response.
+ *
+ * @param req Current HTTP request.
+ * @param response HTTP response.
+ */
 static void send_response(chttpx_request_t* req, chttpx_response_t res)
 {
     char* response = NULL;
@@ -514,6 +567,13 @@ static void send_response(chttpx_request_t* req, chttpx_response_t res)
 }
 
 /* Handle browser CORS preflight without hijacking ordinary OPTIONS routes. */
+/**
+ * Build cors preflight.
+ *
+ * @param req Current HTTP request.
+ * @param response HTTP response.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int build_cors_preflight(chttpx_request_t* req, chttpx_response_t* res)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;
@@ -525,6 +585,12 @@ static int build_cors_preflight(chttpx_request_t* req, chttpx_response_t* res)
     return 1;
 }
 
+/**
+ * Is cors preflight.
+ *
+ * @param req Current HTTP request.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int is_cors_preflight(chttpx_request_t* req)
 {
     chttpx_response_t res = {0};
@@ -535,6 +601,12 @@ static int is_cors_preflight(chttpx_request_t* req)
     return 1;
 }
 
+/**
+ * Valid request id.
+ *
+ * @param value Parameter `value`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int valid_request_id(const char* value)
 {
     if (!value || !*value || strlen(value) > 64)
@@ -547,6 +619,11 @@ static int valid_request_id(const char* value)
     return 1;
 }
 
+/**
+ * Set request id.
+ *
+ * @param req Current HTTP request.
+ */
 static void set_request_id(chttpx_request_t* req)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;
@@ -566,6 +643,13 @@ static void set_request_id(chttpx_request_t* req)
              sequence);
 }
 
+/**
+ * Language allowed.
+ *
+ * @param server HTTP server instance.
+ * @param language Parameter `language`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int language_allowed(chttpx_serv_t* server, const char* language)
 {
     if (!server || !language || !*language)
@@ -580,6 +664,11 @@ static int language_allowed(chttpx_serv_t* server, const char* language)
     return 0;
 }
 
+/**
+ * Set request language.
+ *
+ * @param req Current HTTP request.
+ */
 static void set_request_language(chttpx_request_t* req)
 {
     chttpx_serv_t* server = req ? req->_server : NULL;
@@ -629,6 +718,16 @@ static void set_request_language(chttpx_request_t* req)
     }
 }
 
+/**
+ * Parse req buffer.
+ *
+ * @param server HTTP server instance.
+ * @param client_fd Parameter `client_fd`.
+ * @param tls_session Parameter `tls_session`.
+ * @param buffer Parameter `buffer`.
+ * @param received Parameter `received`.
+ * @return Pointer or NULL on failure.
+ */
 static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* buffer, size_t received)
 {
     chttpx_request_t* req = calloc(1, sizeof(chttpx_request_t));
@@ -718,12 +817,22 @@ static chttpx_request_t* parse_req_buffer(chttpx_serv_t* server, chttpx_socket_t
     return req;
 }
 
+/**
+ * Close prefetched stream.
+ *
+ * @param resource Parameter `resource`.
+ */
 static void close_prefetched_stream(void* resource)
 {
     if (resource)
         fclose((FILE*)resource);
 }
 
+/**
+ * Free request object.
+ *
+ * @param req Current HTTP request.
+ */
 static void free_request_object(chttpx_request_t* req)
 {
     if (!req)
@@ -742,6 +851,20 @@ static void free_request_object(chttpx_request_t* req)
     free(req);
 }
 
+/**
+ * Parse prefetched request.
+ *
+ * @param server HTTP server instance.
+ * @param client_fd Parameter `client_fd`.
+ * @param tls_session Parameter `tls_session`.
+ * @param headers Parameter `headers`.
+ * @param header_size Parameter `header_size`.
+ * @param body Parameter `body`.
+ * @param body_size Parameter `body_size`.
+ * @param body_stream Parameter `body_stream`.
+ * @param content_length Parameter `content_length`.
+ * @return Open temporary file or NULL on failure.
+ */
 static chttpx_request_t* parse_prefetched_request(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length)
 {
     chttpx_request_t* req = calloc(1, sizeof(*req));
@@ -993,80 +1116,19 @@ void* chttpx_handle(void* arg)
         return NULL;
     }
 
-    chttpx_request_t* req = NULL;
-    char buf[BUFFER_SIZE];
-    ssize_t received = read_req(server, client_sock, tls_session, buf, BUFFER_SIZE);
-    if (received == -2)
-    {
-        _chttpx_metrics_parser_failure(server);
-        static const char too_large[] = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        _chttpx_io_send_all(client_sock, tls_session, too_large, sizeof(too_large) - 1);
-        goto cleanup_connection;
-    }
-    if (received <= 0)
-    {
-        if (received == cHTTPX_ERR_TIMEOUT)
-            _chttpx_metrics_timeout_failure(server);
-        else if (received == cHTTPX_ERR_TLS)
-        {
-            _chttpx_metrics_connection_rejected(server);
-            _chttpx_tls_log_error(server, "-", "TLS request-header read failed");
-        }
-        goto cleanup_connection;
-    }
-
-    req = parse_req_buffer(server, client_sock, tls_session, buf, (size_t)received);
-    if (!req)
-    {
-        _chttpx_metrics_parser_failure(server);
-        goto cleanup_connection;
-    }
-
-    if (req->_parse_status)
-    {
-        _chttpx_metrics_parser_failure(server);
-        const char* parse_message = req->_parse_status == cHTTPX_StatusPayloadTooLarge
-                                        ? "payload too large"
-                                        : (req->_parse_status == cHTTPX_StatusInternalServerError ? "internal server error" : "invalid request");
-        chttpx_response_t parse_error = cHTTPX_ResError((uint16_t)req->_parse_status, parse_message);
-        send_response(req, parse_error);
-        cHTTPX_ResponseCleanup(&parse_error);
-        goto cleanup_request;
-    }
-
-    if (is_cors_preflight(req))
-        goto cleanup_request;
-
-    chttpx_response_t res = {0};
-    if (_chttpx_dispatch(server, req, &res) == cHTTPX_OK)
-    {
-        send_response(req, res);
-        cHTTPX_ResponseCleanup(&res);
-    }
-
-cleanup_request:
-    cHTTPX_RequestCleanup(req);
-    chttpx_free_req_cookie(req);
-
-    free(req->method);
-    free(req->path);
-    free(req->body);
-
-    for (size_t i = 0; i < req->query_count; i++)
-    {
-        free(req->query[i].name);
-        free(req->query[i].value);
-    }
-
-    free(req->query);
-    free(req);
-
-cleanup_connection:
+    _chttpx_http2_serve(server, client_sock, tls_session);
     _chttpx_tls_session_close(tls_session);
     chttpx_close(client_sock);
     return NULL;
 }
 
+/**
+ * Generate etag.
+ *
+ * @param body Parameter `body`.
+ * @param body_size Parameter `body_size`.
+ * @return Pointer or NULL on failure.
+ */
 static const char* generate_etag(const unsigned char* body, size_t body_size)
 {
     uint64_t hash = 5381;
@@ -1093,6 +1155,15 @@ static const char* generate_etag(const unsigned char* body, size_t body_size)
  * @param status HTTP status code (e.g. 200, 400, 404).
  * @param fmt    printf-style format string for the JSON body.
  * @param ...    Format arguments.
+ */
+/**
+ * Response format.
+ *
+ * @param status Parameter `status`.
+ * @param content_type Parameter `content_type`.
+ * @param fallback Parameter `fallback`.
+ * @param fmt Parameter `fmt`.
+ * @param args Parameter `args`.
  */
 static chttpx_response_t response_format(uint16_t status, const char* content_type, const char* fallback, const char* fmt, va_list args)
 {

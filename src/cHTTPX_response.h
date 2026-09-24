@@ -16,10 +16,11 @@ extern "C"
 #include "cHTTPX_request.h"
 
 #include <time.h>
+#include <stdio.h>
 
     struct chttpx_serv;
 
-    // RESponse
+    /** Ownership mode for response body memory. */
     typedef enum
     {
         cHTTPX_BODY_BORROWED = 0,
@@ -31,6 +32,7 @@ extern "C"
 #define CHTTPX_BODY_OWNED cHTTPX_BODY_OWNED
 #endif
 
+    /** HTTP response built by handlers or helper constructors. */
     typedef struct chttpx_response
     {
         /* Response status code */
@@ -58,7 +60,7 @@ extern "C"
         struct timespec end_ts;
     } chttpx_response_t;
 
-    /* handler */
+    /** Application route handler callback. */
     typedef void (*chttpx_handler_t)(chttpx_request_t* req, chttpx_response_t* res);
 
     /**
@@ -71,6 +73,9 @@ extern "C"
 
     /* Internal route dispatcher shared by socket requests and cHTTPX_Call(). */
     int _chttpx_dispatch(struct chttpx_serv* server, chttpx_request_t* req, chttpx_response_t* res);
+
+    /* Internal adapter used by the HTTP/2 transport to reuse the public request/handler API. */
+    int _chttpx_execute_prefetched(struct chttpx_serv* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size);
 
     /**
      * Create a JSON HTTP response with formatted content.
@@ -141,16 +146,14 @@ extern "C"
     /**
      * Send an entire buffer, retrying partial socket writes.
      *
-     * @param fd   Connected socket descriptor.
-     * @param data Buffer
-     * to send.
+     * @param fd Connected socket descriptor.
+     * @param data Buffer to send.
      * @param size Buffer size in bytes.
      * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

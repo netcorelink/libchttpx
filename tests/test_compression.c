@@ -1,4 +1,5 @@
 #include "libchttpx.h"
+#include "cHTTPX_http2.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -21,6 +22,7 @@ typedef struct
 static unsigned char large_text[LARGE_BODY_SIZE];
 static unsigned char binary_body[LARGE_BODY_SIZE];
 
+/** Fills repeatable large_text and binary_body buffers. */
 static void fill_bodies(void)
 {
     for (size_t i = 0; i < LARGE_BODY_SIZE; i++)
@@ -30,24 +32,28 @@ static void fill_bodies(void)
     }
 }
 
+/** Returns a large text/plain body. */
 static void large_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "text/plain; charset=utf-8", large_text, sizeof(large_text));
 }
 
+/** Returns a body below the compression min_size threshold. */
 static void small_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "small");
 }
 
+/** Returns a non-text binary body (image/png). */
 static void binary_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResBinary(cHTTPX_StatusOK, "image/png", binary_body, sizeof(binary_body));
 }
 
+/** Large response with cHTTPX_ResponseCompression(res, false). */
 static void response_disabled_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -55,6 +61,7 @@ static void response_disabled_handler(chttpx_request_t* req, chttpx_response_t* 
     cHTTPX_ResponseCompression(res, false);
 }
 
+/** Response that already sets Content-Encoding: br. */
 static void already_encoded_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -62,6 +69,7 @@ static void already_encoded_handler(chttpx_request_t* req, chttpx_response_t* re
     assert(cHTTPX_HeaderAdd(res, "Content-Encoding", "br") == 0);
 }
 
+/** Response with Cache-Control: no-transform (must not compress). */
 static void no_transform_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -69,6 +77,7 @@ static void no_transform_handler(chttpx_request_t* req, chttpx_response_t* res)
     assert(cHTTPX_HeaderAdd(res, "Cache-Control", "public, no-transform") == 0);
 }
 
+/** Polls until the server listening flag is set (integration tests). */
 static void wait_until_listening(chttpx_serv_t* server)
 {
     for (int i = 0; i < 5000 && !__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE); i++)
@@ -83,6 +92,7 @@ static void wait_until_listening(chttpx_serv_t* server)
     assert(__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE));
 }
 
+/** Substring search over a byte buffer (test helper). */
 static const unsigned char* find_bytes(const unsigned char* haystack, size_t haystack_size, const char* needle)
 {
     size_t needle_size = strlen(needle);
@@ -96,87 +106,127 @@ static const unsigned char* find_bytes(const unsigned char* haystack, size_t hay
     return NULL;
 }
 
+/** Sends one HTTP/2 request via _chttpx_http2_call and formats the raw response. */
 static test_response_t exchange(uint16_t port, const char* request)
 {
     test_response_t response;
     memset(&response, 0, sizeof(response));
 
-    chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    assert(socket_fd != INVALID_SOCKET);
-#else
-    assert(socket_fd >= 0);
-#endif
+    const char* line_end = strstr(request, "\r\n");
+    const char* header_end = strstr(request, "\r\n\r\n");
+    assert(line_end && header_end);
 
-    struct sockaddr_in address;
-    memset(&address, 0, sizeof(address));
-    address.sin_family = AF_INET;
-    address.sin_port = htons(port);
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    char first_line[CHTTPX_MAX_PATH + 64];
+    size_t first_line_size = (size_t)(line_end - request);
+    assert(first_line_size < sizeof(first_line));
+    memcpy(first_line, request, first_line_size);
+    first_line[first_line_size] = '\0';
 
-    assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
-    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == cHTTPX_OK);
+    char method[16];
+    char path[CHTTPX_MAX_PATH];
+    char protocol[16];
+    assert(sscanf(first_line, "%15s %4095s %15s", method, path, protocol) == 3);
+    assert(strcmp(protocol, "HTTP/2") == 0);
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    shutdown(socket_fd, SD_SEND);
-#else
-    shutdown(socket_fd, SHUT_WR);
-#endif
-
-    while (response.size < sizeof(response.bytes))
+    chttpx_request_t source = {0};
+    const char* cursor = line_end + 2;
+    while (cursor < header_end)
     {
-        int received = recv(socket_fd, response.bytes + response.size, sizeof(response.bytes) - response.size, 0);
-        if (received <= 0)
+        const char* next = strstr(cursor, "\r\n");
+        assert(next && next <= header_end);
+        if (next == cursor)
             break;
-        response.size += (size_t)received;
+
+        const char* colon = memchr(cursor, ':', (size_t)(next - cursor));
+        assert(colon);
+        size_t name_size = (size_t)(colon - cursor);
+        const char* value = colon + 1;
+        while (value < next && (*value == ' ' || *value == '\t'))
+            value++;
+        size_t value_size = (size_t)(next - value);
+        assert(source.headers_count < MAX_HEADERS);
+        assert(name_size < MAX_HEADER_NAME && value_size < MAX_HEADER_VALUE);
+
+        chttpx_header_t* header = &source.headers[source.headers_count++];
+        memcpy(header->name, cursor, name_size);
+        header->name[name_size] = '\0';
+        memcpy(header->value, value, value_size);
+        header->value[value_size] = '\0';
+        cursor = next + 2;
     }
 
-    chttpx_close(socket_fd);
+    char base_url[128];
+    snprintf(base_url, sizeof(base_url), "http://127.0.0.1:%u", port);
+    chttpx_response_t result = {0};
+    assert(_chttpx_http2_call(&source, base_url, NULL, method, path, NULL, 0, NULL, &result) == cHTTPX_OK);
 
-    const unsigned char* delimiter = find_bytes(response.bytes, response.size, "\r\n\r\n");
-    assert(delimiter);
+    size_t used = 0;
+    int written = snprintf(response.headers, sizeof(response.headers), "HTTP/2 %d %s\r\n",
+                           result.status, cHTTPX_StatusReason((uint16_t)result.status));
+    assert(written > 0 && (size_t)written < sizeof(response.headers));
+    used = (size_t)written;
 
-    response.header_size = (size_t)(delimiter - response.bytes) + 4;
-    assert(response.header_size < sizeof(response.headers));
-    memcpy(response.headers, response.bytes, response.header_size);
-    response.headers[response.header_size] = '\0';
+    for (size_t i = 0; i < result.headers_count; i++)
+    {
+        written = snprintf(response.headers + used, sizeof(response.headers) - used, "%s: %s\r\n",
+                           result.headers[i].name, result.headers[i].value);
+        assert(written >= 0 && (size_t)written < sizeof(response.headers) - used);
+        used += (size_t)written;
+    }
+    assert(used + 2 < sizeof(response.headers));
+    memcpy(response.headers + used, "\r\n", 3);
+    used += 2;
+
+    response.header_size = used;
+    assert(response.header_size + result.body_size <= sizeof(response.bytes));
+    memcpy(response.bytes, response.headers, response.header_size);
+    if (result.body_size)
+        memcpy(response.bytes + response.header_size, result.body, result.body_size);
+    response.size = response.header_size + result.body_size;
+    cHTTPX_ResponseCleanup(&result);
     return response;
 }
 
+/** @return Payload size excluding the synthesized status/header block. */
 static size_t response_body_size(const test_response_t* response)
 {
     assert(response && response->size >= response->header_size);
     return response->size - response->header_size;
 }
 
+/** @return Pointer to the response payload bytes. */
 static const unsigned char* response_body(const test_response_t* response)
 {
     return response->bytes + response->header_size;
 }
 
+/** Asserts a substring appears in the formatted header block. */
 static void assert_header(const test_response_t* response, const char* text)
 {
     assert(strstr(response->headers, text) != NULL);
 }
 
+/** Asserts a substring is absent from the formatted header block. */
 static void assert_no_header(const test_response_t* response, const char* text)
 {
     assert(strstr(response->headers, text) == NULL);
 }
 
+/** Expects an uncompressed 200 with the full large_text body. */
 static void assert_identity_large(const test_response_t* response)
 {
-    assert_header(response, "HTTP/1.1 200 OK");
-    assert_no_header(response, "Content-Encoding:");
+    assert_header(response, "HTTP/2 200 OK");
+    assert_no_header(response, "content-encoding:");
     assert(response_body_size(response) == sizeof(large_text));
     assert(memcmp(response_body(response), large_text, sizeof(large_text)) == 0);
 }
 
+/** Expects gzip Content-Encoding and a body that inflates to large_text. */
 static void assert_gzip_large(const test_response_t* response)
 {
-    assert_header(response, "HTTP/1.1 200 OK");
-    assert_header(response, "Content-Encoding: gzip");
-    assert_header(response, "Vary: Accept-Encoding");
+    assert_header(response, "HTTP/2 200 OK");
+    assert_header(response, "content-encoding: gzip");
+    assert_header(response, "vary: Accept-Encoding");
     assert(response_body_size(response) < sizeof(large_text));
 
     unsigned char decompressed[LARGE_BODY_SIZE + 64];
@@ -198,12 +248,9 @@ static void assert_gzip_large(const test_response_t* response)
     assert(memcmp(decompressed, large_text, sizeof(large_text)) == 0);
 }
 
-static int failing_provider(const unsigned char* input,
-                            size_t input_size,
-                            int level,
-                            unsigned char** output,
-                            size_t* output_size,
-                            void* user_data)
+/** Compression provider that always returns cHTTPX_ERR_COMPRESSION. */
+static int failing_provider(const unsigned char* input, size_t input_size, int level, unsigned char** output,
+                            size_t* output_size, void* user_data)
 {
     (void)input;
     (void)input_size;
@@ -214,6 +261,7 @@ static int failing_provider(const unsigned char* input,
     return cHTTPX_ERR_COMPRESSION;
 }
 
+/** Integration tests for Accept-Encoding negotiation and gzip responses. */
 int main(void)
 {
     fill_bodies();
@@ -246,76 +294,57 @@ int main(void)
     assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
     wait_until_listening(server);
 
-    test_response_t response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    test_response_t response =
+        exchange(server->port, "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
     assert_gzip_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip;q=0.5, identity;q=1\r\n\r\n");
+    response = exchange(server->port,
+                        "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip;q=0.5, identity;q=1\r\n\r\n");
     assert_identity_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: br;q=1, gzip;q=0.8, identity;q=0.2\r\n\r\n");
+    response = exchange(server->port,
+                        "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: br;q=1, gzip;q=0.8, identity;q=0.2\r\n\r\n");
     assert_gzip_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: GZIP ; q=1.0, identity;q=0\r\n\r\n");
+    response = exchange(server->port,
+                        "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: GZIP ; q=1.0, identity;q=0\r\n\r\n");
     assert_gzip_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: *;q=1, identity;q=0\r\n\r\n");
+    response = exchange(server->port,
+                        "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: *;q=1, identity;q=0\r\n\r\n");
     assert_gzip_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip;q=0\r\n\r\n");
+    response = exchange(server->port, "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip;q=0\r\n\r\n");
     assert_identity_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip;q=0, identity;q=0\r\n\r\n");
-    assert_header(&response, "HTTP/1.1 406 Not Acceptable");
+    response = exchange(server->port,
+                        "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip;q=0, identity;q=0\r\n\r\n");
+    assert_header(&response, "HTTP/2 406 Not Acceptable");
     assert(response_body_size(&response) == 0);
 
-    response = exchange(
-        server->port,
-        "GET /small HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
-    assert_header(&response, "HTTP/1.1 200 OK");
-    assert_no_header(&response, "Content-Encoding:");
+    response = exchange(server->port, "GET /small HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    assert_header(&response, "HTTP/2 200 OK");
+    assert_no_header(&response, "content-encoding:");
 
-    response = exchange(
-        server->port,
-        "GET /binary HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
-    assert_header(&response, "HTTP/1.1 200 OK");
-    assert_no_header(&response, "Content-Encoding:");
+    response = exchange(server->port, "GET /binary HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    assert_header(&response, "HTTP/2 200 OK");
+    assert_no_header(&response, "content-encoding:");
     assert(response_body_size(&response) == sizeof(binary_body));
 
-    response = exchange(
-        server->port,
-        "GET /response-disabled HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    response =
+        exchange(server->port, "GET /response-disabled HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
     assert_identity_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /route-disabled HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    response = exchange(server->port, "GET /route-disabled HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
     assert_identity_large(&response);
 
-    response = exchange(
-        server->port,
-        "GET /encoded HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
-    assert_header(&response, "Content-Encoding: br");
-    assert_no_header(&response, "Content-Encoding: gzip");
+    response = exchange(server->port, "GET /encoded HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    assert_header(&response, "content-encoding: br");
+    assert_no_header(&response, "content-encoding: gzip");
 
-    response = exchange(
-        server->port,
-        "GET /no-transform HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
-    assert_header(&response, "Cache-Control: public, no-transform");
-    assert_no_header(&response, "Content-Encoding:");
+    response = exchange(server->port, "GET /no-transform HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip\r\n\r\n");
+    assert_header(&response, "cache-control: public, no-transform");
+    assert_no_header(&response, "content-encoding:");
 
     chttpx_compression_provider_t failing = {
         .encoding = "gzip",
@@ -328,9 +357,8 @@ int main(void)
     failing_config.providers_count = 1;
     assert(cHTTPX_CompressionUse(server, &failing_config) == cHTTPX_OK);
 
-    response = exchange(
-        server->port,
-        "GET /large HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip;q=1, identity;q=0.5\r\n\r\n");
+    response = exchange(server->port,
+                        "GET /large HTTP/2\r\nHost: localhost\r\nAccept-Encoding: gzip;q=1, identity;q=0.5\r\n\r\n");
     assert_identity_large(&response);
 
     cHTTPX_AppShutdown(&app);

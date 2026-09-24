@@ -139,4 +139,4 @@ Routes/middleware настраивайте до `AppStart/AppRun`. Во врем
 
 ## HTTP model
 
-Текущая реализация работает по HTTP/1.1 с одним request на connection и явным `Connection: close`. Поддерживаются `Content-Length` и chunked request bodies.
+Текущая реализация работает по HTTP/2. Для соединений без TLS используется h2c prior knowledge, а TLS-серверы согласовывают `h2` через ALPN. Несколько HTTP/2 stream могут использовать одно соединение, при этом публичный App/router/handler API не меняется.

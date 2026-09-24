@@ -1,6 +1,6 @@
 # libchttpx
 
-`libchttpx` — компактная кроссплатформенная HTTP/1.1-библиотека для C. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
+`libchttpx` — компактная кроссплатформенная HTTP/2-библиотека для C. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
 
 Идея библиотеки: handler должен содержать бизнес-логику приложения, а не повторяющийся HTTP boilerplate.
 
@@ -113,7 +113,7 @@ iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install
 docker pull noneandundefined/libchttpx:latest
 ```
 
-Image содержит установленную shared library, headers, pkg-config metadata и runtime cJSON.
+Image содержит установленную shared library, headers, pkg-config metadata и runtime-зависимости cJSON, zlib и nghttp2.
 
 ```dockerfile
 FROM noneandundefined/libchttpx:latest
@@ -126,7 +126,7 @@ CMD ["/usr/local/bin/my-server"]
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev libnghttp2-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -162,7 +162,7 @@ TLS остаётся отдельной опцией сборки: `make TLS=1 l
 
 ### Самостоятельная сборка на Windows
 
-Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`, а zlib должен быть установлен (для MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
+Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`, а zlib и nghttp2 должны быть установлены (для MSYS2/MinGW64: `mingw-w64-x86_64-zlib` и `mingw-w64-x86_64-nghttp2`).
 
 ```powershell
 git clone https://github.com/netcorelink/libchttpx.git

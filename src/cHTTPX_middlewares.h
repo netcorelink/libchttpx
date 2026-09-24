@@ -23,16 +23,17 @@ extern "C"
 
     struct chttpx_serv;
 
-    /* Enum for result all middlewares */
+    /** Middleware chain control: stop (out) or continue (next). */
     typedef enum
     {
         out = 0,
         next = 1,
     } chttpx_middleware_result_t;
 
+    /** Middleware function invoked before or after the route handler. */
     typedef chttpx_middleware_result_t (*chttpx_middleware_t)(chttpx_request_t* req, chttpx_response_t* res);
 
-    /* Struct for base middlewares */
+    /** Registered before/after middleware stacks for one server. */
     typedef struct
     {
         chttpx_middleware_t middlewares[MAX_MIDDLEWARES];
@@ -62,7 +63,7 @@ extern "C"
 
 #define MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE 4096
 
-    /* Struct for middleware [RATE LIMITER]*/
+    /** Per-IP sliding window counter for the rate limiter middleware. */
     typedef struct
     {
         /* Start limit window time*/
@@ -120,7 +121,6 @@ extern "C"
     void _chttpx_middleware_server_cleanup(struct chttpx_serv* server);
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

@@ -67,7 +67,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev
 
       - name: Build binary
         run: make lin
@@ -92,7 +92,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev
 
       - name: Run ASan and UBSan
         run: make test-sanitize
@@ -111,7 +111,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y clang make libcjson-dev zlib1g-dev
+          sudo apt install -y clang make libcjson-dev zlib1g-dev libnghttp2-dev
 
       - name: Run fuzz smoke test
         run: make test-fuzz
@@ -127,7 +127,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev
 
       - name: Build release archive
         run: make lin-lib
@@ -152,7 +152,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev openssl
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libnghttp2-dev libssl-dev openssl
 
       - name: Build TLS-enabled shared library
         run: make TLS=1 libchttpx.so
@@ -174,7 +174,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev libssl-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libnghttp2-dev libssl-dev
 
       - name: Build shared library
         run: make libchttpx.so
@@ -210,6 +210,7 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
             mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-nghttp2
 
       - name: Build
         run: mingw32-make win SHELL=cmd

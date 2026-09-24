@@ -5,6 +5,7 @@
 #include "cHTTPX_http.h"
 #include "cHTTPX_metrics.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_http2.h"
 #include "cHTTPX_utils.h"
 
 #include <errno.h>
@@ -13,13 +14,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef CHTTPX_PLATFORM_POSIX
+#include <fcntl.h>
+#endif
 
 #define CHTTPX_RUNTIME_EVENTS 256
 #define CHTTPX_CHUNK_LINE_MAX 128
 
+/**
+ * High-level connection lifecycle state.
+ */
 typedef enum
 {
     CHTTPX_CONN_TLS,
+    CHTTPX_CONN_HTTP2_READY,
     CHTTPX_CONN_READING_HEADERS,
     CHTTPX_CONN_READING_BODY,
     CHTTPX_CONN_PROCESSING,
@@ -27,6 +35,9 @@ typedef enum
     CHTTPX_CONN_CLOSING
 } chttpx_connection_state_t;
 
+/**
+ * Chunked transfer decoding sub-state.
+ */
 typedef enum
 {
     CHTTPX_CHUNK_SIZE,
@@ -41,6 +52,9 @@ typedef enum
 
 struct chttpx_runtime;
 
+/**
+ * One accepted client connection in the runtime.
+ */
 typedef struct chttpx_connection
 {
     struct chttpx_runtime* runtime;
@@ -77,6 +91,9 @@ typedef struct chttpx_connection
     struct chttpx_connection* completion_next;
 } chttpx_connection_t;
 
+/**
+ * Event loop, worker pool, and connection lists for a server.
+ */
 typedef struct chttpx_runtime
 {
     chttpx_serv_t* server;
@@ -94,13 +111,24 @@ typedef struct chttpx_runtime
     chttpx_connection_t* connections;
 } chttpx_runtime_t;
 
-int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size);
 
+/**
+ * Return whether the runtime shutdown flag is set.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @return True when graceful shutdown has been requested.
+ */
 static bool runtime_is_stopping(chttpx_runtime_t* runtime)
 {
     return __atomic_load_n(&runtime->stopping, __ATOMIC_ACQUIRE);
 }
 
+/**
+ * Return whether a server socket handle is open.
+ *
+ * @param fd Socket descriptor.
+ * @return True when the descriptor refers to an open socket.
+ */
 static bool socket_valid(chttpx_socket_t fd)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -110,6 +138,48 @@ static bool socket_valid(chttpx_socket_t fd)
 #endif
 }
 
+/**
+ * Restore blocking mode and socket timeouts on a connection.
+ *
+ * @param connection Active client connection managed by the runtime.
+ * @return Zero on success or a negative error code.
+ */
+static int connection_set_blocking(chttpx_connection_t* connection)
+{
+    if (!connection)
+        return -1;
+
+#ifdef CHTTPX_PLATFORM_WINDOWS
+    u_long mode = 0;
+    if (ioctlsocket(connection->fd, FIONBIO, &mode) != 0)
+        return -1;
+
+    DWORD read_timeout_ms = (DWORD)connection->server->read_timeout_sec * 1000U;
+    DWORD write_timeout_ms = (DWORD)connection->server->write_timeout_sec * 1000U;
+    if (setsockopt(connection->fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms)) != 0 ||
+        setsockopt(connection->fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms)) != 0)
+        return -1;
+#else
+    int flags = fcntl(connection->fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(connection->fd, F_SETFL, flags & ~O_NONBLOCK) != 0)
+        return -1;
+
+    struct timeval timeout = {.tv_usec = 0};
+    timeout.tv_sec = connection->server->read_timeout_sec;
+    if (setsockopt(connection->fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0)
+        return -1;
+    timeout.tv_sec = connection->server->write_timeout_sec;
+    if (setsockopt(connection->fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
+        return -1;
+#endif
+
+    return 0;
+}
+
+/**
+ * Return a monotonic timestamp in milliseconds.
+ * @return Zero on success or a negative error code.
+ */
 static uint64_t monotonic_ms(void)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -121,6 +191,11 @@ static uint64_t monotonic_ms(void)
 #endif
 }
 
+/**
+ * Lock the worker completion queue.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void completion_lock(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -130,6 +205,11 @@ static void completion_lock(chttpx_runtime_t* runtime)
 #endif
 }
 
+/**
+ * Unlock the worker completion queue.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void completion_unlock(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -139,6 +219,12 @@ static void completion_unlock(chttpx_runtime_t* runtime)
 #endif
 }
 
+/**
+ * Initialize runtime synchronization primitives.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @return Zero on success or a negative error code.
+ */
 static int sync_init(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -149,6 +235,11 @@ static int sync_init(chttpx_runtime_t* runtime)
 #endif
 }
 
+/**
+ * Destroy runtime synchronization primitives.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void sync_destroy(chttpx_runtime_t* runtime)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -158,6 +249,12 @@ static void sync_destroy(chttpx_runtime_t* runtime)
 #endif
 }
 
+/**
+ * Enqueue a connection onto the completion list.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ */
 static void completion_push(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     completion_lock(runtime);
@@ -167,6 +264,12 @@ static void completion_push(chttpx_runtime_t* runtime, chttpx_connection_t* conn
     _chttpx_event_wake(runtime->event_loop);
 }
 
+/**
+ * Detach and return the entire completion list.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @return Head of the detached worker completion list, or NULL when empty.
+ */
 static chttpx_connection_t* completion_take_all(chttpx_runtime_t* runtime)
 {
     completion_lock(runtime);
@@ -176,38 +279,31 @@ static chttpx_connection_t* completion_take_all(chttpx_runtime_t* runtime)
     return list;
 }
 
+/**
+ * Worker pool entry point that runs one connection job.
+ *
+ * @param job Connection job executed on a worker thread.
+ * @param context Runtime instance registered at pool creation.
+ */
 static void runtime_worker_execute(void* job, void* context)
 {
     chttpx_connection_t* connection = job;
     chttpx_runtime_t* runtime = context;
 
-    unsigned char* body = connection->body;
-    FILE* stream = connection->body_stream;
-    connection->body = NULL;
-    connection->body_stream = NULL;
-
     if (runtime_is_stopping(runtime))
-    {
-        free(body);
-
-        if (stream)
-            fclose(stream);
-
         connection->worker_result = cHTTPX_ERR_STATE;
-    }
     else
-    {
-        connection->worker_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session, connection->headers, connection->header_end, body, connection->body_size, stream, connection->content_length, &connection->write_buffer, &connection->write_size);
-    }
-
-    free(connection->headers);
-    connection->headers = NULL;
-    connection->header_size = 0;
-    connection->header_capacity = 0;
+        connection->worker_result = _chttpx_http2_serve(connection->server, connection->fd, connection->tls_session);
 
     completion_push(runtime, connection);
 }
 
+/**
+ * Remove a connection from the active connection list.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ */
 static void connection_unlink(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     chttpx_connection_t** current = &runtime->connections;
@@ -222,6 +318,12 @@ static void connection_unlink(chttpx_runtime_t* runtime, chttpx_connection_t* co
     }
 }
 
+/**
+ * Close socket/TLS state and free connection buffers.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ */
 static void connection_close(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     if (!runtime || !connection)
@@ -251,17 +353,37 @@ static void connection_close(chttpx_runtime_t* runtime, chttpx_connection_t* con
     free(connection);
 }
 
+/**
+ * Refresh idle timeout tracking for a connection.
+ *
+ * @param connection Active client connection managed by the runtime.
+ */
 static void connection_touch(chttpx_connection_t* connection)
 {
     connection->last_activity_ms = monotonic_ms();
 }
 
+/**
+ * Compare a length-prefixed string to a literal case-insensitively.
+ *
+ * @param value Value as a null-terminated C string.
+ * @param value_size value size for the operation.
+ * @param expected Expected as a null-terminated C string.
+ * @return True when the values match.
+ */
 static bool span_equal_ci(const char* value, size_t value_size, const char* expected)
 {
     size_t expected_size = strlen(expected);
     return value_size == expected_size && strncasecmp(value, expected, value_size) == 0;
 }
 
+/**
+ * Test whether a Content-Type matches an expected value.
+ *
+ * @param value Value as a null-terminated C string.
+ * @param expected Expected as a null-terminated C string.
+ * @return True when the values match.
+ */
 static bool content_type_matches(const char* value, const char* expected)
 {
     if (!value || !expected)
@@ -273,6 +395,14 @@ static bool content_type_matches(const char* value, const char* expected)
     return suffix == '\0' || suffix == ';' || suffix == ' ' || suffix == '\t';
 }
 
+/**
+ * Parse a decimal size from a header value span.
+ *
+ * @param value Value as a null-terminated C string.
+ * @param value_size value size for the operation.
+ * @param output Output pointer receiving allocated request header text.
+ * @return Zero on success or a negative error code.
+ */
 static int parse_size_value(const char* value, size_t value_size, size_t* output)
 {
     if (!value || !value_size || !output || value_size >= 32)
@@ -296,6 +426,12 @@ static int parse_size_value(const char* value, size_t value_size, size_t* output
     return 1;
 }
 
+/**
+ * Initialize body storage mode from request headers.
+ *
+ * @param connection Active client connection managed by the runtime.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_prepare_body(chttpx_connection_t* connection)
 {
     const char* start = connection->headers;
@@ -412,6 +548,14 @@ static int connection_prepare_body(chttpx_connection_t* connection)
     return 0;
 }
 
+/**
+ * Store decoded body bytes respecting configured limits.
+ *
+ * @param connection Active client connection managed by the runtime.
+ * @param data Payload bytes for the current chunk.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_store_decoded(chttpx_connection_t* connection, const unsigned char* data, size_t size)
 {
     if (size == 0)
@@ -455,6 +599,14 @@ static int connection_store_decoded(chttpx_connection_t* connection, const unsig
     return 1;
 }
 
+/**
+ * Advance chunked transfer decoding for one connection.
+ *
+ * @param connection Active client connection managed by the runtime.
+ * @param data Payload bytes for the current chunk.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_feed_chunked(chttpx_connection_t* connection, const unsigned char* data, size_t size)
 {
     size_t offset = 0;
@@ -559,6 +711,14 @@ static int connection_feed_chunked(chttpx_connection_t* connection, const unsign
     return 0;
 }
 
+/**
+ * Append body bytes for fixed-length or decoded bodies.
+ *
+ * @param connection Active client connection managed by the runtime.
+ * @param data Payload bytes for the current chunk.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_feed_body(chttpx_connection_t* connection, const unsigned char* data, size_t size)
 {
     if (connection->chunked)
@@ -584,52 +744,50 @@ static int connection_feed_body(chttpx_connection_t* connection, const unsigned 
     return 0;
 }
 
+/**
+ * Return whether the expected request body has been received.
+ *
+ * @param connection Active client connection managed by the runtime.
+ * @return True when the buffered body size matches Content-Length.
+ */
 static bool connection_body_complete(chttpx_connection_t* connection)
 {
     return connection->chunked ? connection->chunk_state == CHTTPX_CHUNK_DONE : connection->body_received >= connection->content_length;
 }
 
+/**
+ * Queue a short error response for a connection.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @param status HTTP status code for the response.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_error_response(chttpx_runtime_t* runtime, chttpx_connection_t* connection, int status)
 {
-    const char* reason = cHTTPX_StatusReason((uint16_t)status);
-    char buffer[256];
-    int size = snprintf(buffer, sizeof(buffer), "HTTP/1.1 %d %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", status, reason);
-    if (size <= 0 || (size_t)size >= sizeof(buffer))
-    {
-        connection_close(runtime, connection);
-        return 0;
-    }
-    connection->write_buffer = malloc((size_t)size);
-    if (!connection->write_buffer)
-    {
-        connection_close(runtime, connection);
-        return 0;
-    }
-    memcpy(connection->write_buffer, buffer, (size_t)size);
-    connection->write_size = (size_t)size;
-    connection->write_offset = 0;
-    connection->state = CHTTPX_CONN_WRITING;
-    connection_touch(connection);
-    if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
-    {
-        connection_close(runtime, connection);
-        return 0;
-    }
-    return 1;
+    (void)status;
+    connection_close(runtime, connection);
+    return 0;
 }
 
+/**
+ * Hand a ready connection to the worker pool.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_submit(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
-    if (connection->body_stream)
-    {
-        if (fflush(connection->body_stream) != 0 || fseek(connection->body_stream, 0, SEEK_SET) != 0)
-        {
-            connection_error_response(runtime, connection, cHTTPX_StatusInternalServerError);
-            return 0;
-        }
-    }
     _chttpx_event_del(runtime->event_loop, connection->fd);
+    if (connection_set_blocking(connection) != 0)
+    {
+        connection_close(runtime, connection);
+        return 0;
+    }
+
     connection->state = CHTTPX_CONN_PROCESSING;
+    connection_touch(connection);
     if (!_chttpx_worker_submit(runtime->worker_pool, connection))
     {
         connection_close(runtime, connection);
@@ -638,6 +796,15 @@ static int connection_submit(chttpx_runtime_t* runtime, chttpx_connection_t* con
     return 1;
 }
 
+/**
+ * Parse incoming bytes through headers and body states.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @param data Payload bytes for the current chunk.
+ * @param size Buffer size in bytes for the I/O operation.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_process_bytes(chttpx_runtime_t* runtime, chttpx_connection_t* connection, const unsigned char* data, size_t size)
 {
     if (connection->state == CHTTPX_CONN_READING_HEADERS)
@@ -742,12 +909,19 @@ static int connection_process_bytes(chttpx_runtime_t* runtime, chttpx_connection
     return 1;
 }
 
+/**
+ * Advance non-blocking server TLS handshake for a connection.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     int result = _chttpx_tls_accept_step(connection->tls_session);
     if (result == cHTTPX_OK)
     {
-        connection->state = CHTTPX_CONN_READING_HEADERS;
+        connection->state = CHTTPX_CONN_HTTP2_READY;
         connection_touch(connection);
         if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
         {
@@ -780,6 +954,13 @@ static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* c
     return 0;
 }
 
+/**
+ * Read available bytes when a socket is readable.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_read_ready(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     unsigned char buffer[BUFFER_SIZE];
@@ -825,6 +1006,13 @@ static int connection_read_ready(chttpx_runtime_t* runtime, chttpx_connection_t*
     }
 }
 
+/**
+ * Flush pending response bytes when a socket is writable.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @return Zero on success or a negative error code.
+ */
 static int connection_write_ready(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
     while (connection->write_offset < connection->write_size)
@@ -863,6 +1051,11 @@ static int connection_write_ready(chttpx_runtime_t* runtime, chttpx_connection_t
     return 0;
 }
 
+/**
+ * Apply worker results and close finished connections.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void drain_completions(chttpx_runtime_t* runtime)
 {
     chttpx_connection_t* connection = completion_take_all(runtime);
@@ -870,20 +1063,16 @@ static void drain_completions(chttpx_runtime_t* runtime)
     {
         chttpx_connection_t* next = connection->completion_next;
         connection->completion_next = NULL;
-        if (runtime_is_stopping(runtime) || connection->worker_result != cHTTPX_OK || !connection->write_buffer)
-            connection_close(runtime, connection);
-        else
-        {
-            connection->state = CHTTPX_CONN_WRITING;
-            connection->write_offset = 0;
-            connection_touch(connection);
-            if (_chttpx_event_add(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
-                connection_close(runtime, connection);
-        }
+        connection_close(runtime, connection);
         connection = next;
     }
 }
 
+/**
+ * Accept new clients until the server limit is reached.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void accept_connections(chttpx_runtime_t* runtime)
 {
     chttpx_serv_t* server = runtime->server;
@@ -907,11 +1096,6 @@ static void accept_connections(chttpx_runtime_t* runtime)
 
         if (runtime_is_stopping(runtime) || __atomic_load_n(&server->current_clients, __ATOMIC_SEQ_CST) >= server->max_clients)
         {
-            if (!server->tls.enabled)
-            {
-                static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                send(fd, busy, (int)(sizeof(busy) - 1), 0);
-            }
             _chttpx_metrics_connection_rejected(server);
             chttpx_close(fd);
             continue;
@@ -950,26 +1134,34 @@ static void accept_connections(chttpx_runtime_t* runtime)
             continue;
         }
 
-        uint32_t interest = CHTTPX_EVENT_READ;
-        if (server->tls.enabled)
+        if (!server->tls.enabled)
         {
-            int step = _chttpx_tls_accept_step(connection->tls_session);
-            if (step == cHTTPX_OK)
-                connection->state = CHTTPX_CONN_READING_HEADERS;
-            else if (step == CHTTPX_IO_WANT_READ)
-                interest = CHTTPX_EVENT_READ;
-            else if (step == CHTTPX_IO_WANT_WRITE)
-                interest = CHTTPX_EVENT_WRITE;
-            else
-            {
-                _chttpx_metrics_connection_rejected(server);
-                _chttpx_tls_log_error(server, "-", "TLS handshake failed");
+            connection->state = CHTTPX_CONN_HTTP2_READY;
+            if (_chttpx_event_add(runtime->event_loop, fd, CHTTPX_EVENT_READ, connection) != 0)
                 connection_close(runtime, connection);
-                continue;
-            }
+            continue;
         }
+
+        uint32_t interest = CHTTPX_EVENT_READ;
+        int step = _chttpx_tls_accept_step(connection->tls_session);
+        if (step == cHTTPX_OK)
+        {
+            connection->state = CHTTPX_CONN_HTTP2_READY;
+            if (_chttpx_event_add(runtime->event_loop, fd, CHTTPX_EVENT_READ, connection) != 0)
+                connection_close(runtime, connection);
+            continue;
+        }
+        if (step == CHTTPX_IO_WANT_READ)
+            interest = CHTTPX_EVENT_READ;
+        else if (step == CHTTPX_IO_WANT_WRITE)
+            interest = CHTTPX_EVENT_WRITE;
         else
-            connection->state = CHTTPX_CONN_READING_HEADERS;
+        {
+            _chttpx_metrics_connection_rejected(server);
+            _chttpx_tls_log_error(server, "-", "TLS handshake failed");
+            connection_close(runtime, connection);
+            continue;
+        }
 
         if (_chttpx_event_add(runtime->event_loop, fd, interest, connection) != 0)
         {
@@ -979,6 +1171,11 @@ static void accept_connections(chttpx_runtime_t* runtime)
     }
 }
 
+/**
+ * Close idle connections that exceeded configured timeouts.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void scan_timeouts(chttpx_runtime_t* runtime)
 {
     uint64_t now = monotonic_ms();
@@ -1001,6 +1198,11 @@ static void scan_timeouts(chttpx_runtime_t* runtime)
     }
 }
 
+/**
+ * Stop accepting and close active connections during shutdown.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ */
 static void begin_shutdown(chttpx_runtime_t* runtime)
 {
     if (runtime->shutdown_started)
@@ -1022,6 +1224,12 @@ static void begin_shutdown(chttpx_runtime_t* runtime)
     }
 }
 
+/**
+ * Create event loop and worker pool for a server.
+ *
+ * @param server Server instance.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_runtime_init(chttpx_serv_t* server)
 {
     if (!server || !socket_valid(server->server_fd) || server->max_clients == 0)
@@ -1060,6 +1268,11 @@ error:
     return cHTTPX_ERR_IO;
 }
 
+/**
+ * Run the accept/read/write event loop until stop is requested.
+ *
+ * @param server Server instance.
+ */
 void _chttpx_runtime_listen(chttpx_serv_t* server)
 {
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;
@@ -1103,6 +1316,8 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
             int alive = 1;
             if (connection->state == CHTTPX_CONN_TLS)
                 alive = connection_tls_step(runtime, connection);
+            else if (connection->state == CHTTPX_CONN_HTTP2_READY)
+                alive = connection_submit(runtime, connection);
             else if (connection->state == CHTTPX_CONN_READING_HEADERS || connection->state == CHTTPX_CONN_READING_BODY)
                 alive = connection_read_ready(runtime, connection);
             else if (connection->state == CHTTPX_CONN_WRITING)
@@ -1119,6 +1334,13 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
     drain_completions(runtime);
 }
 
+/**
+ * Copy worker pool statistics for a server.
+ *
+ * @param server Server instance.
+ * @param stats Output buffer receiving worker statistics.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_runtime_worker_stats(chttpx_serv_t* server, chttpx_worker_stats_t* stats)
 {
     if (!server || !stats)
@@ -1132,6 +1354,11 @@ int _chttpx_runtime_worker_stats(chttpx_serv_t* server, chttpx_worker_stats_t* s
     return cHTTPX_OK;
 }
 
+/**
+ * Request graceful runtime shutdown.
+ *
+ * @param server Server instance.
+ */
 void _chttpx_runtime_request_stop(chttpx_serv_t* server)
 {
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;
@@ -1142,6 +1369,11 @@ void _chttpx_runtime_request_stop(chttpx_serv_t* server)
     _chttpx_event_wake(runtime->event_loop);
 }
 
+/**
+ * Tear down runtime resources after listen returns.
+ *
+ * @param server Server instance.
+ */
 void _chttpx_runtime_cleanup(chttpx_serv_t* server)
 {
     chttpx_runtime_t* runtime = server ? server->runtime_state : NULL;

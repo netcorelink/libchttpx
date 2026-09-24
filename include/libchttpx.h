@@ -513,7 +513,7 @@ extern "C"
         /* User-Agent */
         char user_agent[512];
 
-        /* HTTP/1.1 HTTP/2 ... */
+        /* HTTP protocol negotiated for this request. */
         char protocol[16];
 
         /* Client IP REQuest */
@@ -703,16 +703,13 @@ extern "C"
      * Parse and validate a JSON request body.
      *
      * Parsed strings and arrays are request-owned. On failure this function
-     *
      * creates a safe JSON 400 response in res.
      *
      * @param req Current HTTP request.
-     * @param res Response populated when binding
-     * fails.
+     * @param res Response populated when binding fails.
      * @param fields Field definitions and output targets.
      * @param field_count Number of field definitions.
-     * @return 1 on
-     * success, 0 on parsing or validation failure.
+     * @return 1 on success, 0 on parsing or validation failure.
      */
     int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
 
@@ -730,11 +727,8 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for a string field.
  */
-#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL                                         \
-    }
+#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator) \
+    (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL}
 
 /**
  * Macro to define an integer field for JSON request validation.
@@ -746,11 +740,8 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for an integer field.
  */
-#define chttpx_validation_integer(name, ptr, required)                                                                                               \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                      \
-    }
+#define chttpx_validation_integer(name, ptr, required) \
+    (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL}
 
 /**
  * Macro to define a boolean field for JSON request validation.
@@ -762,20 +753,25 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for a boolean field.
  */
-#define chttpx_validation_boolean(name, ptr, required)                                                                                               \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                        \
-    }
+#define chttpx_validation_boolean(name, ptr, required) \
+    (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL}
 
-#define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, VALIDATOR_NONE, 0, normalizers, validator                                         \
-    }
+/**
+ * Define a string JSON field with normalizers and a custom validator.
+ *
+ * @param name Field name in the JSON body.
+ * @param ptr Pointer to the target string variable.
+ * @param required Non-zero when the field is required.
+ * @param min_length Minimum string length (0 for none).
+ * @param max_length Maximum string length (0 for none).
+ * @param normalizers Bitmask of chttpx_normalizer_t flags.
+ * @param validator Optional custom validator callback.
+ * @return Initialized chttpx_validation_t entry.
+ */
+#define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator) \
+    (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, VALIDATOR_NONE, 0, normalizers, validator}
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 
@@ -1366,22 +1362,36 @@ extern "C"
     /** Create a router bound to one App-managed server. */
     chttpx_router_t cHTTPX_RoutePathPrefix(chttpx_serv_t* server, const char* prefix);
 
+    /** Register a route with an explicit HTTP method on a router. */
     void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler);
 
+    /** Register a GET handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Get(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a POST handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Post(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a PUT handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Put(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a PATCH handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Patch(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a DELETE handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Delete(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register an OPTIONS handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Options(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
 
+    /** Create a nested router that shares middleware with its parent. */
     chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* prefix);
 
+    /** Attach middleware that runs before handlers on this router. @return cHTTPX_OK on success. */
     int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware);
+    /** Attach middleware that runs after handlers on this router. @return cHTTPX_OK on success. */
     int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware);
+    /** Attach middleware that runs before this route's handler. @return cHTTPX_OK on success. */
     int cHTTPX_RouteUse(chttpx_route_t* route, chttpx_middleware_t middleware);
+    /** Attach middleware that runs after this route's handler. @return cHTTPX_OK on success. */
     int cHTTPX_RouteUseAfter(chttpx_route_t* route, chttpx_middleware_t middleware);
+    /** Set upload constraints for one route. @return cHTTPX_OK on success. */
     int cHTTPX_RouteUploadPolicy(chttpx_route_t* route, const chttpx_upload_policy_t* policy);
+    /** Release router-owned resources (normally unused with App-managed servers). */
     void cHTTPX_RouterFree(chttpx_router_t* router);
 
     /** Configure logging for one App-managed component. */
@@ -1399,12 +1409,8 @@ extern "C"
      * The provider allocates *output with malloc-compatible ownership. The
      * library owns that buffer after a successful compression operation.
      */
-    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input,
-                                                size_t input_size,
-                                                int level,
-                                                unsigned char** output,
-                                                size_t* output_size,
-                                                void* user_data);
+    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input, size_t input_size, int level,
+                                                unsigned char** output, size_t* output_size, void* user_data);
 
     typedef struct
     {
@@ -1601,9 +1607,14 @@ extern "C"
      *
      * ca_file == NULL uses the system trust store. Client certificate/key
      * fields are optional and enable mutual TLS when both are provided.
+     *
+     * @param app Application runtime.
+     * @param name Logical name used with cHTTPX_Call().
+     * @param base_url Remote base URL (http:// or https://).
+     * @param tls_config Client TLS options; may be NULL for defaults.
+     * @return cHTTPX_OK on success or a negative error code.
      */
-    int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url,
-                           const chttpx_tls_client_config_t* tls_config);
+    int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url, const chttpx_tls_client_config_t* tls_config);
 
     /** Start every local server in the App in its own listener thread. */
     int cHTTPX_AppStart(chttpx_app_t* app);
@@ -1736,7 +1747,6 @@ extern "C"
     int cHTTPX_ParamBool(chttpx_request_t* req, const char* name, bool* value);
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

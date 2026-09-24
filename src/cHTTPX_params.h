@@ -17,24 +17,44 @@ extern "C"
 
     /**
      * Get a route parameter value by its name.
-     * @param req  Pointer to the current HTTP request structure.
-     * @param name Name of the route parameter (e.g., "uuid").
      *
-     * @return Pointer to the parameter value string if found, or NULL if the parameter does not exist.
+     * @param req Pointer to the current HTTP request structure.
+     * @param name Name of the route parameter (e.g., "uuid").
+     * @return Pointer to the parameter value string if found, or NULL if absent.
      */
     const char* cHTTPX_Param(chttpx_request_t* req, const char* name);
 
-    /** Parse a route parameter as an integer. Returns 1 on success, otherwise 0. */
+    /**
+     * Parse a route parameter as a signed integer.
+     *
+     * @param req Current HTTP request.
+     * @param name Route parameter name.
+     * @param value Output integer on success.
+     * @return 1 on success, otherwise 0.
+     */
     int cHTTPX_ParamInt(chttpx_request_t* req, const char* name, int* value);
 
-    /** Parse a route parameter as an unsigned 64-bit integer. Returns 1 on success, otherwise 0. */
+    /**
+     * Parse a route parameter as an unsigned 64-bit integer.
+     *
+     * @param req Current HTTP request.
+     * @param name Route parameter name.
+     * @param value Output value on success.
+     * @return 1 on success, otherwise 0.
+     */
     int cHTTPX_ParamU64(chttpx_request_t* req, const char* name, uint64_t* value);
 
-    /** Parse a route parameter as a boolean. Returns 1 on success, otherwise 0. */
+    /**
+     * Parse a route parameter as a boolean (true/false/1/0).
+     *
+     * @param req Current HTTP request.
+     * @param name Route parameter name.
+     * @param value Output boolean on success.
+     * @return 1 on success, otherwise 0.
+     */
     int cHTTPX_ParamBool(chttpx_request_t* req, const char* name, bool* value);
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

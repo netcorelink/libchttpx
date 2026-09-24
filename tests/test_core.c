@@ -8,12 +8,14 @@
 
 static int cleanup_calls;
 
+/** @param value Pointer to an int; value is summed into cleanup_calls before free. */
 static void count_cleanup(void* value)
 {
     cleanup_calls += *(int*)value;
     free(value);
 }
 
+/** Custom validator used by test_bind_and_json; accepts only "valid_user". */
 static bool username_validator(const void* value, char* error, size_t error_size)
 {
     if (strcmp(value, "valid_user") == 0)
@@ -22,6 +24,7 @@ static bool username_validator(const void* value, char* error, size_t error_size
     return false;
 }
 
+/** No-op middleware that always continues the chain. */
 static chttpx_middleware_result_t middleware(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -29,12 +32,14 @@ static chttpx_middleware_result_t middleware(chttpx_request_t* req, chttpx_respo
     return next;
 }
 
+/** Returns HTTP 204 No Content. */
 static void handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResNoContent();
 }
 
+/** Verifies alloc, defer, context, and cleanup callback ordering. */
 static void test_request_lifecycle(void)
 {
     cleanup_calls = 0;
@@ -55,6 +60,7 @@ static void test_request_lifecycle(void)
     assert(cleanup_calls == 5);
 }
 
+/** Stresses context and defer registries beyond initial hash capacity. */
 static void test_request_internal_indexes(void)
 {
     chttpx_request_t req = {0};
@@ -96,6 +102,7 @@ static void test_request_internal_indexes(void)
     cHTTPX_RequestCleanup(&req);
 }
 
+/** Covers route params, query parsing, and typed query accessors. */
 static void test_typed_values(void)
 {
     chttpx_request_t req = {0};
@@ -123,6 +130,7 @@ static void test_typed_values(void)
     free(req.query);
 }
 
+/** Covers BindJSON, JsonObject, and JSON escaping in responses. */
 static void test_bind_and_json(void)
 {
     chttpx_request_t req = {0};
@@ -151,6 +159,7 @@ static void test_bind_and_json(void)
     cHTTPX_RequestCleanup(&req);
 }
 
+/** Parses a small in-memory multipart form and temp file lifecycle. */
 static void test_multipart(void)
 {
     chttpx_request_t req = {0};
@@ -175,11 +184,11 @@ static void test_multipart(void)
     assert(fopen(path, "rb") == NULL);
 }
 
-
+/** Ensures header parsing stops at the header/body boundary. */
 static void test_header_boundary(void)
 {
     chttpx_request_t req = {0};
-    char request[] = "POST /body HTTP/1.1\r\n"
+    char request[] = "POST /body HTTP/2\r\n"
                      "Host: localhost\r\n"
                      "Content-Length: 13\r\n\r\n"
                      "Fake: header\r\n";
@@ -191,6 +200,7 @@ static void test_header_boundary(void)
     assert(cHTTPX_HeaderGet(&req, "Fake") == NULL);
 }
 
+/** Rejects duplicate Content-Length and unsupported Transfer-Encoding on body parse. */
 static void test_request_framing(void)
 {
     chttpx_serv_t server = {0};
@@ -205,7 +215,7 @@ static void test_request_framing(void)
     strcpy(req.headers[1].name, "Content-Length");
     strcpy(req.headers[1].value, "6");
     req.headers_count = 2;
-    char request[] = "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
+    char request[] = "POST / HTTP/2\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
     _parse_req_body(&req, 0, request, strlen(request));
     assert(req._parse_status == cHTTPX_StatusBadRequest);
 
@@ -220,6 +230,7 @@ static void test_request_framing(void)
 
 }
 
+/** Chunked raw octet-stream upload via disk-backed stream. */
 static void test_streamed_raw_chunked_upload(void)
 {
     chttpx_serv_t server = {0};
@@ -235,7 +246,7 @@ static void test_streamed_raw_chunked_upload(void)
     strcpy(req.headers[1].value, "chunked");
     req.headers_count = 2;
 
-    char request[] = "POST /upload HTTP/1.1\r\n"
+    char request[] = "POST /upload HTTP/2\r\n"
                      "Content-Type: application/octet-stream\r\n"
                      "Transfer-Encoding: chunked\r\n\r\n"
                      "8\r\nRAW-DATA\r\n0\r\n\r\n";
@@ -264,6 +275,7 @@ static void test_streamed_raw_chunked_upload(void)
     assert(fopen(path, "rb") == NULL);
 }
 
+/** Multipart upload with Content-Length and chunked framing. */
 static void test_streamed_multipart(void)
 {
     chttpx_serv_t server = {0};
@@ -281,7 +293,7 @@ static void test_streamed_multipart(void)
     char request[2048];
     int body_size = (int)strlen(body);
     int request_size = snprintf(request, sizeof(request),
-                                "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                                "POST /upload HTTP/2\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
                                 "Content-Length: %d\r\n\r\n%s",
                                 body_size, body);
     assert(request_size > 0 && (size_t)request_size < sizeof(request));
@@ -314,7 +326,7 @@ static void test_streamed_multipart(void)
     assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
 
     request_size = snprintf(request, sizeof(request),
-                            "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                            "POST /upload HTTP/2\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
                             "Transfer-Encoding: chunked\r\n\r\n%s",
                             chunked_body);
     assert(request_size > 0 && (size_t)request_size < sizeof(request));
@@ -341,6 +353,7 @@ static void test_streamed_multipart(void)
     cHTTPX_RequestCleanup(&req);
 }
 
+/** Frees routes registered on a stack-allocated test server. */
 static void free_test_routes(chttpx_serv_t* server)
 {
     for (size_t i = 0; i < server->routes_count; i++)
@@ -364,6 +377,7 @@ static void free_test_routes(chttpx_serv_t* server)
     server->routes_capacity = 0;
 }
 
+/** Router groups, middleware stacks, and upload policy snapshotting. */
 static void test_routing_api(void)
 {
     chttpx_serv_t server = {0};
@@ -397,6 +411,7 @@ static void test_routing_api(void)
 
     free_test_routes(&server);
 }
+/** Status reasons, MIME helpers, Bearer token, and ResMessage escaping. */
 static void test_helpers(void)
 {
     assert(strcmp(cHTTPX_StatusReason(404), "Not Found") == 0);
@@ -412,6 +427,7 @@ static void test_helpers(void)
     cHTTPX_ResponseCleanup(&response);
 }
 
+/** Runs core unit tests for request parsing, binding, and routing helpers. */
 int main(void)
 {
     test_request_lifecycle();

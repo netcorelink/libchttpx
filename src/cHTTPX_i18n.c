@@ -36,6 +36,13 @@
 
 static i18n_manager_t* i18n_manager = NULL;
 
+/**
+ * Load one locale JSON file into an i18n_locale_t structure.
+ *
+ * @param path Path to the JSON file.
+ * @param locale Locale code derived from the file name.
+ * @return Populated locale (empty on failure).
+ */
 static i18n_locale_t load_locale_file(const char* path, const char* locale)
 {
     i18n_locale_t loc;
@@ -130,6 +137,9 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
     return loc;
 }
 
+/**
+ * Free the global i18n manager (registered with atexit).
+ */
 static void i18n_shutdown(void)
 {
     if (!i18n_manager)
@@ -163,10 +173,7 @@ static void i18n_shutdown(void)
  *
  * The memory is automatically freed when the program ends.
  *
- * @param directory The path to the directory with locale JSON files.
- *
- * Example:
- *   cHTTPX_i18n("public");
+ * @param directory Path to the directory with locale JSON files.
  */
 void cHTTPX_i18n(const char* directory)
 {
@@ -230,13 +237,9 @@ void cHTTPX_i18n(const char* directory)
  * The function does not allocate memory — the returned string
  * belongs to the i18n manager.
  *
- * @param key  Translation key (for example: "welcome").
+ * @param key Translation key (for example: "welcome").
  * @param lang Language code ("en", "ru", NULL for default).
- *
- * @return The translation string or key if the translation is not found.
- *
- * Example:
- *   const char* text = cHTTPX_i18n_t("welcome", "ru");
+ * @return Translation string, or key if not found.
  */
 const char* cHTTPX_i18n_t(const char* key, const char* lang)
 {
@@ -268,6 +271,15 @@ const char* cHTTPX_i18n_t(const char* key, const char* lang)
     return key;
 }
 
+/**
+ * Configure the language preference list used for request negotiation.
+ *
+ * @param server Initialized HTTP server.
+ * @param languages Ordered array of supported language codes.
+ * @param count Number of elements in languages.
+ * @param fallback Fallback language code.
+ * @return cHTTPX_OK on success, otherwise a negative error code.
+ */
 int cHTTPX_i18n_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
 {
     if (!server || !server->initialized)
@@ -282,6 +294,7 @@ const char* LANGUAGE_CODES[LANG_COUNT] = {
     "fr"  // LANG_FR
 };
 
+/** @copydoc i18n_lang_from_string */
 i18n_language_t i18n_lang_from_string(const char* code)
 {
     if (!code)

@@ -30,14 +30,14 @@ extern "C"
 #define MAX_HEADER_NAME 128
 #define MAX_HEADER_VALUE 4096
 
-    /* Header structure */
+    /** One HTTP request header name/value pair (fixed-size storage). */
     typedef struct
     {
         char name[MAX_HEADER_NAME];
         char value[MAX_HEADER_VALUE];
     } chttpx_header_t;
 
-    /* Query structure */
+    /** Parsed query-string name/value pair (heap strings). */
     typedef struct
     {
         char* name;
@@ -48,7 +48,7 @@ extern "C"
 #define MAX_PARAM_NAME 128
 #define MAX_PARAM_VALUE 1024
 
-    /* Param structure */
+    /** Route template parameter extracted from the request path. */
     typedef struct
     {
         char name[MAX_PARAM_NAME];
@@ -57,7 +57,7 @@ extern "C"
 
 #define MAX_COOKIES 64
 
-    /* Cookie structure */
+    /** Parsed Cookie header entry. */
     typedef struct
     {
         char* name;
@@ -75,7 +75,7 @@ extern "C"
         int same_site;
     } chttpx_cookie_t;
 
-    /* Validation structs */
+    /** JSON field type used by cHTTPX_Parse / cHTTPX_Validate. */
     typedef enum
     {
         FIELD_STRING,
@@ -85,18 +85,21 @@ extern "C"
         FIELD_NUMBER_ARRAY
     } validation_t;
 
+    /** Parsed JSON array of strings (request-owned items). */
     typedef struct
     {
         char** items;
         size_t count;
     } chttpx_string_array_t;
 
+    /** Parsed JSON array of numbers (request-owned items). */
     typedef struct
     {
         int* items;
         size_t count;
     } chttpx_number_array_t;
 
+    /** Built-in string validator kind for chttpx_validation_t. */
     typedef enum
     {
         VALIDATOR_NONE,
@@ -105,8 +108,10 @@ extern "C"
         VALIDATOR_URL,
     } validator_type_t;
 
+    /** Optional application validator invoked during cHTTPX_Validate. */
     typedef bool (*chttpx_custom_validator_t)(const void* value, char* error, size_t error_size);
 
+    /** Bit flags for normalizing parsed string fields. */
     typedef enum
     {
         cHTTPX_NORMALIZE_NONE = 0,
@@ -122,6 +127,7 @@ extern "C"
 #define CHTTPX_UPPERCASE cHTTPX_UPPERCASE
 #endif
 
+    /** One field binding for JSON parse and validate helpers. */
     typedef struct
     {
         const char* name;
@@ -150,11 +156,13 @@ extern "C"
         chttpx_custom_validator_t custom_validator;
     } chttpx_validation_t;
 
-    /* Function for free REQuest context */
+    /** Callback that releases a named request context value. */
     typedef void (*chttpx_context_free_fn)(void*);
 
+    /** Callback registered with cHTTPX_Defer for automatic cleanup. */
     typedef void (*chttpx_cleanup_fn)(void*);
 
+    /** Uploaded file metadata tracked on the request. */
     typedef struct
     {
         const char* path;
@@ -165,9 +173,10 @@ extern "C"
         const char* field_name;
     } chttpx_file_t;
 
+    /** Chunk callback used by cHTTPX_OnBodyChunk. */
     typedef int (*chttpx_body_chunk_fn)(const unsigned char* data, size_t size, void* user_data);
 
-    // REQuest
+    /** Per-request HTTP state populated by the server parser. */
     typedef struct
     {
         char* method;
@@ -189,7 +198,7 @@ extern "C"
         /* User-Agent */
         char user_agent[512];
 
-        /* HTTP/1.1 HTTP/2 ... */
+        /* HTTP protocol negotiated for this request. */
         char protocol[16];
 
         /* Client IP REQuest */
@@ -379,16 +388,13 @@ extern "C"
      * Parse and validate a JSON request body.
      *
      * Parsed strings and arrays are request-owned. On failure this function
-     *
      * creates a safe JSON 400 response in res.
      *
      * @param req Current HTTP request.
-     * @param res Response populated when binding
-     * fails.
+     * @param res Response populated when binding fails.
      * @param fields Field definitions and output targets.
      * @param field_count Number of field definitions.
-     * @return 1 on
-     * success, 0 on parsing or validation failure.
+     * @return 1 on success, 0 on parsing or validation failure.
      */
     int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
 
@@ -451,7 +457,6 @@ extern "C"
     }
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

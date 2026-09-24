@@ -21,6 +21,14 @@
 
 #include <errno.h>
 
+/**
+ * Default stderr logger used when none is configured.
+ *
+ * @param level Maximum severity level to emit.
+ * @param request_id Request correlation id for logging.
+ * @param message Log message text.
+ * @param user_data Unused logger user data for the default logger.
+ */
 static void default_logger(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data)
 {
     (void)user_data;
@@ -30,6 +38,11 @@ static void default_logger(chttpx_log_level_t level, const char* request_id, con
     fprintf(stderr, "[%s] request_id=%s %s\n", names[level], request_id && *request_id ? request_id : "-", message ? message : "");
 }
 
+/**
+ * Sleep the current thread for a number of milliseconds.
+ *
+ * @param milliseconds Number of milliseconds to sleep.
+ */
 static void server_sleep_ms(unsigned int milliseconds)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -39,6 +52,12 @@ static void server_sleep_ms(unsigned int milliseconds)
 #endif
 }
 
+/**
+ * Return whether a server socket handle is open.
+ *
+ * @param fd Socket descriptor.
+ * @return True when the descriptor refers to an open socket.
+ */
 static bool socket_valid(chttpx_socket_t fd)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -48,6 +67,11 @@ static bool socket_valid(chttpx_socket_t fd)
 #endif
 }
 
+/**
+ * Mark the listening socket as closed.
+ *
+ * @param server Server instance.
+ */
 static void invalidate_socket(chttpx_serv_t* server)
 {
 #ifdef CHTTPX_PLATFORM_WINDOWS
@@ -57,6 +81,11 @@ static void invalidate_socket(chttpx_serv_t* server)
 #endif
 }
 
+/**
+ * Free owned language strings on a server.
+ *
+ * @param server Server instance.
+ */
 static void free_server_languages(chttpx_serv_t* server)
 {
     if (!server)
@@ -72,6 +101,15 @@ static void free_server_languages(chttpx_serv_t* server)
     server->default_language = NULL;
 }
 
+/**
+ * Replace configured response languages for a server.
+ *
+ * @param server Server instance.
+ * @param languages Preferred language tags in priority order.
+ * @param count Number of language tags supplied.
+ * @param fallback Language tag used when no preference matches.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, size_t count, const char* fallback)
 {
     if (!server || !fallback || (count > 0 && !languages))
@@ -115,6 +153,11 @@ int _chttpx_server_set_languages(chttpx_serv_t* server, const char** languages, 
     return cHTTPX_OK;
 }
 
+/**
+ * Release owned upload policy strings on a route.
+ *
+ * @param registered Registered route entry to modify.
+ */
 static void free_route_upload_policy(chttpx_route_t* registered)
 {
     if (!registered || !registered->has_upload_policy)
@@ -127,6 +170,11 @@ static void free_route_upload_policy(chttpx_route_t* registered)
     registered->has_upload_policy = false;
 }
 
+/**
+ * Return a server configuration populated with library defaults.
+ *
+ * @return Default listen port, limits, and timeout values.
+ */
 chttpx_config_t cHTTPX_DefaultConfig(void)
 {
     return (chttpx_config_t){.port = 8080,
@@ -144,6 +192,15 @@ chttpx_config_t cHTTPX_DefaultConfig(void)
                              .log_level = cHTTPX_LOG_INFO};
 }
 
+/**
+ * Initialize server fields, socket, TLS, metrics, and runtime.
+ *
+ * @param server Server instance.
+ * @param app Application instance.
+ * @param name Unique server name within the owning application.
+ * @param config Server listen and resource limit configuration.
+ * @return Zero on success or a negative error code.
+ */
 int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const char* name, const chttpx_config_t* config)
 {
     if (!server || !app || !name || !*name || !config || config->max_clients == 0 ||
@@ -329,6 +386,15 @@ socket_error:
     return cHTTPX_ERR_SOCKET;
 }
 
+/**
+ * Allocate and register one route on a server.
+ *
+ * @param router Route table receiving registrations.
+ * @param method HTTP method name.
+ * @param path Request path or route pattern.
+ * @param handler Request handler callback.
+ * @return Registered route entry, or NULL on allocation failure.
+ */
 static chttpx_route_t* route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
     chttpx_serv_t* server = router ? router->serv : NULL;
@@ -372,6 +438,13 @@ static chttpx_route_t* route(chttpx_router_t* router, const char* method, const 
     return registered;
 }
 
+/**
+ * Build a router scoped to a path prefix.
+ *
+ * @param server Server instance.
+ * @param prefix Route path prefix for grouped registration.
+ * @return Router bound to the server and prefix, zeroed when the server is invalid.
+ */
 chttpx_router_t cHTTPX_RoutePathPrefix(chttpx_serv_t* server, const char* prefix)
 {
     chttpx_router_t router;
@@ -384,6 +457,14 @@ chttpx_router_t cHTTPX_RoutePathPrefix(chttpx_serv_t* server, const char* prefix
     return router;
 }
 
+/**
+ * Register a handler on a router.
+ *
+ * @param router Route table receiving registrations.
+ * @param method HTTP method name.
+ * @param path Request path or route pattern.
+ * @param handler Request handler callback.
+ */
 void cHTTPX_RegisterRoute(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
     if (!router || !router->serv || !method || !path || !handler)
@@ -396,6 +477,15 @@ void cHTTPX_RegisterRoute(chttpx_router_t* router, const char* method, const cha
     route(router, method, full_path, handler);
 }
 
+/**
+ * Register a route using a router prefix.
+ *
+ * @param router Route table receiving registrations.
+ * @param method HTTP method name.
+ * @param path Request path or route pattern.
+ * @param handler Request handler callback.
+ * @return Registered route entry, or NULL when registration fails.
+ */
 static chttpx_route_t* register_route(chttpx_router_t* router, const char* method, const char* path, chttpx_handler_t handler)
 {
     if (!router || !router->serv || !method || !path || !handler)
@@ -421,6 +511,13 @@ CHTTPX_ROUTE_HELPER(cHTTPX_Patch, cHTTPX_MethodPatch)
 CHTTPX_ROUTE_HELPER(cHTTPX_Delete, cHTTPX_MethodDelete)
 CHTTPX_ROUTE_HELPER(cHTTPX_Options, cHTTPX_MethodOptions)
 
+/**
+ * Derive a child router with an additional prefix.
+ *
+ * @param parent Router whose server and middleware are inherited.
+ * @param prefix Additional path prefix appended to the parent router.
+ * @return Child router sharing the parent server and middleware stack.
+ */
 chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* prefix)
 {
     chttpx_router_t group;
@@ -437,6 +534,13 @@ chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* pre
     return group;
 }
 
+/**
+ * Append a before-handler middleware to a router.
+ *
+ * @param router Route table receiving registrations.
+ * @param middleware Middleware callback to attach.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware)
 {
     if (!router || !middleware || router->middleware_count >= MAX_MIDDLEWARES)
@@ -445,6 +549,13 @@ int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware)
     return cHTTPX_OK;
 }
 
+/**
+ * Append an after-handler middleware to a router.
+ *
+ * @param router Route table receiving registrations.
+ * @param middleware Middleware callback to attach.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware)
 {
     if (!router || !middleware || router->after_middleware_count >= MAX_MIDDLEWARES)
@@ -453,6 +564,13 @@ int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middlewar
     return cHTTPX_OK;
 }
 
+/**
+ * Append a before-handler middleware to one route.
+ *
+ * @param registered Registered route entry to modify.
+ * @param middleware Middleware callback to attach.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_RouteUse(chttpx_route_t* registered, chttpx_middleware_t middleware)
 {
     if (!registered || !middleware || registered->middleware_count >= MAX_MIDDLEWARES)
@@ -461,6 +579,13 @@ int cHTTPX_RouteUse(chttpx_route_t* registered, chttpx_middleware_t middleware)
     return cHTTPX_OK;
 }
 
+/**
+ * Append an after-handler middleware to one route.
+ *
+ * @param registered Registered route entry to modify.
+ * @param middleware Middleware callback to attach.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_RouteUseAfter(chttpx_route_t* registered, chttpx_middleware_t middleware)
 {
     if (!registered || !middleware || registered->after_middleware_count >= MAX_MIDDLEWARES)
@@ -469,6 +594,13 @@ int cHTTPX_RouteUseAfter(chttpx_route_t* registered, chttpx_middleware_t middlew
     return cHTTPX_OK;
 }
 
+/**
+ * Attach upload size/type policy to a route.
+ *
+ * @param registered Registered route entry to modify.
+ * @param policy Upload size and allowed content-type policy to copy onto the route.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_policy_t* policy)
 {
     if (!registered || !policy || (policy->allowed_types_count > 0 && !policy->allowed_types))
@@ -505,12 +637,25 @@ int cHTTPX_RouteUploadPolicy(chttpx_route_t* registered, const chttpx_upload_pol
     return cHTTPX_OK;
 }
 
+/**
+ * Clear a stack-allocated router.
+ *
+ * @param router Route table receiving registrations.
+ */
 void cHTTPX_RouterFree(chttpx_router_t* router)
 {
     if (router)
         memset(router, 0, sizeof(*router));
 }
 
+/**
+ * Configure logging callback and level for a server.
+ *
+ * @param server Server instance.
+ * @param logger Logger callback to install.
+ * @param user_data Opaque pointer passed to the logger callback.
+ * @param level Maximum severity level to emit.
+ */
 void cHTTPX_SetLogger(chttpx_serv_t* server, chttpx_logger_fn logger, void* user_data, chttpx_log_level_t level)
 {
     if (!server || !server->initialized)
@@ -521,6 +666,11 @@ void cHTTPX_SetLogger(chttpx_serv_t* server, chttpx_logger_fn logger, void* user
     server->log_level = level;
 }
 
+/**
+ * Enter the runtime listen loop for one server.
+ *
+ * @param server Server instance.
+ */
 void _chttpx_server_listen(chttpx_serv_t* server)
 {
     if (!server || !server->initialized || !socket_valid(server->server_fd))
@@ -534,6 +684,11 @@ void _chttpx_server_listen(chttpx_serv_t* server)
     __atomic_store_n(&server->listening, false, __ATOMIC_RELEASE);
 }
 
+/**
+ * Stop listening and release server-owned resources.
+ *
+ * @param server Server instance.
+ */
 void _chttpx_server_shutdown(chttpx_serv_t* server)
 {
     if (!server || !server->initialized)

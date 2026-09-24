@@ -22,30 +22,24 @@
 
 #include "cHTTPX_websocket.h"
 
-// Beta version
+/* Beta version */
 
+/**
+ * Perform the HTTP Upgrade handshake for WebSocket (legacy API).
+ *
+ * The legacy raw-socket upgrade API cannot identify an HTTP/2 stream. The
+ * symbol is kept for source compatibility and fails explicitly instead of
+ * emitting an invalid connection-level upgrade response.
+ *
+ * @param client_socket Connected client socket.
+ * @param sec_wsocket_key Sec-WebSocket-Key header value.
+ * @return cHTTPX_ERR_UNAVAILABLE.
+ */
 int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key)
 {
-    char accept_key[128] = {0};
-    char buffer[256];
-
-    char key_concat[128];
-    snprintf(key_concat, sizeof(key_concat), "%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", sec_wsocket_key);
-
-    // unsigned char hash[20];
-    // sha1((unsigned char*)key_concat, strlen(key_concat), hash);
-
-    // base64_encode(hash, 20, accept_key);
-
-    int n = snprintf(buffer, sizeof(buffer),
-                     "HTTP/1.1 101 Switching Protocols\r\n"
-                     "Upgrade: websocket\r\n"
-                     "Connection: Upgrade\r\n"
-                     "Sec-WebSocket-Accept: %s\r\n\r\n",
-                     accept_key);
-    send(client_socket, buffer, n, 0);
-
-    return 0;
+    (void)client_socket;
+    (void)sec_wsocket_key;
+    return cHTTPX_ERR_UNAVAILABLE;
 }
 
 // static wsocket_read_frame(chttpx_socket_t client_fd, wsocket_frame_t* out)

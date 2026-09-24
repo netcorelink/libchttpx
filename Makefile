@@ -6,7 +6,7 @@ TAR = $(RELEASE_DIR).tar.gz
 CC = gcc
 CFLAGS = -Wall -Wextra -Wpedantic -O2 -Iinclude -Isrc
 
-# Native TLS is opt-in so plain HTTP builds keep zero OpenSSL dependency.
+# Native TLS is opt-in so cleartext HTTP/2 builds keep zero OpenSSL dependency.
 TLS ?= 0
 TLS_CFLAGS =
 TLS_LDFLAGS =
@@ -30,8 +30,8 @@ PKGDIR ?= /pkg/usr/local
 
 WIN_LIB_DIR = tools
 
-LIN_LDFLAGS = -lcjson -lz $(TLS_LDFLAGS)
-WIN_LDFLAGS = -lws2_32 -lz $(TLS_LDFLAGS)
+LIN_LDFLAGS = -lcjson -lz -lnghttp2 $(TLS_LDFLAGS)
+WIN_LDFLAGS = -lws2_32 -lz -lnghttp2 $(TLS_LDFLAGS)
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize

@@ -4,6 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * libFuzzer entry: feeds arbitrary bytes into _parse_req_headers.
+ *
+ * @param data Fuzz input buffer.
+ * @param size Length of data.
+ * @return Always 0 (no test assertions).
+ */
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
     if (!data || size == 0 || size > 32768)
