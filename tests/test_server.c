@@ -362,11 +362,12 @@ int main(void)
     assert(strstr(response, "HTTP/2 204 No Content") != NULL);
     assert(strcmp(observed_client_ip, "127.0.0.1") == 0);
 
-    exchange(public_port, "GET /events HTTP/2\r\nHost: localhost\r\nX-Request-ID: sse-integration\r\n\r\n", response, sizeof(response));
+    exchange(public_port, "GET /events HTTP/2\r\nHost: localhost\r\nOrigin: https://example.com\r\nX-Request-ID: sse-integration\r\n\r\n", response, sizeof(response));
     assert(strstr(response, "HTTP/2 200 OK") != NULL);
     assert(strstr(response, "content-type: text/event-stream") != NULL);
     assert(strstr(response, "cache-control: no-cache") != NULL);
     assert(strstr(response, "x-accel-buffering: no") != NULL);
+    assert(strstr(response, "access-control-allow-origin: https://example.com") != NULL);
     assert(strstr(response, "content-length:") == NULL);
     assert(strstr(response, "retry: 1500\n\n") != NULL);
     assert(strstr(response, "event: progress\nid: 1\ndata: first\ndata: line\n\n") != NULL);
