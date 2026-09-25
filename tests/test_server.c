@@ -26,6 +26,19 @@ static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "done");
 }
 
+/** Emits a short SSE stream over the real HTTP/2 transport. */
+static void sse_handler(chttpx_request_t* req, chttpx_response_t* res)
+{
+    chttpx_sse_t* sse = cHTTPX_SSEOpen(req, res);
+    assert(sse);
+    assert(cHTTPX_SSEConnected(sse));
+    assert(cHTTPX_SSERetry(sse, 1500) == cHTTPX_OK);
+    assert(cHTTPX_SSESend(sse, "progress", "1", "first\nline") == cHTTPX_OK);
+    assert(cHTTPX_SSEHeartbeat(sse) == cHTTPX_OK);
+    assert(cHTTPX_SSESend(sse, "progress", "2", "done") == cHTTPX_OK);
+    assert(cHTTPX_SSEClose(sse) == cHTTPX_OK);
+}
+
 /** Captures client_ip and returns 204. */
 static void ip_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
@@ -295,6 +308,7 @@ int main(void)
     chttpx_router_t public_router = cHTTPX_RoutePathPrefix(public_api, "");
     assert(cHTTPX_Post(&public_router, "/body", request_handler));
     assert(cHTTPX_Get(&public_router, "/ip", ip_handler));
+    assert(cHTTPX_Get(&public_router, "/events", sse_handler));
     assert(cHTTPX_Options(&public_router, "/body", options_handler));
     assert(cHTTPX_Get(&public_router, "/empty", empty_handler));
     assert(cHTTPX_Post(&public_router, "/proxy", proxy_handler));
@@ -347,6 +361,17 @@ int main(void)
     exchange(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
     assert(strstr(response, "HTTP/2 204 No Content") != NULL);
     assert(strcmp(observed_client_ip, "127.0.0.1") == 0);
+
+    exchange(public_port, "GET /events HTTP/2\r\nHost: localhost\r\nX-Request-ID: sse-integration\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
+    assert(strstr(response, "content-type: text/event-stream") != NULL);
+    assert(strstr(response, "cache-control: no-cache") != NULL);
+    assert(strstr(response, "x-accel-buffering: no") != NULL);
+    assert(strstr(response, "content-length:") == NULL);
+    assert(strstr(response, "retry: 1500\n\n") != NULL);
+    assert(strstr(response, "event: progress\nid: 1\ndata: first\ndata: line\n\n") != NULL);
+    assert(strstr(response, ":\n\n") != NULL);
+    assert(strstr(response, "event: progress\nid: 2\ndata: done\n\n") != NULL);
 
     exchange(public_port,
              "OPTIONS /body HTTP/2\r\nHost: localhost\r\nOrigin: https://example.com\r\nAccess-Control-Request-Method: POST\r\n\r\n",
