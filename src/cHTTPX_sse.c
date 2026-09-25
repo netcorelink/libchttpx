@@ -125,6 +125,27 @@ static int sse_write(chttpx_sse_t* sse, const void* data, size_t size)
     return transport->write(transport->context, data, size);
 }
 
+static const char* sse_allowed_origin(chttpx_serv_t* server, const char* request_origin)
+{
+    if (!server || !server->cors.enabled || !request_origin)
+        return NULL;
+
+    size_t left = 0;
+    size_t right = server->cors.origins_count;
+    while (left < right)
+    {
+        size_t middle = left + (right - left) / 2;
+        int order = strcmp(server->cors.origins[middle], request_origin);
+        if (order == 0)
+            return server->cors.origins[middle];
+        if (order < 0)
+            left = middle + 1;
+        else
+            right = middle;
+    }
+    return NULL;
+}
+
 static int sse_response_header(chttpx_response_t* response, const char* name, const char* value)
 {
     for (size_t i = 0; i < response->headers_count; i++)
@@ -161,6 +182,18 @@ chttpx_sse_t* cHTTPX_SSEOpen(chttpx_request_t* req, chttpx_response_t* res)
     }
 
     if (req->request_id[0] && sse_response_header(res, "X-Request-ID", req->request_id) != cHTTPX_OK)
+    {
+        res->_streaming_response = false;
+        return NULL;
+    }
+
+    chttpx_serv_t* server = req->_server;
+    const char* allowed_origin = sse_allowed_origin(server, cHTTPX_HeaderGet(req, "Origin"));
+    if (allowed_origin &&
+        (sse_response_header(res, "Access-Control-Allow-Origin", allowed_origin) != cHTTPX_OK ||
+         sse_response_header(res, "Access-Control-Allow-Methods", server->cors.methods) != cHTTPX_OK ||
+         sse_response_header(res, "Access-Control-Allow-Headers", server->cors.headers) != cHTTPX_OK ||
+         sse_response_header(res, "Access-Control-Allow-Credentials", "true") != cHTTPX_OK))
     {
         res->_streaming_response = false;
         return NULL;
