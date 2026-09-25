@@ -166,6 +166,8 @@ extern "C"
 #define cHTTPX_CTYPE_CSV "text/csv"
 /* JSON data. Use for REST API responses and requests. */
 #define cHTTPX_CTYPE_JSON "application/json"
+/* Server-Sent Events stream. */
+#define cHTTPX_CTYPE_SSE "text/event-stream"
 /* URL-encoded form data. Typical for HTML form submissions. */
 #define cHTTPX_CTYPE_FORM "application/x-www-form-urlencoded"
 /* Multipart form data. Used for file uploads via forms. */
@@ -491,6 +493,18 @@ extern "C"
 
     typedef int (*chttpx_body_chunk_fn)(const unsigned char* data, size_t size, void* user_data);
 
+    struct chttpx_response;
+
+    /** Internal streaming transport used by long-lived response helpers such as SSE. */
+    typedef struct
+    {
+        void* context;
+        int (*open)(void* context, const struct chttpx_response* response);
+        int (*write)(void* context, const void* data, size_t size);
+        int (*close)(void* context);
+        bool (*connected)(void* context);
+    } chttpx_stream_transport_t;
+
     // REQuest
     typedef struct
     {
@@ -566,6 +580,7 @@ extern "C"
 
         /* Internal transport state. NULL for plain HTTP. */
         void* _tls_session;
+        chttpx_stream_transport_t _stream_transport;
 
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
@@ -835,6 +850,9 @@ extern "C"
         /* Set when response compression must be bypassed. */
         bool compression_disabled;
 
+        /* Internal marker for a response already owned by a streaming transport. */
+        bool _streaming_response;
+
         /* Times for logging */
         struct timespec start_ts;
         struct timespec end_ts;
@@ -930,6 +948,29 @@ extern "C"
      * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
+
+    typedef struct chttpx_sse chttpx_sse_t;
+
+    /** Open a Server-Sent Events stream and send its response headers immediately. */
+    chttpx_sse_t* cHTTPX_SSEOpen(chttpx_request_t* req, chttpx_response_t* res);
+
+    /** Send one SSE event. event and id are optional; data may contain multiple lines. */
+    int cHTTPX_SSESend(chttpx_sse_t* sse, const char* event, const char* id, const char* data);
+
+    /** Send a retry directive in milliseconds. */
+    int cHTTPX_SSERetry(chttpx_sse_t* sse, uint64_t milliseconds);
+
+    /** Send an SSE comment, splitting multiline comments correctly. */
+    int cHTTPX_SSEComment(chttpx_sse_t* sse, const char* comment);
+
+    /** Send an empty SSE comment suitable for keep-alive heartbeats. */
+    int cHTTPX_SSEHeartbeat(chttpx_sse_t* sse);
+
+    /** Return whether the underlying client stream is still writable. */
+    bool cHTTPX_SSEConnected(const chttpx_sse_t* sse);
+
+    /** Gracefully finish the SSE stream. Safe to call more than once. */
+    int cHTTPX_SSEClose(chttpx_sse_t* sse);
 
 #ifdef __cplusplus
     extern
