@@ -176,6 +176,18 @@ extern "C"
     /** Chunk callback used by cHTTPX_OnBodyChunk. */
     typedef int (*chttpx_body_chunk_fn)(const unsigned char* data, size_t size, void* user_data);
 
+    struct chttpx_response;
+
+    /** Internal streaming transport used by long-lived response helpers such as SSE. */
+    typedef struct
+    {
+        void* context;
+        int (*open)(void* context, const struct chttpx_response* response);
+        int (*write)(void* context, const void* data, size_t size);
+        int (*close)(void* context);
+        bool (*connected)(void* context);
+    } chttpx_stream_transport_t;
+
     /** Per-request HTTP state populated by the server parser. */
     typedef struct
     {
@@ -251,6 +263,7 @@ extern "C"
 
         /* Internal transport state. NULL for plain HTTP. */
         void* _tls_session;
+        chttpx_stream_transport_t _stream_transport;
 
         /* Internal request lifecycle state. */
         void* _cleanup_entries;

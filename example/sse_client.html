@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>libchttpx SSE example</title>
+</head>
+<body>
+    <h1>Server-Sent Events</h1>
+    <pre id="events"></pre>
+    <script>
+        const output = document.getElementById("events");
+        const source = new EventSource("http://localhost:8080/events");
+
+        source.addEventListener("progress", (event) => {
+            output.textContent += `#${event.lastEventId} ${event.data}\n`;
+        });
+
+        source.onerror = () => {
+            output.textContent += "connection interrupted; EventSource will retry\n";
+        };
+    </script>
+</body>
+</html>

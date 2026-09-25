@@ -22,6 +22,17 @@
 #define CHTTPX_H2_CALL_TIMEOUT_SEC 30
 #define CHTTPX_H2_MAX_AUTHORITY 512
 
+typedef struct chttpx_h2_server chttpx_h2_server_t;
+
+typedef struct chttpx_h2_sse_chunk
+{
+    unsigned char* data;
+    size_t size;
+    size_t offset;
+    bool completed;
+    struct chttpx_h2_sse_chunk* next;
+} chttpx_h2_sse_chunk_t;
+
 /**
  * Per-stream HTTP/2 request/response state on the server.
  */
@@ -38,23 +49,36 @@ typedef struct chttpx_h2_stream
     size_t body_capacity;
     size_t body_limit;
     bool responded;
+    bool request_ready;
+    bool ready_queued;
+    bool handler_active;
+    bool closed;
+    bool sse_open;
+    bool sse_closing;
+    bool sse_connected;
     int error_status;
     char* response;
     size_t response_size;
     size_t response_body_offset;
     size_t response_body_sent;
+    chttpx_h2_server_t* connection;
+    struct chttpx_h2_stream* ready_next;
+    chttpx_h2_sse_chunk_t* sse_chunks;
+    chttpx_h2_sse_chunk_t* sse_chunks_tail;
 } chttpx_h2_stream_t;
 
 /**
  * Server-side HTTP/2 session bound to one connection.
  */
-typedef struct
+struct chttpx_h2_server
 {
     chttpx_serv_t* server;
     chttpx_socket_t fd;
     void* tls_session;
     nghttp2_session* session;
-} chttpx_h2_server_t;
+    chttpx_h2_stream_t* ready_head;
+    chttpx_h2_stream_t* ready_tail;
+};
 
 /**
  * Client-side HTTP/2 session state for outbound calls.
@@ -152,7 +176,54 @@ static void h2_stream_free(chttpx_h2_stream_t* stream)
         return;
     free(stream->body);
     free(stream->response);
+    chttpx_h2_sse_chunk_t* chunk = stream->sse_chunks;
+    while (chunk)
+    {
+        chttpx_h2_sse_chunk_t* next = chunk->next;
+        free(chunk->data);
+        free(chunk);
+        chunk = next;
+    }
     free(stream);
+}
+
+static void h2_ready_push(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream)
+{
+    if (!connection || !stream || stream->ready_queued)
+        return;
+    stream->ready_queued = true;
+    stream->ready_next = NULL;
+    if (connection->ready_tail)
+        connection->ready_tail->ready_next = stream;
+    else
+        connection->ready_head = stream;
+    connection->ready_tail = stream;
+}
+
+static void h2_ready_remove(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream)
+{
+    if (!connection || !stream || !stream->ready_queued)
+        return;
+
+    chttpx_h2_stream_t* previous = NULL;
+    chttpx_h2_stream_t* current = connection->ready_head;
+    while (current)
+    {
+        if (current == stream)
+        {
+            if (previous)
+                previous->ready_next = current->ready_next;
+            else
+                connection->ready_head = current->ready_next;
+            if (connection->ready_tail == current)
+                connection->ready_tail = previous;
+            current->ready_next = NULL;
+            current->ready_queued = false;
+            return;
+        }
+        previous = current;
+        current = current->ready_next;
+    }
 }
 
 /**
@@ -422,6 +493,217 @@ static ssize_t h2_server_send(nghttp2_session* session, const uint8_t* data, siz
                : NGHTTP2_ERR_CALLBACK_FAILURE;
 }
 
+static void h2_sse_reap_chunks(chttpx_h2_stream_t* stream)
+{
+    while (stream && stream->sse_chunks && stream->sse_chunks->completed)
+    {
+        chttpx_h2_sse_chunk_t* chunk = stream->sse_chunks;
+        stream->sse_chunks = chunk->next;
+        if (!stream->sse_chunks)
+            stream->sse_chunks_tail = NULL;
+        free(chunk->data);
+        free(chunk);
+    }
+}
+
+static ssize_t h2_sse_read(nghttp2_session* session, int32_t stream_id, uint8_t* buf, size_t length, uint32_t* data_flags, nghttp2_data_source* source, void* user_data)
+{
+    (void)session;
+    (void)stream_id;
+    (void)user_data;
+    chttpx_h2_sse_chunk_t* chunk = source ? source->ptr : NULL;
+    if (!chunk || !data_flags)
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+
+    size_t remaining = chunk->size - chunk->offset;
+    size_t take = remaining < length ? remaining : length;
+    if (take)
+        memcpy(buf, chunk->data + chunk->offset, take);
+    chunk->offset += take;
+
+    if (chunk->offset >= chunk->size)
+    {
+        chunk->completed = true;
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+    }
+    return (ssize_t)take;
+}
+
+static int h2_sse_queue(chttpx_h2_stream_t* stream, const void* data, size_t size, uint8_t flags)
+{
+    if (!stream || !stream->connection || !stream->connection->session || stream->closed)
+        return cHTTPX_ERR_STATE;
+
+    chttpx_h2_sse_chunk_t* chunk = calloc(1, sizeof(*chunk));
+    if (!chunk)
+        return cHTTPX_ERR_MEMORY;
+
+    if (size)
+    {
+        chunk->data = malloc(size);
+        if (!chunk->data)
+        {
+            free(chunk);
+            return cHTTPX_ERR_MEMORY;
+        }
+        memcpy(chunk->data, data, size);
+    }
+    chunk->size = size;
+
+    if (stream->sse_chunks_tail)
+        stream->sse_chunks_tail->next = chunk;
+    else
+        stream->sse_chunks = chunk;
+    stream->sse_chunks_tail = chunk;
+
+    nghttp2_data_provider provider = {
+        .source = {.ptr = chunk},
+        .read_callback = h2_sse_read,
+    };
+
+    int rv = nghttp2_submit_data(stream->connection->session, flags, stream->id, &provider);
+    if (rv != 0)
+    {
+        if (stream->sse_chunks == chunk)
+            stream->sse_chunks = NULL;
+        else
+        {
+            chttpx_h2_sse_chunk_t* previous = stream->sse_chunks;
+            while (previous && previous->next != chunk)
+                previous = previous->next;
+            if (previous)
+                previous->next = NULL;
+        }
+        stream->sse_chunks_tail = stream->sse_chunks;
+        while (stream->sse_chunks_tail && stream->sse_chunks_tail->next)
+            stream->sse_chunks_tail = stream->sse_chunks_tail->next;
+        free(chunk->data);
+        free(chunk);
+        stream->sse_connected = false;
+        return cHTTPX_ERR_PROTOCOL;
+    }
+
+    if (nghttp2_session_send(stream->connection->session) != 0)
+    {
+        stream->sse_connected = false;
+        return cHTTPX_ERR_IO;
+    }
+
+    while (!chunk->completed && !stream->closed &&
+           !__atomic_load_n(&stream->connection->server->shutdown_requested, __ATOMIC_ACQUIRE))
+    {
+        unsigned char input[BUFFER_SIZE];
+        int received = _chttpx_io_recv(stream->connection->fd, stream->connection->tls_session, input, sizeof(input));
+        if (received <= 0)
+        {
+            stream->sse_connected = false;
+            return received == cHTTPX_ERR_TIMEOUT ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_IO;
+        }
+
+        size_t offset = 0;
+        while (offset < (size_t)received)
+        {
+            ssize_t consumed = nghttp2_session_mem_recv(stream->connection->session, input + offset, (size_t)received - offset);
+            if (consumed <= 0)
+            {
+                stream->sse_connected = false;
+                return cHTTPX_ERR_PROTOCOL;
+            }
+            offset += (size_t)consumed;
+        }
+
+        if (nghttp2_session_send(stream->connection->session) != 0)
+        {
+            stream->sse_connected = false;
+            return cHTTPX_ERR_IO;
+        }
+    }
+
+    bool closed = stream->closed;
+    h2_sse_reap_chunks(stream);
+    if (closed && !(flags & NGHTTP2_FLAG_END_STREAM))
+        return cHTTPX_ERR_STATE;
+    if (__atomic_load_n(&stream->connection->server->shutdown_requested, __ATOMIC_ACQUIRE) && !(flags & NGHTTP2_FLAG_END_STREAM))
+        return cHTTPX_ERR_STATE;
+    return cHTTPX_OK;
+}
+
+static int h2_sse_open(void* context, const struct chttpx_response* response)
+{
+    chttpx_h2_stream_t* stream = context;
+    if (!stream || !stream->connection || !response || stream->closed || stream->sse_open)
+        return cHTTPX_ERR_STATE;
+
+    char status_text[4];
+    snprintf(status_text, sizeof(status_text), "%03d", response->status);
+
+    nghttp2_nv headers[MAX_HEADERS + 2];
+    char names[MAX_HEADERS][MAX_HEADER_NAME];
+    size_t count = 0;
+    headers[count++] = h2_nv(":status", status_text);
+    headers[count++] = h2_nv("content-type", response->content_type ? response->content_type : cHTTPX_CTYPE_SSE);
+
+    for (size_t i = 0; i < response->headers_count && count < CHTTPX_ARRAY_LEN(headers); i++)
+    {
+        if (h2_forbidden_header(response->headers[i].name) ||
+            strcasecmp(response->headers[i].name, "content-length") == 0 ||
+            strcasecmp(response->headers[i].name, "content-type") == 0)
+            continue;
+
+        size_t name_size = strlen(response->headers[i].name);
+        if (name_size >= sizeof(names[0]))
+            return cHTTPX_ERR_LIMIT;
+        for (size_t j = 0; j <= name_size; j++)
+            names[i][j] = (char)tolower((unsigned char)response->headers[i].name[j]);
+        headers[count++] = h2_nv(names[i], response->headers[i].value);
+    }
+
+    int rv = nghttp2_submit_headers(stream->connection->session, NGHTTP2_FLAG_NONE, stream->id, NULL, headers, count, NULL);
+    if (rv != 0)
+        return cHTTPX_ERR_PROTOCOL;
+
+    stream->responded = true;
+    stream->sse_open = true;
+    stream->sse_connected = true;
+
+    if (nghttp2_session_send(stream->connection->session) != 0)
+    {
+        stream->sse_connected = false;
+        return cHTTPX_ERR_IO;
+    }
+    return cHTTPX_OK;
+}
+
+static int h2_sse_write(void* context, const void* data, size_t size)
+{
+    chttpx_h2_stream_t* stream = context;
+    if (!stream || !data || !size || !stream->sse_open || stream->sse_closing || stream->closed ||
+        !stream->connection || __atomic_load_n(&stream->connection->server->shutdown_requested, __ATOMIC_ACQUIRE))
+        return cHTTPX_ERR_STATE;
+    return h2_sse_queue(stream, data, size, NGHTTP2_FLAG_NONE);
+}
+
+static int h2_sse_close(void* context)
+{
+    chttpx_h2_stream_t* stream = context;
+    if (!stream || !stream->sse_open || stream->closed)
+        return cHTTPX_OK;
+    if (stream->sse_closing)
+        return cHTTPX_OK;
+
+    stream->sse_closing = true;
+    stream->sse_connected = false;
+    return h2_sse_queue(stream, NULL, 0, NGHTTP2_FLAG_END_STREAM);
+}
+
+static bool h2_sse_connected(void* context)
+{
+    chttpx_h2_stream_t* stream = context;
+    if (!stream || !stream->connection || !stream->sse_open || stream->sse_closing || stream->closed || !stream->sse_connected)
+        return false;
+    return !__atomic_load_n(&stream->connection->server->shutdown_requested, __ATOMIC_ACQUIRE);
+}
+
 /**
  * nghttp2 data provider for serialized response bodies.
  *
@@ -584,9 +866,34 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
 
     char* response = NULL;
     size_t response_size = 0;
+    chttpx_stream_transport_t stream_transport = {
+        .context = stream,
+        .open = h2_sse_open,
+        .write = h2_sse_write,
+        .close = h2_sse_close,
+        .connected = h2_sse_connected,
+    };
+
+    stream->handler_active = true;
     int execute_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session,
-        headers, header_size, body, body_size, NULL, body_size, &response, &response_size);
+        headers, header_size, body, body_size, NULL, body_size, &stream_transport, &response, &response_size);
     free(headers);
+
+    if (execute_result == cHTTPX_OK && !response && response_size == SIZE_MAX)
+    {
+        stream->handler_active = false;
+        if (stream->closed)
+            h2_stream_free(stream);
+        return 0;
+    }
+
+    stream->handler_active = false;
+    if (stream->closed)
+    {
+        free(response);
+        h2_stream_free(stream);
+        return 0;
+    }
 
     if (execute_result != cHTTPX_OK || !response)
     {
@@ -599,6 +906,24 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
     return h2_submit_serialized_response(connection, stream);
 }
 
+static int h2_process_ready(chttpx_h2_server_t* connection)
+{
+    while (connection && connection->ready_head)
+    {
+        chttpx_h2_stream_t* stream = connection->ready_head;
+        connection->ready_head = stream->ready_next;
+        if (!connection->ready_head)
+            connection->ready_tail = NULL;
+        stream->ready_next = NULL;
+        stream->ready_queued = false;
+
+        int rv = h2_process_request(connection, stream);
+        if (rv != 0)
+            return rv;
+    }
+    return 0;
+}
+
 /**
  * Allocate stream state when request headers begin.
  *
@@ -609,14 +934,15 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
  */
 static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame* frame, void* user_data)
 {
-    (void)user_data;
-    if (!frame || frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST)
+    chttpx_h2_server_t* connection = user_data;
+    if (!connection || !frame || frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST)
         return 0;
 
     chttpx_h2_stream_t* stream = calloc(1, sizeof(*stream));
     if (!stream)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     stream->id = frame->hd.stream_id;
+    stream->connection = connection;
 
     int rv = nghttp2_session_set_stream_user_data(session, stream->id, stream);
     if (rv != 0)
@@ -693,8 +1019,12 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
     if (!stream)
         return 0;
 
-    int rv = h2_process_request(connection, stream);
-    return rv == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
+    if (!stream->request_ready)
+    {
+        stream->request_ready = true;
+        h2_ready_push(connection, stream);
+    }
+    return 0;
 }
 
 /**
@@ -709,12 +1039,17 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
 static int h2_server_stream_close(nghttp2_session* session, int32_t stream_id, uint32_t error_code, void* user_data)
 {
     (void)error_code;
-    (void)user_data;
+    chttpx_h2_server_t* connection = user_data;
     chttpx_h2_stream_t* stream = h2_stream(session, stream_id);
     if (stream)
     {
+        if (connection)
+            h2_ready_remove(connection, stream);
+        stream->closed = true;
+        stream->sse_connected = false;
         nghttp2_session_set_stream_user_data(session, stream_id, NULL);
-        h2_stream_free(stream);
+        if (!stream->handler_active)
+            h2_stream_free(stream);
     }
     return 0;
 }
@@ -793,6 +1128,12 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
                 goto done;
             }
             offset += (size_t)consumed;
+        }
+
+        if (h2_process_ready(&connection) != 0)
+        {
+            result = cHTTPX_ERR_PROTOCOL;
+            break;
         }
 
         if (nghttp2_session_send(connection.session) != 0)
@@ -960,6 +1301,7 @@ static const char* h2_stable_content_type(const char* content_type)
     CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_CSS);
     CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_CSV);
     CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_JSON);
+    CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_SSE);
     CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_FORM);
     CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_MULTI);
     CHTTPX_H2_MATCH_CTYPE(cHTTPX_CTYPE_OCTET);

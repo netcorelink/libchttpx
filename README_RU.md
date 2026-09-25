@@ -19,9 +19,10 @@
 - CORS, cookies, callback-based logging и rate limiting
 - настраиваемое gzip-сжатие ответов с `Accept-Encoding` negotiation
 - опциональные встроенные metrics, thread-safe snapshot и Prometheus exporter
+- first-class Server-Sent Events по HTTP/2 с retry, heartbeat и disconnect handling
 - лимиты сервера и graceful shutdown
 
-> `cHTTPX_ResFile()` пока полностью читает файл в память. Streaming response, `sendfile()` и zero-copy output в текущем API не реализованы.
+> `cHTTPX_ResFile()` пока полностью читает файл в память. Для SSE используется отдельный streaming path поверх HTTP/2; generic streaming response API, `sendfile()` и zero-copy для файлов пока не реализованы.
 
 ## Установка
 
@@ -196,6 +197,7 @@ DLL, import library и headers копируются в `tools/`.
 - [Request ID и i18n](docs/i18n/README.md)
 - [Logging](docs/logging/README_RU.md)
 - [Rate limiting](docs/rate-limiting/README_RU.md)
+- [Server-Sent Events](docs/sse/README_RU.md)
 - [WebSocket API — experimental](docs/websocket/README_RU.md)
 
 

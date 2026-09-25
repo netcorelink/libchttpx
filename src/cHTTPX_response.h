@@ -55,6 +55,9 @@ extern "C"
         /* Set when response compression must be bypassed. */
         bool compression_disabled;
 
+        /* Internal marker for a response already owned by a streaming transport. */
+        bool _streaming_response;
+
         /* Times for logging */
         struct timespec start_ts;
         struct timespec end_ts;
@@ -75,7 +78,7 @@ extern "C"
     int _chttpx_dispatch(struct chttpx_serv* server, chttpx_request_t* req, chttpx_response_t* res);
 
     /* Internal adapter used by the HTTP/2 transport to reuse the public request/handler API. */
-    int _chttpx_execute_prefetched(struct chttpx_serv* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size);
+    int _chttpx_execute_prefetched(struct chttpx_serv* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, const chttpx_stream_transport_t* stream_transport, char** output, size_t* output_size);
 
     /**
      * Create a JSON HTTP response with formatted content.
