@@ -21,6 +21,7 @@
 | i18n | [i18n](i18n/README_RU.md) | request ID, `Accept-Language`, translations |
 | Logging | [logging](logging/README_RU.md) | logger callback и logging middleware |
 | Rate limiting | [rate-limiting](rate-limiting/README_RU.md) | встроенный fixed-window limiter |
+| Server-Sent Events | [sse](sse/README_RU.md) | HTTP/2 event streams, retry, heartbeat и disconnect handling |
 | WebSocket | [websocket](websocket/README_RU.md) | текущий experimental API и ограничения |
 
 ## Рекомендуемый порядок
