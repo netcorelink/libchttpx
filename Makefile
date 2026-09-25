@@ -41,10 +41,11 @@ FUZZ_HEADERS_TARGET = $(BINDIR)/fuzz_headers
 TEST_TLS_TARGET = $(BINDIR)/test_tls
 TEST_COMPRESSION_TARGET = $(BINDIR)/test_compression
 TEST_METRICS_TARGET = $(BINDIR)/test_metrics
+TEST_SSE_TARGET = $(BINDIR)/test_sse
 EXAMPLE_SRC = example/basic.c
 EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
 
-EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics
+EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics sse
 EXAMPLE_TARGETS = $(addprefix $(BINDIR)/example-,$(EXAMPLE_NAMES))
 
 LIN_SRCS = $(wildcard src/*.c)
@@ -134,14 +135,17 @@ test-win:
 	$(TEST_TARGET).exe
 	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_server.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_SERVER_TARGET).exe $(WIN_LDFLAGS)
 	$(TEST_SERVER_TARGET).exe
+	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_sse.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_SSE_TARGET).exe $(WIN_LDFLAGS)
+	$(TEST_SSE_TARGET).exe
 
 # LINux tests
 # -
 
-test: $(TEST_TARGET) $(TEST_SERVER_TARGET) $(TEST_METRICS_TARGET)
+test: $(TEST_TARGET) $(TEST_SERVER_TARGET) $(TEST_METRICS_TARGET) $(TEST_SSE_TARGET)
 	$(TEST_TARGET)
 	$(TEST_SERVER_TARGET)
 	$(TEST_METRICS_TARGET)
+	$(TEST_SSE_TARGET)
 
 $(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
@@ -150,6 +154,10 @@ $(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
 $(TEST_SERVER_TARGET): tests/test_server.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_server.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+$(TEST_SSE_TARGET): tests/test_sse.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_sse.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 test-sanitize:
 	@mkdir -p $(BINDIR)
