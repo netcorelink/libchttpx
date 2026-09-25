@@ -194,6 +194,13 @@ static void exchange_family(uint16_t port, int family, const char* request, char
     assert(written > 0 && (size_t)written < response_size);
     used = (size_t)written;
 
+    if (result.content_type && *result.content_type)
+    {
+        written = snprintf(response + used, response_size - used, "content-type: %s\r\n", result.content_type);
+        assert(written >= 0 && (size_t)written < response_size - used);
+        used += (size_t)written;
+    }
+
     for (size_t i = 0; i < result.headers_count; i++)
     {
         written = snprintf(response + used, response_size - used, "%s: %s\r\n", result.headers[i].name, result.headers[i].value);
