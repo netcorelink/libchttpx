@@ -1050,7 +1050,7 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
     return cHTTPX_OK;
 }
 
-int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, char** output, size_t* output_size)
+int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, const chttpx_stream_transport_t* stream_transport, char** output, size_t* output_size)
 {
     if (!server || !headers || !output || !output_size)
     {
@@ -1065,6 +1065,8 @@ int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd,
     chttpx_request_t* req = parse_prefetched_request(server, client_fd, tls_session, headers, header_size, body, body_size, body_stream, content_length);
     if (!req)
         return cHTTPX_ERR_MEMORY;
+    if (stream_transport)
+        req->_stream_transport = *stream_transport;
 
     chttpx_response_t res = {0};
     if (req->_parse_status)
@@ -1078,6 +1080,17 @@ int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd,
         int dispatch_result = _chttpx_dispatch(server, req, &res);
         if (dispatch_result != cHTTPX_OK)
             res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "request dispatch failed");
+    }
+
+    if (res._streaming_response)
+    {
+        if (req->_stream_transport.close)
+            req->_stream_transport.close(req->_stream_transport.context);
+        *output = NULL;
+        *output_size = SIZE_MAX;
+        cHTTPX_ResponseCleanup(&res);
+        free_request_object(req);
+        return cHTTPX_OK;
     }
 
     int result = build_response_buffer(req, res, output, output_size);
@@ -1324,6 +1337,7 @@ void cHTTPX_ResponseCleanup(chttpx_response_t* res)
     res->body = NULL;
     res->body_size = 0;
     res->body_ownership = cHTTPX_BODY_BORROWED;
+    res->_streaming_response = false;
 }
 
 chttpx_response_t cHTTPX_ResNoContent(void)
