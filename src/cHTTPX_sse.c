@@ -83,8 +83,6 @@ static bool sse_single_line(const char* value)
 static int sse_append_multiline(chttpx_sse_buffer_t* buffer, const char* prefix, const char* value)
 {
     const char* cursor = value ? value : "";
-    bool first = true;
-
     for (;;)
     {
         const char* end = cursor;
@@ -105,8 +103,6 @@ static int sse_append_multiline(chttpx_sse_buffer_t* buffer, const char* prefix,
         if (*end == '\r' && end[1] == '\n')
             end++;
         cursor = end + 1;
-        first = false;
-
         if (!*cursor)
         {
             result = sse_buffer_text(buffer, prefix);
@@ -116,7 +112,6 @@ static int sse_append_multiline(chttpx_sse_buffer_t* buffer, const char* prefix,
         }
     }
 
-    (void)first;
     return cHTTPX_OK;
 }
 
