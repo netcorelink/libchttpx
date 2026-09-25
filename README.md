@@ -19,9 +19,10 @@ The library is designed so handlers contain application logic instead of repetit
 - CORS, cookies, logging callbacks, and rate limiting
 - configurable gzip response compression with `Accept-Encoding` negotiation
 - optional built-in metrics with thread-safe snapshots and a Prometheus exporter
+- first-class HTTP/2 Server-Sent Events with retry, heartbeat, and disconnect handling
 - configurable server limits and graceful shutdown
 
-> `cHTTPX_ResFile()` currently reads the complete file into memory. Streaming responses, `sendfile()`, and zero-copy output are not implemented in the current API.
+> `cHTTPX_ResFile()` currently reads the complete file into memory. SSE has its own streaming HTTP/2 path; a generic streaming response API, `sendfile()`, and zero-copy file output are not implemented yet.
 
 ## Installation
 
@@ -200,6 +201,7 @@ Detailed documentation is split by functionality:
 - [Request IDs and i18n](docs/i18n/README.md)
 - [Logging](docs/logging/README.md)
 - [Rate limiting](docs/rate-limiting/README.md)
+- [Server-Sent Events](docs/sse/README.md)
 - [WebSocket API — experimental](docs/websocket/README.md)
 
 ## License
