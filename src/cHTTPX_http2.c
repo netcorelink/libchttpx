@@ -589,7 +589,42 @@ static int h2_sse_queue(chttpx_h2_stream_t* stream, const void* data, size_t siz
         return cHTTPX_ERR_IO;
     }
 
+    while (!chunk->completed && !stream->closed &&
+           !__atomic_load_n(&stream->connection->server->shutdown_requested, __ATOMIC_ACQUIRE))
+    {
+        unsigned char input[BUFFER_SIZE];
+        int received = _chttpx_io_recv(stream->connection->fd, stream->connection->tls_session, input, sizeof(input));
+        if (received <= 0)
+        {
+            stream->sse_connected = false;
+            return received == cHTTPX_ERR_TIMEOUT ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_IO;
+        }
+
+        size_t offset = 0;
+        while (offset < (size_t)received)
+        {
+            ssize_t consumed = nghttp2_session_mem_recv(stream->connection->session, input + offset, (size_t)received - offset);
+            if (consumed <= 0)
+            {
+                stream->sse_connected = false;
+                return cHTTPX_ERR_PROTOCOL;
+            }
+            offset += (size_t)consumed;
+        }
+
+        if (nghttp2_session_send(stream->connection->session) != 0)
+        {
+            stream->sse_connected = false;
+            return cHTTPX_ERR_IO;
+        }
+    }
+
+    bool closed = stream->closed;
     h2_sse_reap_chunks(stream);
+    if (closed && !(flags & NGHTTP2_FLAG_END_STREAM))
+        return cHTTPX_ERR_STATE;
+    if (__atomic_load_n(&stream->connection->server->shutdown_requested, __ATOMIC_ACQUIRE) && !(flags & NGHTTP2_FLAG_END_STREAM))
+        return cHTTPX_ERR_STATE;
     return cHTTPX_OK;
 }
 
