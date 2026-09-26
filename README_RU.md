@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` — компактная кроссплатформенная HTTP/2-библиотека для C. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
+`libchttpx` — компактная HTTP/2-библиотека для C под Linux. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
 
 Идея библиотеки: handler должен содержать бизнес-логику приложения, а не повторяющийся HTTP boilerplate.
 
 ## Основные возможности
 
-- Linux и Windows
+- поддержка Linux
 - несколько независимых HTTP-серверов внутри одного `cHTTPX_App`
 - прямые local-вызовы между серверами и remote-вызовы по HTTP/HTTPS
 - route groups и пути с `{parameter}`
@@ -89,23 +89,13 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Нужный пакет можно скачать из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Старые install-скрипты
+### Старый install-скрипт
 
-Bash- и PowerShell-скрипты пока остаются как запасной способ установки.
-
-Linux:
+Bash-скрипт остаётся как запасной способ установки:
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
 ```
-
-Windows:
-
-```powershell
-iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
-```
-
-После установки в Windows перезапустите терминал.
 
 ### Docker
 
@@ -160,20 +150,6 @@ make test-compression
 
 TLS остаётся отдельной опцией сборки: `make TLS=1 libchttpx.so`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
 
-### Самостоятельная сборка на Windows
-
-Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`, а zlib и nghttp2 должны быть установлены (для MSYS2/MinGW64: `mingw-w64-x86_64-zlib` и `mingw-w64-x86_64-nghttp2`).
-
-```powershell
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make win-lib
-make test-win
-```
-
-DLL, import library и headers копируются в `tools/`.
-
 ## Документация
 
 Подробная документация разделена по функционалу:
@@ -197,7 +173,6 @@ DLL, import library и headers копируются в `tools/`.
 - [Logging](docs/logging/README_RU.md)
 - [Rate limiting](docs/rate-limiting/README_RU.md)
 - [WebSocket API — experimental](docs/websocket/README_RU.md)
-
 
 ## Лицензия
 
