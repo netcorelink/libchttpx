@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` is a compact cross-platform HTTP/2 server library for C. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
+`libchttpx` is a compact HTTP/2 server library for C on Linux. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
 
 The library is designed so handlers contain application logic instead of repetitive HTTP plumbing.
 
 ## Highlights
 
-- Linux and Windows support
+- Linux support
 - multiple independent HTTP servers inside one `cHTTPX_App`
 - local direct server-to-server calls and remote HTTP/HTTPS calls
 - route groups and `{parameter}` paths
@@ -89,23 +89,13 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Download the package for your distribution from [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Legacy installer scripts
+### Legacy installer script
 
-The existing shell and PowerShell installers are kept as compatibility fallbacks.
-
-Linux:
+The existing shell installer is kept as a compatibility fallback:
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
 ```
-
-Windows:
-
-```powershell
-iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
-```
-
-Restart the terminal after the Windows installation so environment changes are visible.
 
 ### Docker
 
@@ -163,20 +153,6 @@ make test-compression
 ```
 
 TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response compression](docs/compression/README.md).
-
-### Build from source on Windows
-
-Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source and requires zlib and nghttp2 (for MSYS2/MinGW64: `mingw-w64-x86_64-zlib` and `mingw-w64-x86_64-nghttp2`).
-
-```powershell
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make win-lib
-make test-win
-```
-
-The generated DLL/import library and headers are copied into `tools/`.
 
 ## Documentation
 
