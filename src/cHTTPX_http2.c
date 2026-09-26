@@ -523,6 +523,195 @@ static int h2_submit_text_response(chttpx_h2_server_t* connection, chttpx_h2_str
     return rv;
 }
 
+
+static ssize_t h2_websocket_data_read(nghttp2_session* session, int32_t stream_id, uint8_t* buf, size_t length,
+                                      uint32_t* data_flags, nghttp2_data_source* source, void* user_data)
+{
+    (void)session;
+    (void)stream_id;
+    (void)user_data;
+    chttpx_h2_ws_send_t* send = source ? source->ptr : NULL;
+    if (!send || !data_flags)
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+
+    size_t remaining = send->size - send->offset;
+    size_t take = remaining < length ? remaining : length;
+    if (take)
+        memcpy(buf, send->data + send->offset, take);
+    send->offset += take;
+
+    if (send->offset >= send->size)
+    {
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+        if (!send->end_stream)
+            *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+        send->completed = true;
+    }
+    return (ssize_t)take;
+}
+
+static void h2_websocket_cleanup_outgoing(chttpx_h2_server_t* connection, bool all)
+{
+    if (!connection)
+        return;
+
+    chttpx_h2_ws_send_t** current = &connection->ws_outgoing;
+    while (*current)
+    {
+        chttpx_h2_ws_send_t* send = *current;
+        if (all || send->completed)
+        {
+            *current = send->next;
+            free(send->data);
+            free(send);
+            continue;
+        }
+        current = &send->next;
+    }
+}
+
+static int h2_websocket_transport_send(void* context, const unsigned char* data, size_t len, bool end_stream)
+{
+    chttpx_h2_stream_t* stream = context;
+    chttpx_h2_server_t* connection = stream ? stream->connection : NULL;
+    if (!stream || !connection || !connection->session || (!data && len))
+        return cHTTPX_ERR_STATE;
+
+    chttpx_h2_ws_send_t* send = calloc(1, sizeof(*send));
+    if (!send)
+        return cHTTPX_ERR_MEMORY;
+
+    if (len)
+    {
+        send->data = malloc(len);
+        if (!send->data)
+        {
+            free(send);
+            return cHTTPX_ERR_MEMORY;
+        }
+        memcpy(send->data, data, len);
+    }
+
+    send->connection = connection;
+    send->stream_id = stream->id;
+    send->size = len;
+    send->end_stream = end_stream;
+    send->next = connection->ws_outgoing;
+    connection->ws_outgoing = send;
+
+    nghttp2_data_provider provider = {
+        .source = {.ptr = send},
+        .read_callback = h2_websocket_data_read,
+    };
+
+    int rv = nghttp2_submit_data(connection->session, NGHTTP2_FLAG_NONE, stream->id, &provider);
+    if (rv != 0)
+    {
+        connection->ws_outgoing = send->next;
+        free(send->data);
+        free(send);
+        return cHTTPX_ERR_IO;
+    }
+    return cHTTPX_OK;
+}
+
+static chttpx_request_t* h2_websocket_request_create(chttpx_h2_server_t* connection, const chttpx_h2_stream_t* stream)
+{
+    if (!connection || !stream)
+        return NULL;
+
+    chttpx_request_t* request = calloc(1, sizeof(*request));
+    if (!request)
+        return NULL;
+
+    request->method = strdup("CONNECT");
+    request->path = strdup(stream->path);
+    if (!request->method || !request->path)
+    {
+        free(request->method);
+        free(request->path);
+        free(request);
+        return NULL;
+    }
+
+    request->client_fd = connection->fd;
+    request->_server = connection->server;
+    request->_tls_session = connection->tls_session;
+    snprintf(request->protocol, sizeof(request->protocol), "%s", CHTTPX_H2_PROTOCOL);
+
+    request->headers_count = stream->headers_count;
+    if (stream->headers_count)
+        memcpy(request->headers, stream->headers, stream->headers_count * sizeof(stream->headers[0]));
+
+    if (stream->authority[0] && request->headers_count < MAX_HEADERS)
+    {
+        bool has_host = false;
+        for (size_t i = 0; i < request->headers_count; i++)
+            if (strcasecmp(request->headers[i].name, "host") == 0)
+                has_host = true;
+        if (!has_host)
+        {
+            snprintf(request->headers[request->headers_count].name, MAX_HEADER_NAME, "Host");
+            snprintf(request->headers[request->headers_count].value, MAX_HEADER_VALUE, "%s", stream->authority);
+            request->headers_count++;
+        }
+    }
+
+    return request;
+}
+
+static int h2_open_websocket(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream)
+{
+    if (!connection || !stream || stream->websocket || stream->responded)
+        return 0;
+
+    chttpx_wsocket_route_t handler = _chttpx_websocket_find_route(connection->server, stream->path);
+    if (!handler)
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusNotFound, cHTTPX_CTYPE_TEXT);
+
+    const char* version = h2_request_header(stream, "sec-websocket-version");
+    if (!version || strcmp(version, "13") != 0)
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusBadRequest, cHTTPX_CTYPE_TEXT);
+
+    chttpx_request_t* request = h2_websocket_request_create(connection, stream);
+    if (!request)
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_TEXT);
+
+    chttpx_wsocket_t* websocket = _chttpx_websocket_create(connection->server, connection->fd, request,
+                                                           h2_websocket_transport_send, stream);
+    if (!websocket)
+    {
+        cHTTPX_RequestCleanup(request);
+        free(request->method);
+        free(request->path);
+        free(request);
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_TEXT);
+    }
+
+    nghttp2_nv headers[] = {
+        h2_nv(":status", "200"),
+    };
+    int rv = nghttp2_submit_headers(connection->session, NGHTTP2_FLAG_NONE, stream->id, NULL,
+                                    headers, CHTTPX_ARRAY_LEN(headers), NULL);
+    if (rv != 0)
+    {
+        _chttpx_websocket_destroy(websocket);
+        cHTTPX_RequestCleanup(request);
+        free(request->method);
+        free(request->path);
+        free(request);
+        return rv;
+    }
+
+    stream->connection = connection;
+    stream->websocket = websocket;
+    stream->websocket_request = request;
+    stream->responded = true;
+    _chttpx_websocket_mark_connected(websocket);
+    handler(websocket);
+    return 0;
+}
+
 /**
  * Submit a full response parsed from HTTP/1 text.
  *
