@@ -18,6 +18,7 @@
 #include "cHTTPX_compression.h"
 #include "cHTTPX_metrics.h"
 #include "cHTTPX_runtime.h"
+#include "cHTTPX_websocket.h"
 
 #include <errno.h>
 
@@ -733,6 +734,7 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
     server->routes_count = 0;
     server->routes_capacity = 0;
 
+    _chttpx_websocket_server_cleanup(server);
     _chttpx_compression_server_cleanup(server);
     _chttpx_middleware_server_cleanup(server);
 
