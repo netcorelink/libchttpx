@@ -1336,6 +1336,7 @@ extern "C"
         void* compression_state;
         void* metrics_state;
         void* runtime_state;
+        void* websocket_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
@@ -2204,14 +2205,14 @@ extern "C"
 /* cHTTPX_websocket.h */
 /* ========================================================================== */
 /**
- * Copyright (c) 2026 netcorelink
- *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * WebSocket over HTTP/2 (RFC 8441) API.
  */
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-#include <stdlib.h>
 
 #define CHTTPX_WSOCKET_OPCODE_CONTINUATION 0x0
 #define CHTTPX_WSOCKET_OPCODE_TEXT 0x1
@@ -2222,39 +2223,45 @@ extern "C"
 
 typedef struct
 {
-    /* FIN - final fragment
-     * 1 eq. this is the last frame of the message
-     * 0 eq. the message is divided into several parts
-     */
     int fin;
-    /* Check define CHTTPX_WSOCKET_OPCODE */
     int opcode;
     int masked;
-    /* Length data in payload */
     uint64_t payload_len;
-    /* Mask for XOR payload */
     unsigned char mask[4];
-    /* Data in socket */
     unsigned char* payload;
 } wsocket_frame_t;
 
-typedef struct
+typedef struct chttpx_wsocket
 {
-    int socket;
+    chttpx_socket_t socket;
     int connected;
+    int opcode;
+    chttpx_request_t* request;
+    void* user_data;
+    void* _internal;
 } chttpx_wsocket_t;
 
 typedef void (*chttpx_wsocket_handler_t)(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
-
+typedef void (*chttpx_wsocket_close_handler_t)(chttpx_wsocket_t* wsocket, uint16_t code, const unsigned char* reason, size_t len);
 typedef void (*chttpx_wsocket_route_t)(chttpx_wsocket_t* wsocket);
 
-void cHTTPX_WSocketRegisterRoute(chttpx_router_t* r, const char* path, chttpx_wsocket_route_t handler);
-
-int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
+void cHTTPX_WSocketRegisterRoute(chttpx_router_t* router, const char* path, chttpx_wsocket_route_t handler);
+void cHTTPX_WSocketOnMessage(chttpx_wsocket_t* wsocket, chttpx_wsocket_handler_t handler);
+void cHTTPX_WSocketOnClose(chttpx_wsocket_t* wsocket, chttpx_wsocket_close_handler_t handler);
+void cHTTPX_WSocketSetData(chttpx_wsocket_t* wsocket, void* user_data);
+void* cHTTPX_WSocketData(chttpx_wsocket_t* wsocket);
 
 int cHTTPX_WSocketSend(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+int cHTTPX_WSocketSendBinary(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+int cHTTPX_WSocketPing(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+int cHTTPX_WSocketClose(chttpx_wsocket_t* wsocket, uint16_t code, const char* reason);
 
+/* Legacy HTTP/1.1/synchronous APIs retained for source compatibility. */
+int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
 int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t len);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBCHTTPX_H */

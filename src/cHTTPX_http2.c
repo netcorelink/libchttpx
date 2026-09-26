@@ -5,6 +5,7 @@
 #include "cHTTPX_http.h"
 #include "cHTTPX_response.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_websocket.h"
 
 #include <nghttp2/nghttp2.h>
 
@@ -25,10 +26,14 @@
 /**
  * Per-stream HTTP/2 request/response state on the server.
  */
+struct chttpx_h2_server;
+typedef struct chttpx_h2_ws_send chttpx_h2_ws_send_t;
+
 typedef struct chttpx_h2_stream
 {
     int32_t id;
     char method[16];
+    char protocol[32];
     char path[CHTTPX_MAX_PATH];
     char authority[CHTTPX_H2_MAX_AUTHORITY];
     chttpx_header_t headers[MAX_HEADERS];
@@ -43,18 +48,34 @@ typedef struct chttpx_h2_stream
     size_t response_size;
     size_t response_body_offset;
     size_t response_body_sent;
+    struct chttpx_h2_server* connection;
+    chttpx_wsocket_t* websocket;
+    chttpx_request_t* websocket_request;
 } chttpx_h2_stream_t;
 
 /**
  * Server-side HTTP/2 session bound to one connection.
  */
-typedef struct
+typedef struct chttpx_h2_server
 {
     chttpx_serv_t* server;
     chttpx_socket_t fd;
     void* tls_session;
     nghttp2_session* session;
+    chttpx_h2_ws_send_t* ws_outgoing;
 } chttpx_h2_server_t;
+
+struct chttpx_h2_ws_send
+{
+    chttpx_h2_server_t* connection;
+    int32_t stream_id;
+    unsigned char* data;
+    size_t size;
+    size_t offset;
+    bool end_stream;
+    bool completed;
+    chttpx_h2_ws_send_t* next;
+};
 
 /**
  * Client-side HTTP/2 session state for outbound calls.
@@ -152,6 +173,15 @@ static void h2_stream_free(chttpx_h2_stream_t* stream)
         return;
     free(stream->body);
     free(stream->response);
+    if (stream->websocket)
+        _chttpx_websocket_destroy(stream->websocket);
+    if (stream->websocket_request)
+    {
+        cHTTPX_RequestCleanup(stream->websocket_request);
+        free(stream->websocket_request->method);
+        free(stream->websocket_request->path);
+        free(stream->websocket_request);
+    }
     free(stream);
 }
 
@@ -203,6 +233,18 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream, const uint8_t* name,
         }
         memcpy(stream->authority, value, valuelen);
         stream->authority[valuelen] = '\0';
+        return 0;
+    }
+
+    if (namelen == 9 && memcmp(name, ":protocol", 9) == 0)
+    {
+        if (valuelen >= sizeof(stream->protocol))
+        {
+            stream->error_status = cHTTPX_StatusBadRequest;
+            return 0;
+        }
+        memcpy(stream->protocol, value, valuelen);
+        stream->protocol[valuelen] = '\0';
         return 0;
     }
 
@@ -481,6 +523,195 @@ static int h2_submit_text_response(chttpx_h2_server_t* connection, chttpx_h2_str
     return rv;
 }
 
+
+static ssize_t h2_websocket_data_read(nghttp2_session* session, int32_t stream_id, uint8_t* buf, size_t length,
+                                      uint32_t* data_flags, nghttp2_data_source* source, void* user_data)
+{
+    (void)session;
+    (void)stream_id;
+    (void)user_data;
+    chttpx_h2_ws_send_t* send = source ? source->ptr : NULL;
+    if (!send || !data_flags)
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+
+    size_t remaining = send->size - send->offset;
+    size_t take = remaining < length ? remaining : length;
+    if (take)
+        memcpy(buf, send->data + send->offset, take);
+    send->offset += take;
+
+    if (send->offset >= send->size)
+    {
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+        if (!send->end_stream)
+            *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+        send->completed = true;
+    }
+    return (ssize_t)take;
+}
+
+static void h2_websocket_cleanup_outgoing(chttpx_h2_server_t* connection, bool all)
+{
+    if (!connection)
+        return;
+
+    chttpx_h2_ws_send_t** current = &connection->ws_outgoing;
+    while (*current)
+    {
+        chttpx_h2_ws_send_t* send = *current;
+        if (all || send->completed)
+        {
+            *current = send->next;
+            free(send->data);
+            free(send);
+            continue;
+        }
+        current = &send->next;
+    }
+}
+
+static int h2_websocket_transport_send(void* context, const unsigned char* data, size_t len, bool end_stream)
+{
+    chttpx_h2_stream_t* stream = context;
+    chttpx_h2_server_t* connection = stream ? stream->connection : NULL;
+    if (!stream || !connection || !connection->session || (!data && len))
+        return cHTTPX_ERR_STATE;
+
+    chttpx_h2_ws_send_t* send = calloc(1, sizeof(*send));
+    if (!send)
+        return cHTTPX_ERR_MEMORY;
+
+    if (len)
+    {
+        send->data = malloc(len);
+        if (!send->data)
+        {
+            free(send);
+            return cHTTPX_ERR_MEMORY;
+        }
+        memcpy(send->data, data, len);
+    }
+
+    send->connection = connection;
+    send->stream_id = stream->id;
+    send->size = len;
+    send->end_stream = end_stream;
+    send->next = connection->ws_outgoing;
+    connection->ws_outgoing = send;
+
+    nghttp2_data_provider provider = {
+        .source = {.ptr = send},
+        .read_callback = h2_websocket_data_read,
+    };
+
+    int rv = nghttp2_submit_data(connection->session, NGHTTP2_FLAG_NONE, stream->id, &provider);
+    if (rv != 0)
+    {
+        connection->ws_outgoing = send->next;
+        free(send->data);
+        free(send);
+        return cHTTPX_ERR_IO;
+    }
+    return cHTTPX_OK;
+}
+
+static chttpx_request_t* h2_websocket_request_create(chttpx_h2_server_t* connection, const chttpx_h2_stream_t* stream)
+{
+    if (!connection || !stream)
+        return NULL;
+
+    chttpx_request_t* request = calloc(1, sizeof(*request));
+    if (!request)
+        return NULL;
+
+    request->method = strdup("CONNECT");
+    request->path = strdup(stream->path);
+    if (!request->method || !request->path)
+    {
+        free(request->method);
+        free(request->path);
+        free(request);
+        return NULL;
+    }
+
+    request->client_fd = connection->fd;
+    request->_server = connection->server;
+    request->_tls_session = connection->tls_session;
+    snprintf(request->protocol, sizeof(request->protocol), "%s", CHTTPX_H2_PROTOCOL);
+
+    request->headers_count = stream->headers_count;
+    if (stream->headers_count)
+        memcpy(request->headers, stream->headers, stream->headers_count * sizeof(stream->headers[0]));
+
+    if (stream->authority[0] && request->headers_count < MAX_HEADERS)
+    {
+        bool has_host = false;
+        for (size_t i = 0; i < request->headers_count; i++)
+            if (strcasecmp(request->headers[i].name, "host") == 0)
+                has_host = true;
+        if (!has_host)
+        {
+            snprintf(request->headers[request->headers_count].name, MAX_HEADER_NAME, "Host");
+            snprintf(request->headers[request->headers_count].value, MAX_HEADER_VALUE, "%s", stream->authority);
+            request->headers_count++;
+        }
+    }
+
+    return request;
+}
+
+static int h2_open_websocket(chttpx_h2_server_t* connection, chttpx_h2_stream_t* stream)
+{
+    if (!connection || !stream || stream->websocket || stream->responded)
+        return 0;
+
+    chttpx_wsocket_route_t handler = _chttpx_websocket_find_route(connection->server, stream->path);
+    if (!handler)
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusNotFound, cHTTPX_CTYPE_TEXT);
+
+    const char* version = h2_request_header(stream, "sec-websocket-version");
+    if (!version || strcmp(version, "13") != 0)
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusBadRequest, cHTTPX_CTYPE_TEXT);
+
+    chttpx_request_t* request = h2_websocket_request_create(connection, stream);
+    if (!request)
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_TEXT);
+
+    chttpx_wsocket_t* websocket = _chttpx_websocket_create(connection->server, connection->fd, request,
+                                                           h2_websocket_transport_send, stream);
+    if (!websocket)
+    {
+        cHTTPX_RequestCleanup(request);
+        free(request->method);
+        free(request->path);
+        free(request);
+        return h2_submit_text_response(connection, stream, cHTTPX_StatusInternalServerError, cHTTPX_CTYPE_TEXT);
+    }
+
+    nghttp2_nv headers[] = {
+        h2_nv(":status", "200"),
+    };
+    int rv = nghttp2_submit_headers(connection->session, NGHTTP2_FLAG_NONE, stream->id, NULL,
+                                    headers, CHTTPX_ARRAY_LEN(headers), NULL);
+    if (rv != 0)
+    {
+        _chttpx_websocket_destroy(websocket);
+        cHTTPX_RequestCleanup(request);
+        free(request->method);
+        free(request->path);
+        free(request);
+        return rv;
+    }
+
+    stream->connection = connection;
+    stream->websocket = websocket;
+    stream->websocket_request = request;
+    stream->responded = true;
+    _chttpx_websocket_mark_connected(websocket);
+    handler(websocket);
+    return 0;
+}
+
 /**
  * Submit a full response parsed from HTTP/1 text.
  *
@@ -609,7 +840,6 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
  */
 static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame* frame, void* user_data)
 {
-    (void)user_data;
     if (!frame || frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST)
         return 0;
 
@@ -617,6 +847,7 @@ static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame
     if (!stream)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     stream->id = frame->hd.stream_id;
+    stream->connection = user_data;
 
     int rv = nghttp2_session_set_stream_user_data(session, stream->id, stream);
     if (rv != 0)
@@ -666,6 +897,17 @@ static int h2_server_data(nghttp2_session* session, uint8_t flags, int32_t strea
     (void)flags;
     chttpx_h2_server_t* connection = user_data;
     chttpx_h2_stream_t* stream = h2_stream(session, stream_id);
+    if (!stream)
+        return 0;
+
+    if (stream->websocket)
+    {
+        int result = _chttpx_websocket_feed(stream->websocket, data, len);
+        if (result == cHTTPX_OK || result == cHTTPX_ERR_PROTOCOL || result == cHTTPX_ERR_STATE)
+            return 0;
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
     return h2_append_body(connection, stream, data, len);
 }
 
@@ -683,14 +925,33 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
     if (!connection || !frame)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
 
-    if (frame->hd.stream_id <= 0 || !(frame->hd.flags & NGHTTP2_FLAG_END_STREAM))
-        return 0;
-
-    if (frame->hd.type != NGHTTP2_HEADERS && frame->hd.type != NGHTTP2_DATA)
+    if (frame->hd.stream_id <= 0)
         return 0;
 
     chttpx_h2_stream_t* stream = h2_stream(session, frame->hd.stream_id);
     if (!stream)
+        return 0;
+
+    if (frame->hd.type == NGHTTP2_HEADERS &&
+        frame->headers.cat == NGHTTP2_HCAT_REQUEST &&
+        (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) &&
+        strcmp(stream->method, "CONNECT") == 0 &&
+        strcmp(stream->protocol, "websocket") == 0)
+    {
+        if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
+            return h2_submit_text_response(connection, stream, cHTTPX_StatusBadRequest, cHTTPX_CTYPE_TEXT) == 0
+                       ? 0
+                       : NGHTTP2_ERR_CALLBACK_FAILURE;
+
+        int rv = h2_open_websocket(connection, stream);
+        return rv == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
+    if (!(frame->hd.flags & NGHTTP2_FLAG_END_STREAM))
+        return 0;
+    if (frame->hd.type != NGHTTP2_HEADERS && frame->hd.type != NGHTTP2_DATA)
+        return 0;
+    if (stream->websocket)
         return 0;
 
     int rv = h2_process_request(connection, stream);
@@ -709,7 +970,12 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
 static int h2_server_stream_close(nghttp2_session* session, int32_t stream_id, uint32_t error_code, void* user_data)
 {
     (void)error_code;
-    (void)user_data;
+    chttpx_h2_server_t* connection = user_data;
+    if (connection)
+        for (chttpx_h2_ws_send_t* send = connection->ws_outgoing; send; send = send->next)
+            if (send->stream_id == stream_id)
+                send->completed = true;
+
     chttpx_h2_stream_t* stream = h2_stream(session, stream_id);
     if (stream)
     {
@@ -756,6 +1022,7 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
 
     nghttp2_settings_entry settings[] = {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 128},
+        {NGHTTP2_SETTINGS_ENABLE_CONNECT_PROTOCOL, 1},
     };
     if (nghttp2_submit_settings(connection.session, NGHTTP2_FLAG_NONE, settings, CHTTPX_ARRAY_LEN(settings)) != 0 ||
         nghttp2_session_send(connection.session) != 0)
@@ -800,10 +1067,13 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
             result = cHTTPX_ERR_IO;
             break;
         }
+        h2_websocket_cleanup_outgoing(&connection, false);
     }
 
 done:
     nghttp2_session_del(connection.session);
+    connection.session = NULL;
+    h2_websocket_cleanup_outgoing(&connection, true);
     return result;
 }
 
