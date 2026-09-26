@@ -5,6 +5,7 @@
 #include "cHTTPX_http.h"
 #include "cHTTPX_response.h"
 #include "cHTTPX_tls.h"
+#include "cHTTPX_websocket.h"
 
 #include <nghttp2/nghttp2.h>
 
@@ -25,10 +26,14 @@
 /**
  * Per-stream HTTP/2 request/response state on the server.
  */
+struct chttpx_h2_server;
+typedef struct chttpx_h2_ws_send chttpx_h2_ws_send_t;
+
 typedef struct chttpx_h2_stream
 {
     int32_t id;
     char method[16];
+    char protocol[32];
     char path[CHTTPX_MAX_PATH];
     char authority[CHTTPX_H2_MAX_AUTHORITY];
     chttpx_header_t headers[MAX_HEADERS];
@@ -43,18 +48,34 @@ typedef struct chttpx_h2_stream
     size_t response_size;
     size_t response_body_offset;
     size_t response_body_sent;
+    struct chttpx_h2_server* connection;
+    chttpx_wsocket_t* websocket;
+    chttpx_request_t* websocket_request;
 } chttpx_h2_stream_t;
 
 /**
  * Server-side HTTP/2 session bound to one connection.
  */
-typedef struct
+typedef struct chttpx_h2_server
 {
     chttpx_serv_t* server;
     chttpx_socket_t fd;
     void* tls_session;
     nghttp2_session* session;
+    chttpx_h2_ws_send_t* ws_outgoing;
 } chttpx_h2_server_t;
+
+struct chttpx_h2_ws_send
+{
+    chttpx_h2_server_t* connection;
+    int32_t stream_id;
+    unsigned char* data;
+    size_t size;
+    size_t offset;
+    bool end_stream;
+    bool completed;
+    chttpx_h2_ws_send_t* next;
+};
 
 /**
  * Client-side HTTP/2 session state for outbound calls.
@@ -152,6 +173,15 @@ static void h2_stream_free(chttpx_h2_stream_t* stream)
         return;
     free(stream->body);
     free(stream->response);
+    if (stream->websocket)
+        _chttpx_websocket_destroy(stream->websocket);
+    if (stream->websocket_request)
+    {
+        cHTTPX_RequestCleanup(stream->websocket_request);
+        free(stream->websocket_request->method);
+        free(stream->websocket_request->path);
+        free(stream->websocket_request);
+    }
     free(stream);
 }
 
@@ -203,6 +233,18 @@ static int h2_stream_add_header(chttpx_h2_stream_t* stream, const uint8_t* name,
         }
         memcpy(stream->authority, value, valuelen);
         stream->authority[valuelen] = '\0';
+        return 0;
+    }
+
+    if (namelen == 9 && memcmp(name, ":protocol", 9) == 0)
+    {
+        if (valuelen >= sizeof(stream->protocol))
+        {
+            stream->error_status = cHTTPX_StatusBadRequest;
+            return 0;
+        }
+        memcpy(stream->protocol, value, valuelen);
+        stream->protocol[valuelen] = '\0';
         return 0;
     }
 
