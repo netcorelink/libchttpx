@@ -40,7 +40,7 @@ TEST_METRICS_TARGET = $(BINDIR)/test_metrics
 EXAMPLE_SRC = example/basic.c
 EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
 
-EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics
+EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics websocket
 EXAMPLE_TARGETS = $(addprefix $(BINDIR)/example-,$(EXAMPLE_NAMES))
 
 LIN_SRCS = $(wildcard src/*.c)
