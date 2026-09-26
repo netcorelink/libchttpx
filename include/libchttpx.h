@@ -2208,6 +2208,12 @@ extern "C"
  * WebSocket over HTTP/2 (RFC 8441) API.
  */
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+
 #define CHTTPX_WSOCKET_OPCODE_CONTINUATION 0x0
 #define CHTTPX_WSOCKET_OPCODE_TEXT 0x1
 #define CHTTPX_WSOCKET_OPCODE_BINARY 0x2
@@ -2254,5 +2260,8 @@ int cHTTPX_WSocketClose(chttpx_wsocket_t* wsocket, uint16_t code, const char* re
 int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
 int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t len);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBCHTTPX_H */
