@@ -11,6 +11,7 @@
 #include "cHTTPX_websocket.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -263,11 +264,11 @@ static int websocket_process_frame(chttpx_wsocket_t* wsocket, bool fin, int opco
         }
 
         internal->close_received = true;
+        wsocket->connected = 0;
         if (internal->close_handler)
             internal->close_handler(wsocket, code, reason, reason_len);
         if (!internal->close_sent)
             (void)websocket_send_close_payload(wsocket, payload, payload_len);
-        wsocket->connected = 0;
         return cHTTPX_OK;
     }
 
@@ -590,7 +591,9 @@ void _chttpx_websocket_destroy(chttpx_wsocket_t* wsocket)
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
     if (internal)
     {
-        if (wsocket->connected && !internal->close_received && internal->close_handler)
+        bool was_connected = wsocket->connected != 0;
+        wsocket->connected = 0;
+        if (was_connected && !internal->close_received && internal->close_handler)
             internal->close_handler(wsocket, 1006, NULL, 0);
         free(internal->input);
         free(internal->message);
