@@ -840,7 +840,6 @@ static int h2_process_request(chttpx_h2_server_t* connection, chttpx_h2_stream_t
  */
 static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame* frame, void* user_data)
 {
-    (void)user_data;
     if (!frame || frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST)
         return 0;
 
@@ -848,6 +847,7 @@ static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame
     if (!stream)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     stream->id = frame->hd.stream_id;
+    stream->connection = user_data;
 
     int rv = nghttp2_session_set_stream_user_data(session, stream->id, stream);
     if (rv != 0)
@@ -897,6 +897,17 @@ static int h2_server_data(nghttp2_session* session, uint8_t flags, int32_t strea
     (void)flags;
     chttpx_h2_server_t* connection = user_data;
     chttpx_h2_stream_t* stream = h2_stream(session, stream_id);
+    if (!stream)
+        return 0;
+
+    if (stream->websocket)
+    {
+        int result = _chttpx_websocket_feed(stream->websocket, data, len);
+        if (result == cHTTPX_OK || result == cHTTPX_ERR_PROTOCOL || result == cHTTPX_ERR_STATE)
+            return 0;
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
     return h2_append_body(connection, stream, data, len);
 }
 
@@ -914,14 +925,33 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
     if (!connection || !frame)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
 
-    if (frame->hd.stream_id <= 0 || !(frame->hd.flags & NGHTTP2_FLAG_END_STREAM))
-        return 0;
-
-    if (frame->hd.type != NGHTTP2_HEADERS && frame->hd.type != NGHTTP2_DATA)
+    if (frame->hd.stream_id <= 0)
         return 0;
 
     chttpx_h2_stream_t* stream = h2_stream(session, frame->hd.stream_id);
     if (!stream)
+        return 0;
+
+    if (frame->hd.type == NGHTTP2_HEADERS &&
+        frame->headers.cat == NGHTTP2_HCAT_REQUEST &&
+        (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) &&
+        strcmp(stream->method, "CONNECT") == 0 &&
+        strcmp(stream->protocol, "websocket") == 0)
+    {
+        if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
+            return h2_submit_text_response(connection, stream, cHTTPX_StatusBadRequest, cHTTPX_CTYPE_TEXT) == 0
+                       ? 0
+                       : NGHTTP2_ERR_CALLBACK_FAILURE;
+
+        int rv = h2_open_websocket(connection, stream);
+        return rv == 0 ? 0 : NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
+    if (!(frame->hd.flags & NGHTTP2_FLAG_END_STREAM))
+        return 0;
+    if (frame->hd.type != NGHTTP2_HEADERS && frame->hd.type != NGHTTP2_DATA)
+        return 0;
+    if (stream->websocket)
         return 0;
 
     int rv = h2_process_request(connection, stream);
@@ -940,7 +970,12 @@ static int h2_server_frame_recv(nghttp2_session* session, const nghttp2_frame* f
 static int h2_server_stream_close(nghttp2_session* session, int32_t stream_id, uint32_t error_code, void* user_data)
 {
     (void)error_code;
-    (void)user_data;
+    chttpx_h2_server_t* connection = user_data;
+    if (connection)
+        for (chttpx_h2_ws_send_t* send = connection->ws_outgoing; send; send = send->next)
+            if (send->stream_id == stream_id)
+                send->completed = true;
+
     chttpx_h2_stream_t* stream = h2_stream(session, stream_id);
     if (stream)
     {
@@ -987,6 +1022,7 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
 
     nghttp2_settings_entry settings[] = {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 128},
+        {NGHTTP2_SETTINGS_ENABLE_CONNECT_PROTOCOL, 1},
     };
     if (nghttp2_submit_settings(connection.session, NGHTTP2_FLAG_NONE, settings, CHTTPX_ARRAY_LEN(settings)) != 0 ||
         nghttp2_session_send(connection.session) != 0)
@@ -1031,10 +1067,13 @@ int _chttpx_http2_serve(chttpx_serv_t* server, chttpx_socket_t client_fd, void* 
             result = cHTTPX_ERR_IO;
             break;
         }
+        h2_websocket_cleanup_outgoing(&connection, false);
     }
 
 done:
     nghttp2_session_del(connection.session);
+    connection.session = NULL;
+    h2_websocket_cleanup_outgoing(&connection, true);
     return result;
 }
 
