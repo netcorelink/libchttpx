@@ -63,6 +63,9 @@ int _chttpx_tls_accept_begin(chttpx_serv_t* server, chttpx_socket_t client_fd, v
  */
 int _chttpx_tls_accept_step(void* session);
 
+/** Return non-zero when ALPN selected HTTP/2 for a completed TLS session. */
+int _chttpx_tls_is_http2(void* session);
+
 /** Shut down and free one TLS session. @param session OpenSSL session to release. */
 void _chttpx_tls_session_close(void* session);
 
