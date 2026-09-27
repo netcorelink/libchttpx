@@ -143,7 +143,7 @@ static void test_bind_and_json(void)
     char* username = NULL;
     chttpx_validation_t fields[] = {cHTTPX_StringField("username", &username, true, 3, 32, cHTTPX_TRIM | cHTTPX_LOWERCASE, username_validator)};
     chttpx_response_t response = {0};
-    assert(cHTTPX_BindJSON(&req, &response, fields, CHTTPX_ARRAY_LEN(fields)));
+    assert(cHTTPX_BindJSON(&req, fields, CHTTPX_ARRAY_LEN(fields)) == cHTTPX_BIND_OK);
     assert(strcmp(username, "valid_user") == 0);
 
     chttpx_json_t* object = cHTTPX_JsonObject(&req);

@@ -61,7 +61,7 @@ Changes must pass:
 
 - formatting check;
 - Linux build and unit/integration tests;
-- Windows build/tests when the change is cross-platform;
+- Linux build/tests for behavioral changes;
 - ASan/UBSan;
 - TSan for concurrency-sensitive code;
 - parser fuzz smoke tests;

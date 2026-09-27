@@ -70,7 +70,6 @@ extern "C"
         uint64_t queue_wait_nanoseconds_total;
     } chttpx_runtime_metrics_t;
 
-
     /**
      * Copy the current server metrics into a caller-owned snapshot.
      *

@@ -22,4 +22,4 @@ Generated binaries are placed in `.build/`:
 - `example-json`
 - `example-upload`
 
-The normal `make lin` / `make win` demo target uses `example/basic.c`.
+The normal `make lin` demo target uses `example/basic.c`.

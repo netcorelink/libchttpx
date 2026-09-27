@@ -30,11 +30,7 @@ typedef struct
     char ips[MAX_MIDDLEWARE_RATE_LIMIT_TABLE_SIZE][64];
     uint32_t max_requests;
     uint32_t window_sec;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    CRITICAL_SECTION mutex;
-#else
     pthread_mutex_t mutex;
-#endif
 } chttpx_rate_limiter_state_t;
 
 /**
@@ -98,11 +94,7 @@ static uint32_t rate_limiter_hash(const char* ip)
  */
 static void rate_limiter_lock(chttpx_rate_limiter_state_t* state)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    EnterCriticalSection(&state->mutex);
-#else
     pthread_mutex_lock(&state->mutex);
-#endif
 }
 
 /**
@@ -112,11 +104,7 @@ static void rate_limiter_lock(chttpx_rate_limiter_state_t* state)
  */
 static void rate_limiter_unlock(chttpx_rate_limiter_state_t* state)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    LeaveCriticalSection(&state->mutex);
-#else
     pthread_mutex_unlock(&state->mutex);
-#endif
 }
 
 /**
@@ -178,15 +166,11 @@ void cHTTPX_MiddlewareRateLimiter(chttpx_serv_t* server, uint32_t max_requests, 
         if (!state)
             return;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        InitializeCriticalSection(&state->mutex);
-#else
         if (pthread_mutex_init(&state->mutex, NULL) != 0)
         {
             free(state);
             return;
         }
-#endif
         server->rate_limiter_state = state;
     }
 
@@ -267,11 +251,7 @@ void _chttpx_middleware_server_cleanup(chttpx_serv_t* server)
         return;
 
     chttpx_rate_limiter_state_t* state = (chttpx_rate_limiter_state_t*)server->rate_limiter_state;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DeleteCriticalSection(&state->mutex);
-#else
     pthread_mutex_destroy(&state->mutex);
-#endif
     free(state);
     server->rate_limiter_state = NULL;
 }

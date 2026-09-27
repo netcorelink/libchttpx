@@ -16,8 +16,16 @@ static void create_user(chttpx_request_t* req, chttpx_response_t* res)
         cHTTPX_StringField("name", &payload.name, true, 1, 64, cHTTPX_TRIM, NULL),
     };
 
-    if (!cHTTPX_BindJSON(req, res, fields, CHTTPX_ARRAY_LEN(fields)))
+    int bind = cHTTPX_BindJSON(req, fields, CHTTPX_ARRAY_LEN(fields));
+    if (bind != cHTTPX_BIND_OK)
+    {
+        if (bind == cHTTPX_BIND_REQUIRED)
+            *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, req->error_field);
+        else
+            *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, "invalid request body");
+        
         return;
+    }
 
     chttpx_json_t* json = cHTTPX_JsonObject(req);
     cHTTPX_JsonString(json, "email", payload.email);

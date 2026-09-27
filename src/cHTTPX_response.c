@@ -300,12 +300,7 @@ static chttpx_route_t* find_route(chttpx_request_t* req)
  */
 static int socket_read_timed_out(void)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    int error = WSAGetLastError();
-    return error == WSAETIMEDOUT || error == WSAEWOULDBLOCK;
-#else
     return errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT;
-#endif
 }
 
 /**
@@ -333,10 +328,8 @@ static ssize_t read_req(chttpx_serv_t* server, chttpx_socket_t fd, void* tls_ses
             return cHTTPX_ERR_TLS;
         if (n < 0)
         {
-#ifdef CHTTPX_PLATFORM_POSIX
             if (errno == EINTR)
                 continue;
-#endif
             if (socket_read_timed_out())
                 return cHTTPX_ERR_TIMEOUT;
             return -1;
@@ -376,12 +369,6 @@ static void set_client_timeout(chttpx_serv_t* server, chttpx_socket_t client_fd)
     if (!server)
         return;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DWORD read_timeout_ms = (DWORD)server->read_timeout_sec * 1000U;
-    DWORD write_timeout_ms = (DWORD)server->write_timeout_sec * 1000U;
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms));
-    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms));
-#else
     struct timeval tv;
     tv.tv_usec = 0;
 
@@ -390,7 +377,6 @@ static void set_client_timeout(chttpx_serv_t* server, chttpx_socket_t client_fd)
 
     tv.tv_sec = server->write_timeout_sec;
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-#endif
 }
 
 /**

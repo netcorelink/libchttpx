@@ -10,7 +10,6 @@
 #ifndef LIBCHTTPX_H
 #define LIBCHTTPX_H
 
-
 /* ========================================================================== */
 /* cHTTPX_crosspltm.h */
 /* ========================================================================== */
@@ -22,118 +21,55 @@ extern "C"
 {
 #endif
 
-#include <string.h>
-
-#if defined(_WIN32) || defined(_WIN64)
-#define CHTTPX_PLATFORM_WINDOWS
-#else
-#define CHTTPX_PLATFORM_POSIX
+#if !defined(__linux__)
+#error "libchttpx supports Linux only"
 #endif
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define strdup _strdup
-#else
-#define strdup strdup
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define chttpx_close(s) closesocket(s)
-#else
-#define chttpx_close(s) close(s)
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#include <winsock2.h>
-#include <windows.h>
-#include <ws2tcpip.h>
-#include <time.h>
-#endif
-
-#ifdef _WIN32
-    typedef SOCKET chttpx_socket_t;
-#else
-typedef int chttpx_socket_t;
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    static inline struct tm* localtime_r(const time_t* timep, struct tm* result)
-    {
-        memset(result, 0, sizeof(*result));
-        localtime_s(result, timep);
-        return result;
-    }
-
-    static inline struct tm* gmtime_r(const time_t* timep, struct tm* result)
-    {
-        memset(result, 0, sizeof(*result));
-        gmtime_s(result, timep);
-        return result;
-    }
-
-    static inline int chttpx_clock_gettime(int clock_id, struct timespec* value)
-    {
-        if (!value)
-            return -1;
-        if (clock_id == CLOCK_MONOTONIC)
-        {
-            LARGE_INTEGER frequency;
-            LARGE_INTEGER counter;
-            QueryPerformanceFrequency(&frequency);
-            QueryPerformanceCounter(&counter);
-            value->tv_sec = (time_t)(counter.QuadPart / frequency.QuadPart);
-            value->tv_nsec = (long)(((counter.QuadPart % frequency.QuadPart) * 1000000000LL) / frequency.QuadPart);
-            return 0;
-        }
-        FILETIME file_time;
-        ULARGE_INTEGER ticks;
-        GetSystemTimeAsFileTime(&file_time);
-        ticks.LowPart = file_time.dwLowDateTime;
-        ticks.HighPart = file_time.dwHighDateTime;
-        unsigned long long unix_ticks = ticks.QuadPart - 116444736000000000ULL;
-        value->tv_sec = (time_t)(unix_ticks / 10000000ULL);
-        value->tv_nsec = (long)((unix_ticks % 10000000ULL) * 100ULL);
-        return 0;
-    }
-
-#define clock_gettime chttpx_clock_gettime
-#endif
-
-#ifdef CHTTPX_PLATFORM_POSIX
-#include <unistd.h>
-#include <sys/time.h>
 #include <arpa/inet.h>
+#include <stddef.h>
+#include <string.h>
 #include <sys/socket.h>
-#endif
+#include <sys/time.h>
+#include <unistd.h>
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define strcasecmp _stricmp
-#endif
+#define CHTTPX_PLATFORM_POSIX
+#define chttpx_close(s) close(s)
 
-    static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
-    {
-        if (!needlelen)
-            return (void*)haystack;
-        if (needlelen > haystacklen)
-            return NULL;
+typedef int chttpx_socket_t;
 
-        const unsigned char* h = haystack;
-        const unsigned char* n = needle;
-
-        for (size_t i = 0; i <= haystacklen - needlelen; i++)
-        {
-            if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
-                return (void*)(h + i);
-        }
-
+/**
+ * Find a byte substring within a buffer (POSIX memmem when unavailable).
+ *
+ * @param haystack Buffer to search.
+ * @param haystacklen Length of haystack.
+ * @param needle Substring to find.
+ * @param needlelen Length of needle.
+ * @return Pointer into haystack, or NULL if not found.
+ */
+static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
+{
+    if (!needlelen)
+        return (void*)haystack;
+    if (needlelen > haystacklen)
         return NULL;
+
+    const unsigned char* h = haystack;
+    const unsigned char* n = needle;
+
+    for (size_t i = 0; i <= haystacklen - needlelen; i++)
+    {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void*)(h + i);
     }
+
+    return NULL;
+}
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_http.h */
@@ -319,7 +255,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_request.h */
 /* ========================================================================== */
@@ -337,7 +272,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -408,6 +342,26 @@ extern "C"
         FIELD_STRING_ARRAY,
         FIELD_NUMBER_ARRAY
     } validation_t;
+
+    /**
+     * Result of cHTTPX_Parse, cHTTPX_Validate, and cHTTPX_BindJSON.
+     *
+     * Zero means success. Positive values name the failure. The failing
+     * field, if any, is stored in req->error_field.
+     */
+    typedef enum
+    {
+        cHTTPX_BIND_OK = 0,
+        cHTTPX_BIND_REQUIRED = 1,
+        cHTTPX_BIND_MIN_LENGTH = 2,
+        cHTTPX_BIND_MAX_LENGTH = 3,
+        cHTTPX_BIND_INVALID_EMAIL = 4,
+        cHTTPX_BIND_GENERIC = 5,
+        cHTTPX_BIND_INVALID_JSON = 6,
+        cHTTPX_BIND_TYPE = 7,
+        cHTTPX_BIND_MEMORY = 8,
+        cHTTPX_BIND_INVALID_ARGUMENT = 9
+    } chttpx_bind_error_t;
 
     typedef struct
     {
@@ -521,6 +475,11 @@ extern "C"
 
         /* Error REQuest message */
         char error_msg[BUFFER_SIZE];
+
+        /* Bind/validate failure: code, field name, and optional numeric detail. */
+        int error_code;
+        char error_field[MAX_PARAM_NAME];
+        size_t error_num;
 
         /* Request metadata */
         char request_id[65];
@@ -683,7 +642,7 @@ extern "C"
      * @param req Current HTTP request.
      * @param fields Field definitions and output targets.
      * @param field_count Number of entries in fields.
-     * @return 1 on success or 0 on parse/type/allocation failure.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
@@ -693,25 +652,23 @@ extern "C"
      * @param req Current HTTP request.
      * @param fields Field definitions and parsed targets.
      * @param field_count Number of entries in fields.
-     * @param l Language code used for validation messages.
-     * @return 1 when all values pass validation, otherwise 0.
+     * @param l Unused; kept for source compatibility.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
-    struct chttpx_response;
     /**
      * Parse and validate a JSON request body.
      *
-     * Parsed strings and arrays are request-owned. On failure this function
-     * creates a safe JSON 400 response in res.
+     * Does not write an HTTP response. On failure inspect req->error_code,
+     * req->error_field, and req->error_num, then build the response yourself.
      *
      * @param req Current HTTP request.
-     * @param res Response populated when binding fails.
      * @param fields Field definitions and output targets.
      * @param field_count Number of field definitions.
-     * @return 1 on success, 0 on parsing or validation failure.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
-    int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
+    int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
 /**
  * Macro to define a string field for JSON request validation.
@@ -777,7 +734,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_response.h */
 /* ========================================================================== */
@@ -795,7 +751,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
 #include <time.h>
 
@@ -938,7 +893,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_middlewares.h */
 /* ========================================================================== */
@@ -956,8 +910,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
 #include <stdio.h>
 #include <pthread.h>
@@ -1069,7 +1021,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_cors.h */
 /* ========================================================================== */
@@ -1130,7 +1081,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_serv.h */
 /* ========================================================================== */
@@ -1148,9 +1098,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
-
 
 #include <stdio.h>
 #include <stdint.h>
@@ -1198,7 +1145,6 @@ extern "C"
 #define CHTTPX_ERR_TLS cHTTPX_ERR_TLS
 #define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
 #endif
-
 
     typedef enum
     {
@@ -1336,6 +1282,7 @@ extern "C"
         void* compression_state;
         void* metrics_state;
         void* runtime_state;
+        void* websocket_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
@@ -1443,13 +1390,11 @@ extern "C"
     /** Enable or disable compression for one response. */
     void cHTTPX_ResponseCompression(chttpx_response_t* response, bool enabled);
 
-
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_metrics.h */
@@ -1507,7 +1452,6 @@ extern "C"
         uint64_t queue_wait_nanoseconds_total;
     } chttpx_runtime_metrics_t;
 
-
     /**
      * Copy the current server metrics into a caller-owned snapshot.
      *
@@ -1548,7 +1492,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_app.h */
 /* ========================================================================== */
@@ -1565,7 +1508,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -1663,7 +1605,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_inet.h */
 /* ========================================================================== */
@@ -1681,7 +1622,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
     /**
      * Get client IP address from the underlying socket connection.
@@ -1708,7 +1648,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_params.h */
 /* ========================================================================== */
@@ -1726,7 +1665,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
     /**
      * Get a route parameter value by its name.
@@ -1752,7 +1690,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_queries.h */
 /* ========================================================================== */
@@ -1770,7 +1707,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
     /**
      * Get a query parameter value by name.
@@ -1822,7 +1758,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_headers.h */
 /* ========================================================================== */
@@ -1840,8 +1775,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
     /**
      * Get a request header by name.
@@ -1894,7 +1827,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_cookies.h */
 /* ========================================================================== */
@@ -1905,8 +1837,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
     /* Parse cookie in request */
     void _parse_req_cookies(chttpx_request_t* req);
@@ -1951,7 +1881,6 @@ extern "C"
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_i18n.h */
@@ -2070,7 +1999,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_media.h */
 /* ========================================================================== */
@@ -2088,8 +2016,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
 #define FILE_BUFFER 65536
 
@@ -2135,7 +2061,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_json.h */
 /* ========================================================================== */
@@ -2146,8 +2071,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
     typedef struct chttpx_json chttpx_json_t;
 
@@ -2199,62 +2122,192 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_websocket.h */
 /* ========================================================================== */
 /**
- * Copyright (c) 2026 netcorelink
- *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * WebSocket over HTTP/2 (RFC 8441) API.
  */
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-#include <stdlib.h>
-
+/** WebSocket continuation frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_CONTINUATION 0x0
+/** WebSocket text frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_TEXT 0x1
+/** WebSocket binary frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_BINARY 0x2
+/** WebSocket close frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_CLOSE 0x8
+/** WebSocket ping frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_PING 0x9
+/** WebSocket pong frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_PONG 0xA
 
+/**
+ * Parsed WebSocket frame metadata and payload.
+ *
+ * Used by legacy or diagnostic paths that expose a decoded frame.
+ */
 typedef struct
 {
-    /* FIN - final fragment
-     * 1 eq. this is the last frame of the message
-     * 0 eq. the message is divided into several parts
-     */
     int fin;
-    /* Check define CHTTPX_WSOCKET_OPCODE */
     int opcode;
     int masked;
-    /* Length data in payload */
     uint64_t payload_len;
-    /* Mask for XOR payload */
     unsigned char mask[4];
-    /* Data in socket */
     unsigned char* payload;
 } wsocket_frame_t;
 
-typedef struct
+/**
+ * Active WebSocket connection handle.
+ *
+ * Created by the HTTP/2 Extended CONNECT bridge. Application code registers
+ * message and close callbacks, then sends frames through the public helpers.
+ */
+typedef struct chttpx_wsocket
 {
-    int socket;
+    chttpx_socket_t socket;
     int connected;
+    int opcode;
+    chttpx_request_t* request;
+    void* user_data;
+    void* _internal;
 } chttpx_wsocket_t;
 
+/**
+ * Callback invoked for a complete text or binary message.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Message payload bytes.
+ * @param len Payload length in bytes.
+ */
 typedef void (*chttpx_wsocket_handler_t)(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
 
+/**
+ * Callback invoked when the peer closes or the connection is aborted.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param code Close status code.
+ * @param reason Optional UTF-8 close reason.
+ * @param len Reason length in bytes.
+ */
+typedef void (*chttpx_wsocket_close_handler_t)(chttpx_wsocket_t* wsocket, uint16_t code, const unsigned char* reason, size_t len);
+
+/**
+ * Route entry callback invoked after a successful WebSocket handshake.
+ *
+ * @param wsocket Newly accepted WebSocket connection.
+ */
 typedef void (*chttpx_wsocket_route_t)(chttpx_wsocket_t* wsocket);
 
-void cHTTPX_WSocketRegisterRoute(chttpx_router_t* r, const char* path, chttpx_wsocket_route_t handler);
+/**
+ * Register a WebSocket route on a router path prefix.
+ *
+ * @param router Target router.
+ * @param path Path relative to the router prefix.
+ * @param handler Callback invoked after handshake success.
+ */
+void cHTTPX_WSocketRegisterRoute(chttpx_router_t* router, const char* path, chttpx_wsocket_route_t handler);
 
-int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
+/**
+ * Set the message handler for an active WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param handler Callback for complete text or binary messages.
+ */
+void cHTTPX_WSocketOnMessage(chttpx_wsocket_t* wsocket, chttpx_wsocket_handler_t handler);
 
+/**
+ * Set the close handler for an active WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param handler Callback for peer close or abrupt abort.
+ */
+void cHTTPX_WSocketOnClose(chttpx_wsocket_t* wsocket, chttpx_wsocket_close_handler_t handler);
+
+/**
+ * Attach opaque application data to a WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param user_data Pointer stored on the connection.
+ */
+void cHTTPX_WSocketSetData(chttpx_wsocket_t* wsocket, void* user_data);
+
+/**
+ * Return opaque application data previously attached to a WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @return Stored user data pointer, or NULL.
+ */
+void* cHTTPX_WSocketData(chttpx_wsocket_t* wsocket);
+
+/**
+ * Send a text WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data UTF-8 payload bytes.
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_WSocketSend(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
 
+/**
+ * Send a binary WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Binary payload bytes.
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
+int cHTTPX_WSocketSendBinary(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+
+/**
+ * Send a WebSocket ping frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Optional ping payload.
+ * @param len Payload length in bytes (at most 125).
+ * @return Zero on success or a negative error code.
+ */
+int cHTTPX_WSocketPing(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+
+/**
+ * Send a WebSocket close frame and mark the connection closing.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param code Close status code, or 0 for 1000.
+ * @param reason Optional UTF-8 close reason.
+ * @return Zero on success or a negative error code.
+ */
+int cHTTPX_WSocketClose(chttpx_wsocket_t* wsocket, uint16_t code, const char* reason);
+
+/**
+ * Legacy HTTP/1.1 upgrade helper retained for source compatibility.
+ *
+ * Always returns unavailable: WebSockets are served over HTTP/2 Extended CONNECT.
+ *
+ * @param client_socket Unused client socket.
+ * @param sec_wsocket_key Unused Sec-WebSocket-Key value.
+ * @return Always cHTTPX_ERR_UNAVAILABLE.
+ */
+int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
+
+/**
+ * Legacy synchronous receive helper retained for source compatibility.
+ *
+ * @param wsocket Unused connection handle.
+ * @param buffer Unused output buffer.
+ * @param len Unused buffer capacity.
+ * @return Always cHTTPX_ERR_UNAVAILABLE.
+ */
 int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t len);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBCHTTPX_H */

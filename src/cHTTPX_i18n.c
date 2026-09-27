@@ -28,11 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
-#if defined(_WIN32) || defined(_WIN64)
-#include "../lib/cjson/cJSON.h"
-#else
 #include <cjson/cJSON.h>
-#endif
 
 static i18n_manager_t* i18n_manager = NULL;
 
