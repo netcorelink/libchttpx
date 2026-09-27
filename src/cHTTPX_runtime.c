@@ -14,9 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#ifdef CHTTPX_PLATFORM_POSIX
 #include <fcntl.h>
-#endif
 
 #define CHTTPX_RUNTIME_EVENTS 256
 #define CHTTPX_CHUNK_LINE_MAX 128
@@ -102,15 +100,10 @@ typedef struct chttpx_runtime
     bool stopping;
     bool shutdown_started;
     bool listener_registered;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    CRITICAL_SECTION completion_mutex;
-#else
     pthread_mutex_t completion_mutex;
-#endif
     chttpx_connection_t* completions;
     chttpx_connection_t* connections;
 } chttpx_runtime_t;
-
 
 /**
  * Return whether the runtime shutdown flag is set.
@@ -131,11 +124,7 @@ static bool runtime_is_stopping(chttpx_runtime_t* runtime)
  */
 static bool socket_valid(chttpx_socket_t fd)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return fd != INVALID_SOCKET;
-#else
     return fd >= 0;
-#endif
 }
 
 /**
@@ -149,17 +138,6 @@ static int connection_set_blocking(chttpx_connection_t* connection)
     if (!connection)
         return -1;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    u_long mode = 0;
-    if (ioctlsocket(connection->fd, FIONBIO, &mode) != 0)
-        return -1;
-
-    DWORD read_timeout_ms = (DWORD)connection->server->read_timeout_sec * 1000U;
-    DWORD write_timeout_ms = (DWORD)connection->server->write_timeout_sec * 1000U;
-    if (setsockopt(connection->fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&read_timeout_ms, sizeof(read_timeout_ms)) != 0 ||
-        setsockopt(connection->fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&write_timeout_ms, sizeof(write_timeout_ms)) != 0)
-        return -1;
-#else
     int flags = fcntl(connection->fd, F_GETFL, 0);
     if (flags < 0 || fcntl(connection->fd, F_SETFL, flags & ~O_NONBLOCK) != 0)
         return -1;
@@ -171,7 +149,6 @@ static int connection_set_blocking(chttpx_connection_t* connection)
     timeout.tv_sec = connection->server->write_timeout_sec;
     if (setsockopt(connection->fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
         return -1;
-#endif
 
     return 0;
 }
@@ -182,13 +159,9 @@ static int connection_set_blocking(chttpx_connection_t* connection)
  */
 static uint64_t monotonic_ms(void)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return GetTickCount64();
-#else
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (uint64_t)now.tv_sec * 1000ULL + (uint64_t)now.tv_nsec / 1000000ULL;
-#endif
 }
 
 /**
@@ -198,11 +171,7 @@ static uint64_t monotonic_ms(void)
  */
 static void completion_lock(chttpx_runtime_t* runtime)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    EnterCriticalSection(&runtime->completion_mutex);
-#else
     pthread_mutex_lock(&runtime->completion_mutex);
-#endif
 }
 
 /**
@@ -212,11 +181,7 @@ static void completion_lock(chttpx_runtime_t* runtime)
  */
 static void completion_unlock(chttpx_runtime_t* runtime)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    LeaveCriticalSection(&runtime->completion_mutex);
-#else
     pthread_mutex_unlock(&runtime->completion_mutex);
-#endif
 }
 
 /**
@@ -227,12 +192,7 @@ static void completion_unlock(chttpx_runtime_t* runtime)
  */
 static int sync_init(chttpx_runtime_t* runtime)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    InitializeCriticalSection(&runtime->completion_mutex);
-    return 0;
-#else
     return pthread_mutex_init(&runtime->completion_mutex, NULL) == 0 ? 0 : -1;
-#endif
 }
 
 /**
@@ -242,11 +202,7 @@ static int sync_init(chttpx_runtime_t* runtime)
  */
 static void sync_destroy(chttpx_runtime_t* runtime)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DeleteCriticalSection(&runtime->completion_mutex);
-#else
     pthread_mutex_destroy(&runtime->completion_mutex);
-#endif
 }
 
 /**
@@ -1081,14 +1037,8 @@ static void accept_connections(chttpx_runtime_t* runtime)
         chttpx_socket_t fd = accept(server->server_fd, NULL, NULL);
         if (!socket_valid(fd))
         {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-            int error = WSAGetLastError();
-            if (error == WSAEWOULDBLOCK || error == WSAEINTR)
-                return;
-#else
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 return;
-#endif
             return;
         }
 

@@ -85,6 +85,26 @@ extern "C"
         FIELD_NUMBER_ARRAY
     } validation_t;
 
+    /**
+     * Result of cHTTPX_Parse, cHTTPX_Validate, and cHTTPX_BindJSON.
+     *
+     * Zero means success. Positive values name the failure. The failing
+     * field, if any, is stored in req->error_field.
+     */
+    typedef enum
+    {
+        cHTTPX_BIND_OK = 0,
+        cHTTPX_BIND_REQUIRED = 1,
+        cHTTPX_BIND_MIN_LENGTH = 2,
+        cHTTPX_BIND_MAX_LENGTH = 3,
+        cHTTPX_BIND_INVALID_EMAIL = 4,
+        cHTTPX_BIND_GENERIC = 5,
+        cHTTPX_BIND_INVALID_JSON = 6,
+        cHTTPX_BIND_TYPE = 7,
+        cHTTPX_BIND_MEMORY = 8,
+        cHTTPX_BIND_INVALID_ARGUMENT = 9
+    } chttpx_bind_error_t;
+
     /** Parsed JSON array of strings (request-owned items). */
     typedef struct
     {
@@ -218,6 +238,11 @@ extern "C"
 
         /* Error REQuest message */
         char error_msg[BUFFER_SIZE];
+
+        /* Bind/validate failure: code, field name, and optional numeric detail. */
+        int error_code;
+        char error_field[MAX_PARAM_NAME];
+        size_t error_num;
 
         /* Request metadata */
         char request_id[65];
@@ -381,7 +406,7 @@ extern "C"
      * @param req Current HTTP request.
      * @param fields Field definitions and output targets.
      * @param field_count Number of entries in fields.
-     * @return 1 on success or 0 on parse/type/allocation failure.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
@@ -391,25 +416,23 @@ extern "C"
      * @param req Current HTTP request.
      * @param fields Field definitions and parsed targets.
      * @param field_count Number of entries in fields.
-     * @param l Language code used for validation messages.
-     * @return 1 when all values pass validation, otherwise 0.
+     * @param l Unused; kept for source compatibility.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
-    struct chttpx_response;
     /**
      * Parse and validate a JSON request body.
      *
-     * Parsed strings and arrays are request-owned. On failure this function
-     * creates a safe JSON 400 response in res.
+     * Does not write an HTTP response. On failure inspect req->error_code,
+     * req->error_field, and req->error_num, then build the response yourself.
      *
      * @param req Current HTTP request.
-     * @param res Response populated when binding fails.
      * @param fields Field definitions and output targets.
      * @param field_count Number of field definitions.
-     * @return 1 on success, 0 on parsing or validation failure.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
-    int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
+    int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
 /**
  * Macro to define a string field for JSON request validation.

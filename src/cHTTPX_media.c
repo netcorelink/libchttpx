@@ -32,9 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef CHTTPX_PLATFORM_POSIX
 #include <unistd.h>
-#endif
 
 #define MULTIPART_LINE_LIMIT 4096
 #define MULTIPART_FORM_VALUE_LIMIT (1024 * 1024)
@@ -106,13 +104,6 @@ static void remove_temporary_file(void* resource)
  */
 static FILE* create_temporary_file(char* path, size_t path_size)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    (void)path_size;
-    char directory[MAX_PATH];
-    if (!GetTempPathA(sizeof(directory), directory) || !GetTempFileNameA(directory, "chx", 0, path))
-        return NULL;
-    return fopen(path, "w+b");
-#else
     if (path_size < 24)
         return NULL;
     snprintf(path, path_size, "/tmp/chttpx-upload-XXXXXX");
@@ -126,7 +117,6 @@ static FILE* create_temporary_file(char* path, size_t path_size)
         remove(path);
     }
     return file;
-#endif
 }
 
 /**

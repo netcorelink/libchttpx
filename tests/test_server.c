@@ -234,11 +234,7 @@ static void exchange_ipv6(uint16_t port, const char* request, char* response, si
 static chttpx_socket_t open_idle_connection(uint16_t port)
 {
     chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    assert(socket_fd != INVALID_SOCKET);
-#else
     assert(socket_fd >= 0);
-#endif
     struct sockaddr_in address = {0};
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
@@ -247,17 +243,12 @@ static chttpx_socket_t open_idle_connection(uint16_t port)
     return socket_fd;
 }
 
-
 /** Polls until server->listening is true. */
 static void wait_until_listening(chttpx_serv_t* server)
 {
     for (int i = 0; i < 5000 && !__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE); i++)
     {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        Sleep(1);
-#else
         usleep(1000);
-#endif
     }
 
     assert(__atomic_load_n(&server->listening, __ATOMIC_ACQUIRE));

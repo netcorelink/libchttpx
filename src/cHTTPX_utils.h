@@ -1,77 +1,14 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <ctype.h>
+#include <pthread.h>
 #include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-/* Threads */
-#if defined(_WIN32) || defined(_WIN64)
-#include <windows.h>
-
-    typedef HANDLE thread_t;
-
-    /** Arguments passed to a newly created Windows worker thread. */
-    typedef struct
-    {
-        void* (*function)(void*);
-        void* argument;
-    } chttpx_thread_start_t;
-
-    /**
-     * Windows thread entry that invokes the user start routine.
-     *
-     * @param value Heap-allocated chttpx_thread_start_t (freed here).
-     * @return Always 0.
-     */
-    static DWORD WINAPI _thread_start(LPVOID value)
-    {
-        chttpx_thread_start_t* start = value;
-        void* (*function)(void*) = start->function;
-        void* argument = start->argument;
-        free(start);
-        function(argument);
-        return 0;
-    }
-
-    /**
-     * Create a worker thread (Windows).
-     *
-     * @param thread Output thread handle.
-     * @param func User function accepting void* argument.
-     * @param arg Argument passed to func.
-     * @return 0 on success, -1 on error.
-     */
-    static inline int _thread_create(thread_t* thread, void* (*func)(void*), void* arg)
-    {
-        chttpx_thread_start_t* start = malloc(sizeof(*start));
-        if (!start)
-            return -1;
-        start->function = func;
-        start->argument = arg;
-        *thread = CreateThread(NULL, 0, _thread_start, start, 0, NULL);
-        if (!*thread)
-            free(start);
-        return *thread ? 0 : -1;
-    }
-
-    /**
-     * Wait for a worker thread to finish (Windows).
-     *
-     * @param thread Thread handle from _thread_create.
-     * @return 0 on success.
-     */
-    static inline int _thread_join(thread_t thread)
-    {
-        WaitForSingleObject(thread, INFINITE);
-        CloseHandle(thread);
-        return 0;
-    }
-#else
-#include <pthread.h>
 
 typedef pthread_t thread_t;
 
@@ -98,15 +35,12 @@ static inline int _thread_join(thread_t thread)
 {
     return pthread_join(thread, NULL);
 }
-#endif
 
 #ifdef __cplusplus
 }
 #endif
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
-
-#include <ctype.h>
 
 /**
  * Case-insensitive memmem over a bounded haystack.

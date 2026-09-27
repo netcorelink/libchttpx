@@ -24,11 +24,7 @@
 
 #include "cHTTPX_http.h"
 
-#if defined(_WIN32) || defined(_WIN64)
-#include "../lib/cjson/cJSON.h"
-#else
 #include <cjson/cJSON.h>
-#endif
 
 #include <stdio.h>
 #include <string.h>

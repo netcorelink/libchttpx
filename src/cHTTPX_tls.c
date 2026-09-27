@@ -508,10 +508,8 @@ int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t 
             int error = SSL_get_error((SSL*)tls_session, result);
             if (error == SSL_ERROR_ZERO_RETURN)
                 return 0;
-#ifdef CHTTPX_PLATFORM_POSIX
             if (error == SSL_ERROR_SYSCALL && errno == EINTR)
                 continue;
-#endif
             return cHTTPX_ERR_TLS;
         }
     }
@@ -524,10 +522,8 @@ int _chttpx_io_recv(chttpx_socket_t fd, void* tls_session, void* buffer, size_t 
         int result = recv(fd, (char*)buffer, (int)wanted, 0);
         if (result >= 0)
             return result;
-#ifdef CHTTPX_PLATFORM_POSIX
         if (errno == EINTR)
             continue;
-#endif
         return -1;
     }
 }
@@ -567,18 +563,10 @@ int _chttpx_io_recv_nonblocking(chttpx_socket_t fd, void* tls_session, void* buf
     int result = recv(fd, (char*)buffer, (int)wanted, 0);
     if (result >= 0)
         return result;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    int error = WSAGetLastError();
-    if (error == WSAEWOULDBLOCK)
-        return CHTTPX_IO_WANT_READ;
-    if (error == WSAEINTR)
-        return CHTTPX_IO_WANT_READ;
-#else
     if (errno == EAGAIN || errno == EWOULDBLOCK)
         return CHTTPX_IO_WANT_READ;
     if (errno == EINTR)
         return CHTTPX_IO_WANT_READ;
-#endif
     return cHTTPX_ERR_IO;
 }
 
@@ -621,18 +609,10 @@ int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const voi
     int result = send(fd, (const char*)data, (int)wanted, flags);
     if (result >= 0)
         return result;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    int error = WSAGetLastError();
-    if (error == WSAEWOULDBLOCK)
-        return CHTTPX_IO_WANT_WRITE;
-    if (error == WSAEINTR)
-        return CHTTPX_IO_WANT_WRITE;
-#else
     if (errno == EAGAIN || errno == EWOULDBLOCK)
         return CHTTPX_IO_WANT_WRITE;
     if (errno == EINTR)
         return CHTTPX_IO_WANT_WRITE;
-#endif
     return cHTTPX_ERR_IO;
 }
 
@@ -678,10 +658,8 @@ int _chttpx_io_send_all(chttpx_socket_t fd, void* tls_session, const void* data,
             if (result <= 0)
             {
                 int error = SSL_get_error((SSL*)tls_session, result);
-#ifdef CHTTPX_PLATFORM_POSIX
                 if (error == SSL_ERROR_SYSCALL && errno == EINTR)
                     continue;
-#endif
                 return cHTTPX_ERR_TLS;
             }
             sent += (size_t)result;
@@ -696,10 +674,8 @@ int _chttpx_io_send_all(chttpx_socket_t fd, void* tls_session, const void* data,
         int result = send(fd, (const char*)cursor + sent, (int)wanted, flags);
         if (result < 0)
         {
-#ifdef CHTTPX_PLATFORM_POSIX
             if (errno == EINTR)
                 continue;
-#endif
             return cHTTPX_ERR_IO;
         }
         if (result == 0)

@@ -24,6 +24,4 @@ Generated binaries are placed in `.build/`:
 - `example-metrics`
 - `example-sse`
 
-`example/sse_client.html` is a browser `EventSource` client for `example-sse`.
-
-The normal `make lin` / `make win` demo target uses `example/basic.c`.
+The normal `make lin` demo target uses `example/basic.c`.

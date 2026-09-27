@@ -125,7 +125,7 @@ cHTTPX_AppShutdown(&app);
 
 ## Event-driven runtime и worker pool
 
-Sockets работают в non-blocking режиме и остаются на server event loop, поэтому worker thread больше не занят ожиданием сетевого I/O. На Linux используется `epoll`, на macOS/BSD — `kqueue`, на Windows — non-blocking backend на `WSAPoll`.
+Sockets работают в non-blocking режиме и остаются на server event loop, поэтому worker thread больше не занят ожиданием сетевого I/O. На Linux используется `epoll`.
 
 Connection попадает во внутренний фиксированный пул из **32 worker threads** только после того, как HTTP request полностью принят. Worker выполняет middleware, routing и application handler и не вызывает `recv()` или `send()`. Готовый сериализованный response возвращается в event loop и отправляется только когда socket готов к записи.
 

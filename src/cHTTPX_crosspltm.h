@@ -6,142 +6,49 @@ extern "C"
 {
 #endif
 
-#include <string.h>
-
-#if defined(_WIN32) || defined(_WIN64)
-#define CHTTPX_PLATFORM_WINDOWS
-#else
-#define CHTTPX_PLATFORM_POSIX
+#if !defined(__linux__)
+#error "libchttpx supports Linux only"
 #endif
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define strdup _strdup
-#else
-#define strdup strdup
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define chttpx_close(s) closesocket(s)
-#else
-#define chttpx_close(s) close(s)
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#include <winsock2.h>
-#include <windows.h>
-#include <ws2tcpip.h>
-#include <time.h>
-#endif
-
-#ifdef _WIN32
-/** Socket handle type (Windows SOCKET, POSIX int). */
-typedef SOCKET chttpx_socket_t;
-#else
-typedef int chttpx_socket_t;
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    /**
-     * Thread-safe localtime (POSIX localtime_r on Windows).
-     *
-     * @param timep Input time value.
-     * @param result Output struct tm buffer.
-     * @return result on success.
-     */
-    static inline struct tm* localtime_r(const time_t* timep, struct tm* result)
-    {
-        memset(result, 0, sizeof(*result));
-        localtime_s(result, timep);
-        return result;
-    }
-
-    /**
-     * Thread-safe UTC breakdown (POSIX gmtime_r on Windows).
-     *
-     * @param timep Input time value.
-     * @param result Output struct tm buffer.
-     * @return result on success.
-     */
-    static inline struct tm* gmtime_r(const time_t* timep, struct tm* result)
-    {
-        memset(result, 0, sizeof(*result));
-        gmtime_s(result, timep);
-        return result;
-    }
-
-    /**
-     * clock_gettime compatibility for Windows.
-     *
-     * @param clock_id CLOCK_MONOTONIC or real-time clock id.
-     * @param value Output timespec.
-     * @return 0 on success, -1 on error.
-     */
-    static inline int chttpx_clock_gettime(int clock_id, struct timespec* value)
-    {
-        if (!value)
-            return -1;
-        if (clock_id == CLOCK_MONOTONIC)
-        {
-            LARGE_INTEGER frequency;
-            LARGE_INTEGER counter;
-            QueryPerformanceFrequency(&frequency);
-            QueryPerformanceCounter(&counter);
-            value->tv_sec = (time_t)(counter.QuadPart / frequency.QuadPart);
-            value->tv_nsec = (long)(((counter.QuadPart % frequency.QuadPart) * 1000000000LL) / frequency.QuadPart);
-            return 0;
-        }
-        FILETIME file_time;
-        ULARGE_INTEGER ticks;
-        GetSystemTimeAsFileTime(&file_time);
-        ticks.LowPart = file_time.dwLowDateTime;
-        ticks.HighPart = file_time.dwHighDateTime;
-        unsigned long long unix_ticks = ticks.QuadPart - 116444736000000000ULL;
-        value->tv_sec = (time_t)(unix_ticks / 10000000ULL);
-        value->tv_nsec = (long)((unix_ticks % 10000000ULL) * 100ULL);
-        return 0;
-    }
-
-#define clock_gettime chttpx_clock_gettime
-#endif
-
-#ifdef CHTTPX_PLATFORM_POSIX
-#include <unistd.h>
-#include <sys/time.h>
 #include <arpa/inet.h>
+#include <stddef.h>
+#include <string.h>
 #include <sys/socket.h>
-#endif
+#include <sys/time.h>
+#include <unistd.h>
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define strcasecmp _stricmp
-#endif
+#define CHTTPX_PLATFORM_POSIX
+#define chttpx_close(s) close(s)
 
-    /**
-     * Find a byte substring within a buffer (POSIX memmem when unavailable).
-     *
-     * @param haystack Buffer to search.
-     * @param haystacklen Length of haystack.
-     * @param needle Substring to find.
-     * @param needlelen Length of needle.
-     * @return Pointer into haystack, or NULL if not found.
-     */
-    static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
-    {
-        if (!needlelen)
-            return (void*)haystack;
-        if (needlelen > haystacklen)
-            return NULL;
+typedef int chttpx_socket_t;
 
-        const unsigned char* h = haystack;
-        const unsigned char* n = needle;
-
-        for (size_t i = 0; i <= haystacklen - needlelen; i++)
-        {
-            if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
-                return (void*)(h + i);
-        }
-
+/**
+ * Find a byte substring within a buffer (POSIX memmem when unavailable).
+ *
+ * @param haystack Buffer to search.
+ * @param haystacklen Length of haystack.
+ * @param needle Substring to find.
+ * @param needlelen Length of needle.
+ * @return Pointer into haystack, or NULL if not found.
+ */
+static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
+{
+    if (!needlelen)
+        return (void*)haystack;
+    if (needlelen > haystacklen)
         return NULL;
+
+    const unsigned char* h = haystack;
+    const unsigned char* n = needle;
+
+    for (size_t i = 0; i <= haystacklen - needlelen; i++)
+    {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void*)(h + i);
     }
+
+    return NULL;
+}
 
 #ifdef __cplusplus
 }

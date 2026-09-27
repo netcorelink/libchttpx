@@ -67,7 +67,6 @@ extern "C"
 #define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
 #endif
 
-
 /**
  * Server logging verbosity.
  */
@@ -228,6 +227,7 @@ extern "C"
         void* compression_state;
         void* metrics_state;
         void* runtime_state;
+        void* websocket_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;

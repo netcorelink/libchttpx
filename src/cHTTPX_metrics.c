@@ -18,9 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef CHTTPX_PLATFORM_POSIX
 #include <pthread.h>
-#endif
 
 /** Per-route request and status-class counters. */
 typedef struct
@@ -34,11 +32,7 @@ typedef struct
 /** Internal metrics state (atomics, route table, mutex). */
 typedef struct
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    CRITICAL_SECTION routes_mutex;
-#else
     pthread_mutex_t routes_mutex;
-#endif
     chttpx_metrics_t metrics;
     uint64_t request_duration_nanoseconds_total;
     chttpx_route_metrics_entry_t* routes;
@@ -67,11 +61,7 @@ static const double duration_bounds_seconds[] = {
  */
 static void routes_lock(chttpx_metrics_state_t* state)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    EnterCriticalSection(&state->routes_mutex);
-#else
     pthread_mutex_lock(&state->routes_mutex);
-#endif
 }
 
 /**
@@ -81,11 +71,7 @@ static void routes_lock(chttpx_metrics_state_t* state)
  */
 static void routes_unlock(chttpx_metrics_state_t* state)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    LeaveCriticalSection(&state->routes_mutex);
-#else
     pthread_mutex_unlock(&state->routes_mutex);
-#endif
 }
 
 /**
@@ -354,15 +340,11 @@ int _chttpx_metrics_server_init(chttpx_serv_t* server, int enabled)
     if (!state)
         return cHTTPX_ERR_MEMORY;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    InitializeCriticalSection(&state->routes_mutex);
-#else
     if (pthread_mutex_init(&state->routes_mutex, NULL) != 0)
     {
         free(state);
         return cHTTPX_ERR_STATE;
     }
-#endif
 
     server->metrics_state = state;
     return cHTTPX_OK;
@@ -379,11 +361,7 @@ void _chttpx_metrics_server_cleanup(chttpx_serv_t* server)
     if (!state)
         return;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DeleteCriticalSection(&state->routes_mutex);
-#else
     pthread_mutex_destroy(&state->routes_mutex);
-#endif
     free(state->routes);
     free(state);
     server->metrics_state = NULL;

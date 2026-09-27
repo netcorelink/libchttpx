@@ -17,7 +17,6 @@ TLS_LDFLAGS += -lssl -lcrypto
 endif
 
 CFLAGS += $(TLS_CFLAGS)
-TARGET_DLL = libchttpx.dll
 CLANG_FORMAT = clang-format
 FUZZ_CC ?= clang
 
@@ -28,10 +27,7 @@ PREFIX ?= /usr/local
 DESTDIR ?= pkg
 PKGDIR ?= /pkg/usr/local
 
-WIN_LIB_DIR = tools
-
 LIN_LDFLAGS = -lcjson -lz -lnghttp2 $(TLS_LDFLAGS)
-WIN_LDFLAGS = -lws2_32 -lz -lnghttp2 $(TLS_LDFLAGS)
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
@@ -41,21 +37,20 @@ FUZZ_HEADERS_TARGET = $(BINDIR)/fuzz_headers
 TEST_TLS_TARGET = $(BINDIR)/test_tls
 TEST_COMPRESSION_TARGET = $(BINDIR)/test_compression
 TEST_METRICS_TARGET = $(BINDIR)/test_metrics
+TEST_WEBSOCKET_TARGET = $(BINDIR)/test_websocket
 TEST_SSE_TARGET = $(BINDIR)/test_sse
 EXAMPLE_SRC = example/basic.c
 EXAMPLE_OBJ = $(OBJDIR)/example/basic.o
 
-EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics sse
+EXAMPLE_NAMES = basic multiple_servers local_call remote_call middleware json upload metrics websocket sse
 EXAMPLE_TARGETS = $(addprefix $(BINDIR)/example-,$(EXAMPLE_NAMES))
 
 LIN_SRCS = $(wildcard src/*.c)
 FORMAT_SRCS = $(wildcard src/*.c src/*.h include/*.h example/*.c tests/*.c)
-WIN_SRCS = $(wildcard src/*.c) lib/cjson/cJSON.c
 
 LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
-WIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(WIN_SRCS))
 
-# LINux build
+# Linux build
 # -
 
 lin: $(BINDIR)/$(TARGET)
@@ -82,20 +77,13 @@ examples-tls:
 
 examples-compression: $(BINDIR)/example-compression
 
-# WINdows build
-# -
-
-win:
-	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -D_WIN32 -mconsole $(EXAMPLE_SRC) $(WIN_SRCS) -o $(BINDIR)/$(TARGET).exe $(WIN_LDFLAGS)
-
-# LINux shared library
+# Linux shared library
 # -
 
 libchttpx.so: $(LIN_OBJS)
 	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS) $(LIN_LDFLAGS) -pthread
 
-# LINux lib install
+# Linux lib install
 # -
 
 # before execution, you must run `make libchttpx.so`
@@ -111,41 +99,16 @@ lib-install: libchttpx.so
 		cp libchttpx.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/libchttpx.pc; \
 	fi
 
-# WINdows lib compile
+# Linux tests
 # -
 
-win-lib:
-	@echo "Building Windows DLL..."
-	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -std=c11 -D_WIN32 -shared -o $(BINDIR)/$(TARGET_DLL) $(WIN_SRCS) -Wl,--out-implib,$(BINDIR)/libchttpx.a $(WIN_LDFLAGS)
-
-	@echo "Copying files to $(WIN_LIB_DIR)..."
-	if not exist $(WIN_LIB_DIR) mkdir $(WIN_LIB_DIR)
-	copy /Y $(BINDIR)\$(TARGET_DLL) $(WIN_LIB_DIR)\$(TARGET_DLL)
-	copy /Y $(BINDIR)\libchttpx.a $(WIN_LIB_DIR)\libchttpx.a
-	for /f "delims=" %%i in ('where zlib1.dll 2^>nul') do copy /Y "%%i" $(WIN_LIB_DIR)\zlib1.dll
-	if not exist $(WIN_LIB_DIR)\include mkdir $(WIN_LIB_DIR)\include
-	xcopy /E /I /Y include $(WIN_LIB_DIR)\include
-
-	@echo "Files copied to $(WIN_LIB_DIR) successfully!"
-
-test-win:
-	if not exist $(BINDIR) mkdir $(BINDIR)
-	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_core.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_TARGET).exe $(WIN_LDFLAGS)
-	$(TEST_TARGET).exe
-	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_server.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_SERVER_TARGET).exe $(WIN_LDFLAGS)
-	$(TEST_SERVER_TARGET).exe
-	$(CC) $(CFLAGS) -std=c11 -D_WIN32 tests/test_sse.c src/*.c lib/cjson/cJSON.c -Wl,--stack,8388608 -o $(TEST_SSE_TARGET).exe $(WIN_LDFLAGS)
-	$(TEST_SSE_TARGET).exe
-
-# LINux tests
-# -
-
-test: $(TEST_TARGET) $(TEST_SERVER_TARGET) $(TEST_METRICS_TARGET) $(TEST_SSE_TARGET)
+TEST_WEBSOCKET_TARGET = $(BINDIR)/test_websocket
+TEST_SSE_TARGET = $(BINDIR)/test_sse
 	$(TEST_TARGET)
 	$(TEST_SERVER_TARGET)
 	$(TEST_METRICS_TARGET)
-	$(TEST_SSE_TARGET)
+TEST_WEBSOCKET_TARGET = $(BINDIR)/test_websocket
+TEST_SSE_TARGET = $(BINDIR)/test_sse
 
 $(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
@@ -202,7 +165,11 @@ $(TEST_METRICS_TARGET): tests/test_metrics.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -O2 -g tests/test_metrics.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
-# LINux lib compile
+$(TEST_WEBSOCKET_TARGET): tests/test_websocket.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -O2 -g tests/test_websocket.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+# Linux lib compile
 # -
 
 lin-lib: clean libchttpx.so
@@ -227,19 +194,13 @@ lin-lib: clean libchttpx.so
 
 	@echo "Release package created: $(TAR)"
 
-# LINux run
+# Linux run
 # -
 
 lin-run: lin
 	$(BINDIR)/$(TARGET)
 
-# WINdows run
-# -
-
-win-run: win
-	$(BINDIR)\$(TARGET).exe
-
-# LINux format
+# Linux format
 # -
 
 lin-format:
@@ -250,16 +211,9 @@ format-check:
 	@echo ">> Checking clang-format"
 	$(CLANG_FORMAT) --dry-run --Werror $(FORMAT_SRCS)
 
-# WINdows format
-# -
-
-win-format:
-	@echo ">> Formatting clang source files"
-	$(CLANG_FORMAT) -i $(WIN_SRCS)
-
-run: run-lin
+run: lin-run
 
 clean:
-	rm -rf $(OBJDIR) $(BINDIR) *.a *.dll
+	rm -rf $(OBJDIR) $(BINDIR) *.a
 	rm -rf $(RELEASE_DIR)
 	rm -rf libchttpx.so
