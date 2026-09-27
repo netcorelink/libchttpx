@@ -27,7 +27,7 @@ jobs:
           version: 0.0.0-pr.${{ github.event.pull_request.number || github.run_number }}
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: libchttpx-linux-packages
           path: dist/packages/*
