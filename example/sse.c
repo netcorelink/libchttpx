@@ -1,6 +1,7 @@
 #include <libchttpx.h>
 
 #include <stdio.h>
+#include <unistd.h>
 
 static void events(chttpx_request_t* req, chttpx_response_t* res)
 {
@@ -24,11 +25,7 @@ static void events(chttpx_request_t* req, chttpx_response_t* res)
         if (cHTTPX_SSESend(sse, "progress", id, data) != cHTTPX_OK)
             break;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        Sleep(1000);
-#else
         sleep(1);
-#endif
     }
 
     cHTTPX_SSEClose(sse);
