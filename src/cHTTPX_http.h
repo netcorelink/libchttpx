@@ -26,6 +26,8 @@ extern "C"
 #define cHTTPX_CTYPE_CSV "text/csv"
 /* JSON data. Use for REST API responses and requests. */
 #define cHTTPX_CTYPE_JSON "application/json"
+/* Server-Sent Events stream. */
+#define cHTTPX_CTYPE_SSE "text/event-stream"
 /* URL-encoded form data. Typical for HTML form submissions. */
 #define cHTTPX_CTYPE_FORM "application/x-www-form-urlencoded"
 /* Multipart form data. Used for file uploads via forms. */
