@@ -25,12 +25,7 @@ extern "C"
      * The provider allocates *output with malloc-compatible ownership. The
      * library takes ownership on success and frees it during response cleanup.
      */
-    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input,
-                                                size_t input_size,
-                                                int level,
-                                                unsigned char** output,
-                                                size_t* output_size,
-                                                void* user_data);
+    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input, size_t input_size, int level, unsigned char** output, size_t* output_size, void* user_data);
 
     /**
      * Compression provider descriptor.

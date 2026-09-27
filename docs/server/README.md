@@ -17,7 +17,7 @@ Current defaults:
 | Field | Default |
 | --- | ---: |
 | `port` | 8080 |
-| `network_mode` | `CHTTPX_NETWORK_DUAL` |
+| `network_mode` | `cHTTPX_NETWORK_DUAL` |
 | `max_clients` | 255 |
 | `read_timeout_sec` | 30 |
 | `write_timeout_sec` | 30 |
@@ -28,7 +28,7 @@ Current defaults:
 | `request_id_enabled` | true |
 | `metrics_enabled` | false |
 | `default_language` | `"en"` |
-| `log_level` | `CHTTPX_LOG_INFO` |
+| `log_level` | `cHTTPX_LOG_INFO` |
 
 ## Network mode
 
@@ -38,16 +38,16 @@ Servers use dual-stack networking by default. A single IPv6 listener bound to `:
 chttpx_config_t config = cHTTPX_DefaultConfig();
 
 /* Default: accept IPv4 and IPv6. */
-config.network_mode = CHTTPX_NETWORK_DUAL;
+config.network_mode = cHTTPX_NETWORK_DUAL;
 
 /* IPv4 only. */
-// config.network_mode = CHTTPX_NETWORK_IPV4;
+// config.network_mode = cHTTPX_NETWORK_IPV4;
 
 /* IPv6 only. */
-// config.network_mode = CHTTPX_NETWORK_IPV6;
+// config.network_mode = cHTTPX_NETWORK_IPV6;
 ```
 
-With `CHTTPX_NETWORK_DUAL`, both `http://127.0.0.1:8080` and `http://[::1]:8080` reach the same server. IPv4-mapped peer addresses are normalized before they are exposed through `req->client_ip`, so an IPv4 client is reported as `127.0.0.1` rather than `::ffff:127.0.0.1`.
+With `cHTTPX_NETWORK_DUAL`, both `http://127.0.0.1:8080` and `http://[::1]:8080` reach the same server. IPv4-mapped peer addresses are normalized before they are exposed through `req->client_ip`, so an IPv4 client is reported as `127.0.0.1` rather than `::ffff:127.0.0.1`.
 
 ## Custom limits
 
@@ -87,26 +87,26 @@ See [Metrics and Prometheus](../metrics/README.md) for snapshots and the `/metri
 
 | Code | Meaning |
 | --- | --- |
-| `CHTTPX_OK` | success |
-| `CHTTPX_ERR_MEMORY` | allocation failure |
-| `CHTTPX_ERR_SOCKET` | socket setup failure |
-| `CHTTPX_ERR_BIND` | bind failed |
-| `CHTTPX_ERR_LISTEN` | listen failed |
-| `CHTTPX_ERR_INVALID_ARGUMENT` | invalid input |
-| `CHTTPX_ERR_LIMIT` | limit exceeded |
-| `CHTTPX_ERR_IO` | I/O failure |
-| `CHTTPX_ERR_NOT_FOUND` | resource/target not found |
-| `CHTTPX_ERR_PROTOCOL` | invalid protocol data |
-| `CHTTPX_ERR_STATE` | invalid lifecycle state |
-| `CHTTPX_ERR_UNAVAILABLE` | remote call unavailable |
-| `CHTTPX_ERR_TIMEOUT` | remote call timed out |
+| `cHTTPX_OK` | success |
+| `cHTTPX_ERR_MEMORY` | allocation failure |
+| `cHTTPX_ERR_SOCKET` | socket setup failure |
+| `cHTTPX_ERR_BIND` | bind failed |
+| `cHTTPX_ERR_LISTEN` | listen failed |
+| `cHTTPX_ERR_INVALID_ARGUMENT` | invalid input |
+| `cHTTPX_ERR_LIMIT` | limit exceeded |
+| `cHTTPX_ERR_IO` | I/O failure |
+| `cHTTPX_ERR_NOT_FOUND` | resource/target not found |
+| `cHTTPX_ERR_PROTOCOL` | invalid protocol data |
+| `cHTTPX_ERR_STATE` | invalid lifecycle state |
+| `cHTTPX_ERR_UNAVAILABLE` | remote call unavailable |
+| `cHTTPX_ERR_TIMEOUT` | remote call timed out |
 
 ## Lifecycle
 
 ```c
 chttpx_app_t app;
 
-if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+if (cHTTPX_AppInit(&app) != cHTTPX_OK)
     return 1;
 
 chttpx_config_t config = cHTTPX_DefaultConfig();
@@ -134,6 +134,14 @@ cHTTPX_AppShutdown(&app);
 
 Trigger shutdown from an appropriate control thread for SIGINT/SIGTERM. Avoid complex work directly in an async-signal handler.
 
+## Event-driven runtime and worker pool
+
+Sockets are non-blocking and stay on the server event loop instead of occupying worker threads while waiting for network I/O. Linux uses `epoll`.
+
+A connection is submitted to the internal fixed pool of **32 worker threads** only after the complete HTTP request has been received. Workers execute middleware, routing and the application handler; they do not call `recv()` or `send()`. The serialized response is returned to the event loop and written when the socket is ready.
+
+The worker count is intentionally not part of `chttpx_config_t` and cannot be changed by application code. `max_clients` limits accepted/in-flight connections, not the number of OS threads. Large multipart/chunked upload bodies remain disk-backed while they are received.
+
 ## Thread-safety model
 
 - client count is updated atomically;
@@ -143,4 +151,4 @@ Trigger shutdown from an appropriate control thread for SIGINT/SIGTERM. Avoid co
 
 ## HTTP model
 
-Current server behavior is HTTP/1.1 with one request per connection and explicit `Connection: close`. Fixed `Content-Length` and chunked request bodies are supported.
+Current server behavior is HTTP/2. Cleartext servers use h2c prior knowledge; TLS servers negotiate `h2` with ALPN. Multiple HTTP/2 streams may share one connection, while the public App/router/handler API remains unchanged.

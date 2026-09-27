@@ -150,12 +150,10 @@ jobs:
             <p align="center">
               <img alt="golangci-lint logo" src="https://avatars.githubusercontent.com/u/252895549?s=400&u=6c747c431c2844620af7772fcd716ef423a6ab1d&v=4" height="150" />
               <h3 align="center">netcorelink/libchttpx</h3>
-              <p align="center">A powerful, cross-platform HTTP server library in C/C++ for building full-featured web servers</p>
+              <p align="center">A powerful HTTP/2 server library in C/C++ for Linux</p>
             </p>
 
             ---
-
-            > :warning: **Warning:** Use the `linux environment` for stable library operation.
 
             ## Linux native packages
 
@@ -172,7 +170,7 @@ jobs:
             sudo dnf install ./libchttpx-dev-*.rpm
 
             # Arch Linux
-            sudo pacman -U ./libchttpx-dev-*.pkg.tar.zst
+            sudo pacman -U ./libchttpx-dev_*.pkg.tar.zst
 
             # Alpine Linux
             sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
@@ -182,12 +180,6 @@ jobs:
 
             ```bash
             curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
-            ```
-
-            ## Windows
-
-            ```powershell
-            iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
             ```
 
       - name: Checkout APT repository
@@ -264,4 +256,3 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run pages.yml --ref main
-

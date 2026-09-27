@@ -33,7 +33,7 @@ chttpx_serv_t* server =
     cHTTPX_AppServer(&app, "https", &config);
 ```
 
-Когда `tls.enabled = true`, необходимо указать certificate и private key. Если библиотека собрана без TLS, попытка включить TLS вернёт `CHTTPX_ERR_UNAVAILABLE`.
+Когда `tls.enabled = true`, необходимо указать certificate и private key. Если библиотека собрана без TLS, попытка включить TLS вернёт `cHTTPX_ERR_UNAVAILABLE`.
 
 Готовый пример находится в `example/tls.c`:
 
@@ -93,7 +93,7 @@ config.tls.require_client_cert = true;
 
 ## Ошибки и logging
 
-Ошибки инициализации TLS, handshake, certificate verification и encrypted I/O проходят через обычный error path библиотеки. TLS-ошибки возвращают `CHTTPX_ERR_TLS`; если TLS вообще не собран, HTTPS/TLS-конфигурация возвращает `CHTTPX_ERR_UNAVAILABLE`.
+Ошибки инициализации TLS, handshake, certificate verification и encrypted I/O проходят через обычный error path библиотеки. TLS-ошибки возвращают `cHTTPX_ERR_TLS`; если TLS вообще не собран, HTTPS/TLS-конфигурация возвращает `cHTTPX_ERR_UNAVAILABLE`.
 
 Ошибки TLS server пишутся через настроенный logger. Ошибки исходящих HTTPS-вызовов также проходят через logger исходного server.
 

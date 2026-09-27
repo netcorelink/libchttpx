@@ -33,8 +33,8 @@
  * Searches the parsed URL query parameters (e.g. ?name=value&age=10)
  * and returns the value associated with the given parameter name.
  *
- * @param req   Pointer to the current HTTP request.
- * @param name  Name of the query parameter.
+ * @param req Pointer to the current HTTP request.
+ * @param name Name of the query parameter.
  * @return Pointer to the parameter value string if found, or NULL if not present.
  */
 const char* cHTTPX_Query(chttpx_request_t* req, const char* name)
@@ -53,7 +53,12 @@ const char* cHTTPX_Query(chttpx_request_t* req, const char* name)
     return NULL;
 }
 
-/* Parse queries in request */
+/**
+ * Parse a URL query string into the request query table.
+ *
+ * @param req Request to populate.
+ * @param query Mutable query substring (ampersand-separated pairs).
+ */
 void _parse_req_query(chttpx_request_t* req, char* query)
 {
     if (!req || !query)
@@ -102,6 +107,12 @@ void _parse_req_query(chttpx_request_t* req, char* query)
     }
 }
 
+/**
+ * Convert one hex digit to 0–15, or -1 if invalid.
+ *
+ * @param value ASCII hex digit.
+ * @return Numeric value, or -1.
+ */
 static int hex_value(char value)
 {
     if (value >= '0' && value <= '9')
@@ -113,6 +124,15 @@ static int hex_value(char value)
     return -1;
 }
 
+/**
+ * Decode percent-encoded URL data into a caller-provided buffer.
+ *
+ * @param destination Destination buffer.
+ * @param destination_size Destination size including the terminator.
+ * @param source Encoded source string.
+ * @param plus_as_space Decode '+' as a space when true.
+ * @return 1 on success, otherwise 0.
+ */
 int cHTTPX_UrlDecode(char* destination, size_t destination_size, const char* source, bool plus_as_space)
 {
     if (!destination || destination_size == 0 || !source)
@@ -146,6 +166,16 @@ int cHTTPX_UrlDecode(char* destination, size_t destination_size, const char* sou
     return 1;
 }
 
+/**
+ * Parse a named query parameter as a bounded signed 64-bit integer.
+ *
+ * @param req Current HTTP request.
+ * @param name Query parameter name.
+ * @param min_value Minimum allowed value (inclusive).
+ * @param max_value Maximum allowed value (inclusive).
+ * @param value Output parsed value.
+ * @return 1 on success, otherwise 0.
+ */
 static int query_i64(chttpx_request_t* req, const char* name, long long min_value, long long max_value, long long* value)
 {
     const char* text = cHTTPX_Query(req, name);
@@ -160,6 +190,14 @@ static int query_i64(chttpx_request_t* req, const char* name, long long min_valu
     return 1;
 }
 
+/**
+ * Parse a query parameter as a signed integer.
+ *
+ * @param req Current HTTP request.
+ * @param name Query parameter name.
+ * @param value Output integer on success.
+ * @return 1 on success, otherwise 0.
+ */
 int cHTTPX_QueryInt(chttpx_request_t* req, const char* name, int* value)
 {
     long long parsed;
@@ -169,6 +207,14 @@ int cHTTPX_QueryInt(chttpx_request_t* req, const char* name, int* value)
     return 1;
 }
 
+/**
+ * Parse a query parameter as an unsigned 64-bit integer.
+ *
+ * @param req Current HTTP request.
+ * @param name Query parameter name.
+ * @param value Output value on success.
+ * @return 1 on success, otherwise 0.
+ */
 int cHTTPX_QueryU64(chttpx_request_t* req, const char* name, uint64_t* value)
 {
     const char* text = cHTTPX_Query(req, name);
@@ -183,6 +229,14 @@ int cHTTPX_QueryU64(chttpx_request_t* req, const char* name, uint64_t* value)
     return 1;
 }
 
+/**
+ * Parse a query parameter as a boolean (true/false/1/0).
+ *
+ * @param req Current HTTP request.
+ * @param name Query parameter name.
+ * @param value Output boolean on success.
+ * @return 1 on success, otherwise 0.
+ */
 int cHTTPX_QueryBool(chttpx_request_t* req, const char* name, bool* value)
 {
     const char* text = cHTTPX_Query(req, name);
@@ -197,6 +251,14 @@ int cHTTPX_QueryBool(chttpx_request_t* req, const char* name, bool* value)
     return 1;
 }
 
+/**
+ * Parse a query parameter as a double.
+ *
+ * @param req Current HTTP request.
+ * @param name Query parameter name.
+ * @param value Output double on success.
+ * @return 1 on success, otherwise 0.
+ */
 int cHTTPX_QueryDouble(chttpx_request_t* req, const char* name, double* value)
 {
     const char* text = cHTTPX_Query(req, name);
@@ -211,6 +273,15 @@ int cHTTPX_QueryDouble(chttpx_request_t* req, const char* name, double* value)
     return 1;
 }
 
+/**
+ * Parse a query parameter as uint64_t, or write default_value when absent.
+ *
+ * @param req Current HTTP request.
+ * @param name Query parameter name.
+ * @param value Output value.
+ * @param default_value Value used when the parameter is missing.
+ * @return 1 on success, otherwise 0.
+ */
 int cHTTPX_QueryU64Default(chttpx_request_t* req, const char* name, uint64_t* value, uint64_t default_value)
 {
     if (!value)

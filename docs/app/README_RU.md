@@ -7,7 +7,7 @@
 ```c
 chttpx_app_t app;
 
-if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+if (cHTTPX_AppInit(&app) != cHTTPX_OK)
     return 1;
 ```
 
@@ -36,7 +36,7 @@ chttpx_serv_t* admin_server =
 ## Запуск
 
 ```c
-if (cHTTPX_AppStart(&app) != CHTTPX_OK)
+if (cHTTPX_AppStart(&app) != cHTTPX_OK)
 {
     cHTTPX_AppShutdown(&app);
     return 1;
@@ -114,16 +114,16 @@ Timeout через `CallEx` менять нельзя.
 
 | Результат | Значение |
 | --- | --- |
-| `CHTTPX_OK` | получен корректный HTTP response, даже если status 400/403/500 |
-| `CHTTPX_ERR_UNAVAILABLE` | DNS/connect failed или connection оборвался до HTTP response |
-| `CHTTPX_ERR_TIMEOUT` | connect/send/receive превысил 30 секунд |
-| `CHTTPX_ERR_TLS` | ошибка TLS handshake, certificate verification или encrypted read/write |
-| `CHTTPX_ERR_PROTOCOL` | remote сторона вернула некорректный HTTP response |
+| `cHTTPX_OK` | получен корректный HTTP response, даже если status 400/403/500 |
+| `cHTTPX_ERR_UNAVAILABLE` | DNS/connect failed или connection оборвался до HTTP response |
+| `cHTTPX_ERR_TIMEOUT` | connect/send/receive превысил 30 секунд |
+| `cHTTPX_ERR_TLS` | ошибка TLS handshake, certificate verification или encrypted read/write |
+| `cHTTPX_ERR_PROTOCOL` | remote сторона вернула некорректный HTTP response |
 
 HTTP 500 — не transport error:
 
 ```c
-if (result == CHTTPX_OK && res->status == 500)
+if (result == cHTTPX_OK && res->status == 500)
 {
     /* server жив, но его handler вернул ошибку */
 }
@@ -144,7 +144,7 @@ static void create_payment(
         res
     );
 
-    if (result == CHTTPX_ERR_UNAVAILABLE)
+    if (result == cHTTPX_ERR_UNAVAILABLE)
     {
         *res = cHTTPX_ResError(
             cHTTPX_StatusServiceUnavailable,
@@ -153,7 +153,7 @@ static void create_payment(
         return;
     }
 
-    if (result == CHTTPX_ERR_TIMEOUT)
+    if (result == cHTTPX_ERR_TIMEOUT)
     {
         *res = cHTTPX_ResError(
             cHTTPX_StatusGatewayTimeout,
@@ -162,7 +162,7 @@ static void create_payment(
         return;
     }
 
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
     {
         *res = cHTTPX_ResError(
             cHTTPX_StatusBadGateway,

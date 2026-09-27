@@ -33,7 +33,7 @@ chttpx_serv_t* server =
     cHTTPX_AppServer(&app, "https", &config);
 ```
 
-Certificate and private-key files are required when `tls.enabled` is true. A plain build returns `CHTTPX_ERR_UNAVAILABLE` when TLS is requested.
+Certificate and private-key files are required when `tls.enabled` is true. A plain build returns `cHTTPX_ERR_UNAVAILABLE` when TLS is requested.
 
 The runnable example is `example/tls.c`:
 
@@ -100,7 +100,7 @@ config.tls.require_client_cert = true;
 
 ## Errors and logging
 
-TLS initialization, handshake, certificate verification, and encrypted I/O failures use the normal libchttpx error path. TLS-specific failures return `CHTTPX_ERR_TLS`; a build without TLS support returns `CHTTPX_ERR_UNAVAILABLE` for HTTPS/TLS configuration.
+TLS initialization, handshake, certificate verification, and encrypted I/O failures use the normal libchttpx error path. TLS-specific failures return `cHTTPX_ERR_TLS`; a build without TLS support returns `cHTTPX_ERR_UNAVAILABLE` for HTTPS/TLS configuration.
 
 TLS server failures are reported through the configured server logger. Remote TLS failures also use the source server logger.
 

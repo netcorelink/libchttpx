@@ -30,7 +30,7 @@ compression.min_size = 1024;
 compression.level = 5;
 
 int result = cHTTPX_CompressionUse(server, &compression);
-if (result != CHTTPX_OK) {
+if (result != cHTTPX_OK) {
     /* handle configuration / provider error */
 }
 ```
@@ -146,7 +146,7 @@ static int encode_zstd(
     void *user_data)
 {
     /* allocate *output and encode the complete input */
-    return CHTTPX_OK;
+    return cHTTPX_OK;
 }
 
 chttpx_compression_provider_t providers[] = {
@@ -168,7 +168,7 @@ Providers are evaluated using the client's quality values. When qualities tie, p
 
 ## Errors and logging
 
-Invalid configuration returns `CHTTPX_ERR_INVALID_ARGUMENT`; allocation failures return `CHTTPX_ERR_MEMORY`; gzip/provider failures use `CHTTPX_ERR_COMPRESSION` internally.
+Invalid configuration returns `cHTTPX_ERR_INVALID_ARGUMENT`; allocation failures return `cHTTPX_ERR_MEMORY`; gzip/provider failures use `cHTTPX_ERR_COMPRESSION` internally.
 
 If encoding fails and identity is acceptable, libchttpx logs a warning and sends the original response. If identity is forbidden, it sends an empty `500 Internal Server Error` rather than silently violating `Accept-Encoding`.
 

@@ -36,6 +36,15 @@
 #define CHTTPX_SAMESITE_STRICT 2
 #define CHTTPX_SAMESITE_NONE_MODE 3
 
+/**
+ * Append formatted text to a fixed cookie header buffer.
+ *
+ * @param buffer Destination buffer.
+ * @param capacity Total size of buffer.
+ * @param offset In/out write offset.
+ * @param format printf-style format string.
+ * @return 1 on success, 0 if the buffer would overflow.
+ */
 static int cookie_append(char* buffer, size_t capacity, size_t* offset, const char* format, ...)
 {
     if (*offset >= capacity)
@@ -50,7 +59,11 @@ static int cookie_append(char* buffer, size_t capacity, size_t* offset, const ch
     return 1;
 }
 
-/* Parse cookie in request */
+/**
+ * Parse Cookie header into the request cookie table.
+ *
+ * @param req Request whose Cookie header should be parsed.
+ */
 void _parse_req_cookies(chttpx_request_t* req)
 {
     const char* cookie_header = cHTTPX_HeaderGet(req, "Cookie");
@@ -102,6 +115,11 @@ void _parse_req_cookies(chttpx_request_t* req)
     }
 }
 
+/**
+ * Free heap-allocated cookies attached to a request.
+ *
+ * @param req Request whose cookies should be released.
+ */
 void chttpx_free_req_cookie(chttpx_request_t* req)
 {
     if (!req)
@@ -123,11 +141,9 @@ void chttpx_free_req_cookie(chttpx_request_t* req)
  *
  * Searches for a cookie in the request by its name (case-insensitive).
  *
- * @param req   Pointer to the HTTP request structure.
- * @param name  Cookie name to search for.
- *
- * @return Pointer to the cookie value string if found,
- *         or NULL if the cookie does not exist or input is invalid.
+ * @param req Pointer to the HTTP request structure.
+ * @param name Cookie name to search for.
+ * @return Pointer to the cookie structure if found, or NULL if missing or invalid input.
  */
 const chttpx_cookie_t* cHTTPX_CookieGet(chttpx_request_t* req, const char* name)
 {
@@ -159,8 +175,9 @@ const chttpx_cookie_t* cHTTPX_CookieGet(chttpx_request_t* req, const char* name)
  *  - Secure
  *  - HttpOnly
  *
- * @param req     Pointer to HTTP request/response structure.
- * @param cookie  Pointer to cookie structure.
+ * @param res Pointer to HTTP response structure.
+ * @param cookie Pointer to cookie structure.
+ * @return 0 on success, -1 on error.
  */
 int cHTTPX_CookieSet(chttpx_response_t* res, const chttpx_cookie_t* cookie)
 {

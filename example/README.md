@@ -21,5 +21,7 @@ Generated binaries are placed in `.build/`:
 - `example-middleware`
 - `example-json`
 - `example-upload`
+- `example-metrics`
+- `example-sse`
 
-The normal `make lin` / `make win` demo target uses `example/basic.c`.
+The normal `make lin` demo target uses `example/basic.c`.

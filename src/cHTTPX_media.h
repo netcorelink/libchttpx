@@ -18,13 +18,20 @@ extern "C"
 
 #define FILE_BUFFER 65536
 
+    /** Maps a file extension to a MIME content type string. */
     typedef struct
     {
         const char* ctype;
         const char* ext;
     } content_type_map_t;
 
-    /* Parse media in request */
+    /**
+     * Parse uploaded media, multipart form data, or URL-encoded fields.
+     *
+     * @param req Current HTTP request with body or spool stream already parsed.
+     * @param buffer Initial receive buffer (used for streaming raw uploads).
+     * @param buffer_len Size of buffer in bytes.
+     */
     void _parse_media(chttpx_request_t* req, char* buffer, size_t buffer_len);
 
     /** Return the first uploaded file, or NULL when the request has no file. */

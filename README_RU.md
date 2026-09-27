@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` — компактная кроссплатформенная HTTP/1.1-библиотека для C. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
+`libchttpx` — компактная HTTP/2-библиотека для C под Linux. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
 
 Идея библиотеки: handler должен содержать бизнес-логику приложения, а не повторяющийся HTTP boilerplate.
 
 ## Основные возможности
 
-- Linux и Windows
+- поддержка Linux
 - несколько независимых HTTP-серверов внутри одного `cHTTPX_App`
 - прямые local-вызовы между серверами и remote-вызовы по HTTP/HTTPS
 - route groups и пути с `{parameter}`
@@ -19,9 +19,10 @@
 - CORS, cookies, callback-based logging и rate limiting
 - настраиваемое gzip-сжатие ответов с `Accept-Encoding` negotiation
 - опциональные встроенные metrics, thread-safe snapshot и Prometheus exporter
+- first-class Server-Sent Events по HTTP/2 с retry, heartbeat и disconnect handling
 - лимиты сервера и graceful shutdown
 
-> `cHTTPX_ResFile()` пока полностью читает файл в память. Streaming response, `sendfile()` и zero-copy output в текущем API не реализованы.
+> `cHTTPX_ResFile()` пока полностью читает файл в память. Для SSE используется отдельный streaming path поверх HTTP/2; generic streaming response API, `sendfile()` и zero-copy для файлов пока не реализованы.
 
 ## Установка
 
@@ -89,23 +90,13 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Нужный пакет можно скачать из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Старые install-скрипты
+### Старый install-скрипт
 
-Bash- и PowerShell-скрипты пока остаются как запасной способ установки.
-
-Linux:
+Bash-скрипт остаётся как запасной способ установки:
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
 ```
-
-Windows:
-
-```powershell
-iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
-```
-
-После установки в Windows перезапустите терминал.
 
 ### Docker
 
@@ -113,7 +104,7 @@ iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install
 docker pull noneandundefined/libchttpx:latest
 ```
 
-Image содержит установленную shared library, headers, pkg-config metadata и runtime cJSON.
+Image содержит установленную shared library, headers, pkg-config metadata и runtime-зависимости cJSON, zlib и nghttp2.
 
 ```dockerfile
 FROM noneandundefined/libchttpx:latest
@@ -126,7 +117,7 @@ CMD ["/usr/local/bin/my-server"]
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev libnghttp2-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -160,20 +151,6 @@ make test-compression
 
 TLS остаётся отдельной опцией сборки: `make TLS=1 libchttpx.so`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
 
-### Самостоятельная сборка на Windows
-
-Используется MinGW/GCC. Для Windows cJSON уже находится в `lib/cjson`, а zlib должен быть установлен (для MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
-
-```powershell
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make win-lib
-make test-win
-```
-
-DLL, import library и headers копируются в `tools/`.
-
 ## Документация
 
 Подробная документация разделена по функционалу:
@@ -196,8 +173,8 @@ DLL, import library и headers копируются в `tools/`.
 - [Request ID и i18n](docs/i18n/README.md)
 - [Logging](docs/logging/README_RU.md)
 - [Rate limiting](docs/rate-limiting/README_RU.md)
+- [Server-Sent Events](docs/sse/README_RU.md)
 - [WebSocket API — experimental](docs/websocket/README_RU.md)
-
 
 ## Лицензия
 

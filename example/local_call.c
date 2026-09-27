@@ -1,29 +1,26 @@
 #include <libchttpx.h>
 
+/** Internal processing endpoint invoked via cHTTPX_Call. */
 static void internal_process(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"source\":\"internal\"}");
 }
 
+/** Proxies the request to the in-process "internal" server. */
 static void public_proxy(chttpx_request_t* req, chttpx_response_t* res)
 {
-    int result = cHTTPX_Call(
-        req,
-        "internal",
-        cHTTPX_MethodPost,
-        "/process",
-        res
-    );
+    int result = cHTTPX_Call(req, "internal", cHTTPX_MethodPost, "/process", res);
 
-    if (result != CHTTPX_OK)
+    if (result != cHTTPX_OK)
         *res = cHTTPX_ResError(cHTTPX_StatusBadGateway, "internal call failed");
 }
 
+/** Two App servers: public (8080) forwards to internal (9090) without TCP. */
 int main(void)
 {
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t public_config = cHTTPX_DefaultConfig();
@@ -50,5 +47,5 @@ int main(void)
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
 
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }

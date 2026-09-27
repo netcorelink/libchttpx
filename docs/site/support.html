@@ -10,64 +10,53 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="container nav">
-      <a class="brand" href="index.html">libchttpx</a>
-      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button>
-      <nav class="nav-links" data-nav-links aria-label="Main navigation">
-        <a href="docs.html" data-nav-link>Docs</a>
-        <a href="examples.html" data-nav-link>Examples</a>
-        <a href="blog.html" data-nav-link>Blog</a>
-        <a href="support.html" data-nav-link>Support</a>
-        <a href="about.html" data-nav-link>About</a>
-      </nav>
-      <div class="nav-actions">
-        <a class="btn btn-small" href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-        <a class="btn btn-primary btn-small" href="#sponsor">Support ♥</a>
-      </div>
-    </div>
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#d32f2f" d="M12 2.2 21.2 7.5v9L12 21.8 2.8 16.5v-9L12 2.2z"/></svg>
+      libchttpx
+    </a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="site-menu" data-nav-links aria-label="Main navigation">
+      <a href="index.html" data-nav-link>Home</a>
+      <a href="docs.html" data-nav-link>Docs</a>
+      <a href="examples.html" data-nav-link>Examples</a>
+      <a href="blog.html" data-nav-link>Blog</a>
+      <a href="support.html" data-nav-link>Support</a>
+      <a href="about.html" data-nav-link>About</a>
+      <a href="https://github.com/netcorelink/libchttpx">GitHub</a>
+    </nav>
   </header>
 
-  <main>
-    <section class="page-hero">
-      <div class="container">
-        <p class="eyebrow">Support</p>
-        <h1>Open source for everyone, paid help when you need it</h1>
-        <p class="page-lead">
-          Use libchttpx freely. If your project needs direct help, custom work or sponsorship, there are separate support paths.
+  <div class="docs-frame">
+    <aside class="docs-sidebar" data-docs-sidebar aria-label="Documentation"></aside>
+    <main class="docs-main">
+      <article class="docs-article">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="index.html">Home</a>
+          <span class="crumb crumb-current">Support</span>
+        </nav>
+
+        <h1>Support</h1>
+        <p>
+          Use libchttpx freely. If your project needs direct help, custom work
+          or sponsorship, there are separate support paths.
         </p>
-      </div>
-    </section>
 
-    <section class="section">
-      <div class="container card-grid">
-        <article class="card">
-          <h3>Community support</h3>
-          <p>Report reproducible bugs and request features publicly so fixes can benefit everyone.</p>
-          <a class="btn btn-primary" href="https://github.com/netcorelink/libchttpx/issues/new/choose">Open an issue ↗</a>
-        </article>
+        <h2 id="community">Community support</h2>
+        <p>Report reproducible bugs and request features publicly so fixes can benefit everyone.</p>
+        <p><a href="https://github.com/netcorelink/libchttpx/issues/new/choose">Open an issue</a></p>
 
-        <article class="card" id="commercial">
-          <h3>Professional support</h3>
-          <p>Integration help, debugging, API design review, migration and custom functionality for your project.</p>
-          <a class="btn" href="mailto:aworkprogramm@gmail.com?subject=libchttpx%20professional%20support">Contact by email</a>
-        </article>
+        <h2 id="commercial">Professional support</h2>
+        <p>Integration help, debugging, API design review, migration and custom functionality for your project.</p>
+        <p><a href="mailto:aworkprogramm@gmail.com?subject=libchttpx%20professional%20support">Contact by email</a></p>
 
-        <article class="card" id="sponsor">
-          <h3>Sponsor development</h3>
-          <p>For feature funding, maintenance sponsorship or company support, contact the maintainer directly.</p>
-          <a class="btn" href="mailto:aworkprogramm@gmail.com?subject=libchttpx%20sponsorship">Become a sponsor</a>
-        </article>
-      </div>
-    </section>
+        <h2 id="sponsor">Sponsor development</h2>
+        <p>For feature funding, maintenance sponsorship or company support, contact the maintainer directly.</p>
+        <p><a href="mailto:aworkprogramm@gmail.com?subject=libchttpx%20sponsorship">Become a sponsor</a></p>
 
-    <section class="section section-muted">
-      <div class="container two-column">
-        <div>
-          <h2>What can be paid?</h2>
-          <p class="section-copy">
-            The library itself remains open source. Payment is for work around the project, not for access to the public code.
-          </p>
-        </div>
+        <h2>What can be paid?</h2>
+        <p>The library itself remains open source. Payment is for work around the project, not for access to the public code.</p>
         <ul class="check-list">
           <li>Integration into an existing C/C++ service</li>
           <li>Custom features and extensions</li>
@@ -76,17 +65,8 @@
           <li>Priority support for a commercial project</li>
           <li>Sponsored maintenance or roadmap work</li>
         </ul>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container footer-row">
-      <div><a class="brand" href="index.html">libchttpx</a><div class="footer-copy">© <span data-year></span> netcorelink · BSD 3-Clause</div></div>
-      <div class="footer-links">
-        <a href="docs.html">Docs</a><a href="examples.html">Examples</a><a href="support.html">Support</a><a href="about.html">About</a><a href="https://github.com/netcorelink/libchttpx">GitHub ↗</a>
-      </div>
-    </div>
-  </footer>
+      </article>
+    </main>
+  </div>
 </body>
 </html>

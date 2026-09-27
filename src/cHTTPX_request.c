@@ -22,21 +22,20 @@
 
 #include "cHTTPX_request.h"
 
-#include "cHTTPX_i18n.h"
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_headers.h"
 #include "cHTTPX_response.h"
 #include "cHTTPX_http.h"
 
-#if defined(_WIN32) || defined(_WIN64)
-#include "../lib/cjson/cJSON.h"
-#else
 #include <cjson/cJSON.h>
-#endif
 
 #include <ctype.h>
 #include <stdio.h>
 
+#define CHTTPX_CLEANUP_BLOCK_CAPACITY 32
+#define CHTTPX_CONTEXT_BUCKET_COUNT 32
+
+/** One deferred cleanup callback registered on a request. */
 typedef struct chttpx_cleanup_entry
 {
     void* resource;
@@ -44,14 +43,144 @@ typedef struct chttpx_cleanup_entry
     struct chttpx_cleanup_entry* next;
 } chttpx_cleanup_entry_t;
 
+/** Fixed-size pool block for cleanup entries. */
+typedef struct chttpx_cleanup_block
+{
+    size_t used;
+    chttpx_cleanup_entry_t entries[CHTTPX_CLEANUP_BLOCK_CAPACITY];
+    struct chttpx_cleanup_block* next;
+} chttpx_cleanup_block_t;
+
+/** Request-scoped list of deferred cleanup callbacks. */
+typedef struct
+{
+    chttpx_cleanup_entry_t* head;
+    chttpx_cleanup_block_t first_block;
+    chttpx_cleanup_block_t* extra_blocks;
+} chttpx_cleanup_state_t;
+
+/** Named context bucket entry in the request hash table. */
 typedef struct chttpx_context_entry
 {
-    char* name;
     void* value;
     chttpx_context_free_fn cleanup_fn;
     struct chttpx_context_entry* next;
+    char name[];
 } chttpx_context_entry_t;
 
+/** Open hash table of named request contexts. */
+typedef struct
+{
+    chttpx_context_entry_t* buckets[CHTTPX_CONTEXT_BUCKET_COUNT];
+} chttpx_context_table_t;
+
+/**
+ * Hash a short request-scoped lookup key with FNV-1a.
+ *
+ * @param value Null-terminated key.
+ * @return Stable 64-bit hash value.
+ */
+static uint64_t request_hash_string(const char* value)
+{
+    uint64_t hash = 14695981039346656037ULL;
+    for (const unsigned char* p = (const unsigned char*)value; *p; ++p)
+    {
+        hash ^= (uint64_t)*p;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+/**
+ * Return the request cleanup state, creating it on first use when requested.
+ *
+ * @param req Current request.
+ * @param create Non-zero to allocate missing state.
+ * @return Cleanup state or NULL.
+ */
+static chttpx_cleanup_state_t* cleanup_state(chttpx_request_t* req, int create)
+{
+    if (!req)
+        return NULL;
+
+    chttpx_cleanup_state_t* state = req->_cleanup_entries;
+    if (!state && create)
+    {
+        state = calloc(1, sizeof(*state));
+        if (!state)
+            return NULL;
+        req->_cleanup_entries = state;
+    }
+    return state;
+}
+
+/**
+ * Allocate one cleanup entry from request-local blocks.
+ *
+ * Entries are pooled in groups to avoid one heap allocation per deferred
+ * resource while preserving cHTTPX_Detach semantics for the resource itself.
+ *
+ * @param state Cleanup state owned by the request.
+ * @return Reusable cleanup entry or NULL on allocation failure.
+ */
+/**
+ * Cleanup entry alloc.
+ *
+ * @param state Parameter `state`.
+ * @return Pointer or NULL on failure.
+ */
+static chttpx_cleanup_entry_t* cleanup_entry_alloc(chttpx_cleanup_state_t* state)
+{
+    if (!state)
+        return NULL;
+
+    if (state->first_block.used < CHTTPX_CLEANUP_BLOCK_CAPACITY)
+        return &state->first_block.entries[state->first_block.used++];
+
+    chttpx_cleanup_block_t* block = state->extra_blocks;
+    if (!block || block->used == CHTTPX_CLEANUP_BLOCK_CAPACITY)
+    {
+        chttpx_cleanup_block_t* created = calloc(1, sizeof(*created));
+        if (!created)
+            return NULL;
+        created->next = state->extra_blocks;
+        state->extra_blocks = created;
+        block = created;
+    }
+
+    return &block->entries[block->used++];
+}
+
+/**
+ * Return the named-context hash table, creating it on first use when requested.
+ *
+ * @param req Current request.
+ * @param create Non-zero to allocate the table when absent.
+ * @return Context table or NULL.
+ */
+static chttpx_context_table_t* context_table(chttpx_request_t* req, int create)
+{
+    if (!req)
+        return NULL;
+
+    chttpx_context_table_t* table = req->_contexts;
+    if (!table && create)
+    {
+        table = calloc(1, sizeof(*table));
+        if (!table)
+            return NULL;
+        req->_contexts = table;
+    }
+    return table;
+}
+
+/**
+ * Allocate zero-initialized memory owned by the current request.
+ *
+ * @param req Current HTTP request.
+ * @param size Number of bytes to allocate.
+ * @return Request-owned memory or NULL on failure.
+ */
 void* cHTTPX_Alloc(chttpx_request_t* req, size_t size)
 {
     if (!req || size == 0)
@@ -70,6 +199,13 @@ void* cHTTPX_Alloc(chttpx_request_t* req, size_t size)
     return memory;
 }
 
+/**
+ * Duplicate a string into request-owned memory.
+ *
+ * @param req Current HTTP request.
+ * @param str Null-terminated source string.
+ * @return Request-owned copy or NULL on failure.
+ */
 char* cHTTPX_Strdup(chttpx_request_t* req, const char* str)
 {
     if (!str)
@@ -82,35 +218,57 @@ char* cHTTPX_Strdup(chttpx_request_t* req, const char* str)
     return copy;
 }
 
+/**
+ * Register an arbitrary resource for cleanup at the end of the request.
+ *
+ * @param req Current HTTP request.
+ * @param resource Resource passed to cleanup_fn.
+ * @param cleanup_fn Function that releases resource.
+ * @return 0 on success, -1 on invalid input or allocation failure.
+ */
 int cHTTPX_Defer(chttpx_request_t* req, void* resource, chttpx_cleanup_fn cleanup_fn)
 {
     if (!req || !resource || !cleanup_fn)
         return -1;
 
-    chttpx_cleanup_entry_t* entry = malloc(sizeof(*entry));
+    chttpx_cleanup_state_t* state = cleanup_state(req, 1);
+    if (!state)
+        return -1;
+
+    chttpx_cleanup_entry_t* entry = cleanup_entry_alloc(state);
     if (!entry)
         return -1;
 
     entry->resource = resource;
     entry->cleanup_fn = cleanup_fn;
-    entry->next = req->_cleanup_entries;
-    req->_cleanup_entries = entry;
+    entry->next = state->head;
+    state->head = entry;
     return 0;
 }
 
+/**
+ * Remove a resource from automatic request cleanup.
+ *
+ * @param req Current HTTP request.
+ * @param resource Previously deferred resource.
+ * @return Detached resource or NULL when not registered.
+ */
 void* cHTTPX_Detach(chttpx_request_t* req, void* resource)
 {
-    if (!req || !resource)
+    chttpx_cleanup_state_t* state = cleanup_state(req, 0);
+    if (!state || !resource)
         return NULL;
 
-    chttpx_cleanup_entry_t** current = (chttpx_cleanup_entry_t**)&req->_cleanup_entries;
+    chttpx_cleanup_entry_t** current = &state->head;
     while (*current)
     {
         if ((*current)->resource == resource)
         {
             chttpx_cleanup_entry_t* detached = *current;
             *current = detached->next;
-            free(detached);
+            detached->resource = NULL;
+            detached->cleanup_fn = NULL;
+            detached->next = NULL;
             return resource;
         }
         current = &(*current)->next;
@@ -119,12 +277,29 @@ void* cHTTPX_Detach(chttpx_request_t* req, void* resource)
     return NULL;
 }
 
+/**
+ * Store or replace a named request context.
+ *
+ * Contexts are indexed through a small request-local hash table so lookup does
+ * not grow linearly with the number of named contexts.
+ *
+ * @param req Current HTTP request.
+ * @param name Context name.
+ * @param value Application-owned value.
+ * @param cleanup_fn Optional callback invoked when the context is replaced or cleaned up.
+ * @return 0 on success, -1 on invalid input or allocation failure.
+ */
 int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chttpx_context_free_fn cleanup_fn)
 {
     if (!req || !name || !*name)
         return -1;
 
-    chttpx_context_entry_t* entry = req->_contexts;
+    chttpx_context_table_t* table = context_table(req, 1);
+    if (!table)
+        return -1;
+
+    size_t bucket = (size_t)(request_hash_string(name) % CHTTPX_CONTEXT_BUCKET_COUNT);
+    chttpx_context_entry_t* entry = table->buckets[bucket];
     while (entry)
     {
         if (strcmp(entry->name, name) == 0)
@@ -138,41 +313,58 @@ int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chtt
         entry = entry->next;
     }
 
-    entry = calloc(1, sizeof(*entry));
+    size_t name_size = strlen(name) + 1;
+    if (name_size > SIZE_MAX - sizeof(*entry))
+        return -1;
+
+    entry = malloc(sizeof(*entry) + name_size);
     if (!entry)
         return -1;
-    entry->name = strdup(name);
-    if (!entry->name)
-    {
-        free(entry);
-        return -1;
-    }
+
     entry->value = value;
     entry->cleanup_fn = cleanup_fn;
-    entry->next = req->_contexts;
-    req->_contexts = entry;
+    entry->next = table->buckets[bucket];
+    memcpy(entry->name, name, name_size);
+    table->buckets[bucket] = entry;
     return 0;
 }
 
+/**
+ * Look up a named request context.
+ *
+ * @param req Current HTTP request.
+ * @param name Context name.
+ * @return Borrowed context value or NULL when absent.
+ */
 void* cHTTPX_ContextGet(chttpx_request_t* req, const char* name)
 {
-    if (!req || !name)
+    chttpx_context_table_t* table = context_table(req, 0);
+    if (!table || !name)
         return NULL;
-    chttpx_context_entry_t* entry = req->_contexts;
-    while (entry)
-    {
+
+    size_t bucket = (size_t)(request_hash_string(name) % CHTTPX_CONTEXT_BUCKET_COUNT);
+    for (chttpx_context_entry_t* entry = table->buckets[bucket]; entry; entry = entry->next)
         if (strcmp(entry->name, name) == 0)
             return entry->value;
-        entry = entry->next;
-    }
+
     return NULL;
 }
 
+/**
+ * Detach a named request context without running its cleanup callback.
+ *
+ * @param req Current HTTP request.
+ * @param name Context name.
+ * @return Detached value owned by the caller or NULL when absent.
+ */
 void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name)
 {
-    if (!req || !name)
+    chttpx_context_table_t* table = context_table(req, 0);
+    if (!table || !name)
         return NULL;
-    chttpx_context_entry_t** current = (chttpx_context_entry_t**)&req->_contexts;
+
+    size_t bucket = (size_t)(request_hash_string(name) % CHTTPX_CONTEXT_BUCKET_COUNT);
+    chttpx_context_entry_t** current = &table->buckets[bucket];
     while (*current)
     {
         if (strcmp((*current)->name, name) == 0)
@@ -180,7 +372,6 @@ void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name)
             chttpx_context_entry_t* detached = *current;
             void* value = detached->value;
             *current = detached->next;
-            free(detached->name);
             free(detached);
             return value;
         }
@@ -189,22 +380,34 @@ void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name)
     return NULL;
 }
 
+/**
+ * Run all request-owned cleanup callbacks and release internal lookup state.
+ *
+ * @param req Request whose scoped resources must be released.
+ */
 void cHTTPX_RequestCleanup(chttpx_request_t* req)
 {
     if (!req)
         return;
 
-    chttpx_context_entry_t* context = req->_contexts;
-    while (context)
+    chttpx_context_table_t* table = context_table(req, 0);
+    if (table)
     {
-        chttpx_context_entry_t* next_context = context->next;
-        if (context->cleanup_fn && context->value)
-            context->cleanup_fn(context->value);
-        free(context->name);
-        free(context);
-        context = next_context;
+        for (size_t bucket = 0; bucket < CHTTPX_CONTEXT_BUCKET_COUNT; ++bucket)
+        {
+            chttpx_context_entry_t* entry = table->buckets[bucket];
+            while (entry)
+            {
+                chttpx_context_entry_t* next = entry->next;
+                if (entry->cleanup_fn && entry->value)
+                    entry->cleanup_fn(entry->value);
+                free(entry);
+                entry = next;
+            }
+        }
+        free(table);
+        req->_contexts = NULL;
     }
-    req->_contexts = NULL;
 
     if (req->context)
     {
@@ -214,17 +417,37 @@ void cHTTPX_RequestCleanup(chttpx_request_t* req)
         req->context_free = NULL;
     }
 
-    chttpx_cleanup_entry_t* cleanup = req->_cleanup_entries;
-    while (cleanup)
+    chttpx_cleanup_state_t* state = cleanup_state(req, 0);
+    if (state)
     {
-        chttpx_cleanup_entry_t* next_cleanup = cleanup->next;
-        cleanup->cleanup_fn(cleanup->resource);
-        free(cleanup);
-        cleanup = next_cleanup;
+        chttpx_cleanup_entry_t* entry = state->head;
+        while (entry)
+        {
+            chttpx_cleanup_entry_t* next = entry->next;
+            if (entry->cleanup_fn && entry->resource)
+                entry->cleanup_fn(entry->resource);
+            entry = next;
+        }
+
+        chttpx_cleanup_block_t* block = state->extra_blocks;
+        while (block)
+        {
+            chttpx_cleanup_block_t* next = block->next;
+            free(block);
+            block = next;
+        }
+
+        free(state);
+        req->_cleanup_entries = NULL;
     }
-    req->_cleanup_entries = NULL;
 }
 
+/**
+ * Extract a Bearer token from the Authorization request header.
+ *
+ * @param req Current HTTP request.
+ * @return Borrowed token pointer or NULL when the header is absent/invalid.
+ */
 const char* cHTTPX_BearerToken(chttpx_request_t* req)
 {
     const char* authorization = cHTTPX_HeaderGet(req, "Authorization");
@@ -233,6 +456,14 @@ const char* cHTTPX_BearerToken(chttpx_request_t* req)
     return authorization + 7;
 }
 
+/**
+ * Replay the request body through a bounded chunk callback.
+ *
+ * @param req Current HTTP request.
+ * @param callback Function invoked for each body chunk.
+ * @param user_data Caller value forwarded to callback.
+ * @return 0 on success or -1 on invalid input, I/O error, or callback failure.
+ */
 int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, void* user_data)
 {
     if (!req || !callback)
@@ -278,55 +509,59 @@ int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, voi
     return 0;
 }
 
-typedef struct
+/**
+ * Record a bind/validate failure on the request.
+ *
+ * @param req Current HTTP request.
+ * @param code Bind error code.
+ * @param field Failing field name, or NULL.
+ * @param num Optional numeric detail such as min/max length.
+ * @return The same code, for direct return from callers.
+ */
+static int set_bind_error(chttpx_request_t* req, int code, const char* field, size_t num)
 {
-    const char* required;
-    const char* min_length;
-    const char* max_length;
-    const char* invalid_email;
-    const char* generic;
-} validation_messages_t;
+    if (!req)
+        return code;
 
-validation_messages_t messages_en = {"field '%s' is required", "field '%s' min length is %zu", "field '%s' max length is %zu",
-                                     "field '%s' is not a valid email", "field '%s' validation error"};
+    req->error_code = code;
+    req->error_num = num;
+    req->error_field[0] = '\0';
+    req->error_msg[0] = '\0';
 
-validation_messages_t messages_ru = {"поле '%s' обязательно", "минимальная длина поля '%s' — %zu", "максимальная длина поля '%s' — %zu",
-                                     "поле '%s' имеет неверный формат email", "ошибка валидации поля '%s'"};
-
-validation_messages_t* messages[LANG_COUNT] = {&messages_en, &messages_ru, &messages_en, &messages_en};
+    if (field)
+        snprintf(req->error_field, sizeof(req->error_field), "%s", field);
+    
+    return code;
+}
 
 /**
- * Parse a JSON body and validate fields according to the provided definitions.
- * @param req Pointer to the HTTP request.
- * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
- * @param field_count Number of fields in the array.
- * @return 1 if parsing and validation succeed, 0 if there is an error.
- * This function automatically checks required fields, string length, boolean types, etc.
+ * Parse a JSON body into validation targets.
+ *
+ * @param req Current HTTP request.
+ * @param fields Field definitions and output targets.
+ * @param field_count Number of entries in fields.
+ * @return cHTTPX_BIND_OK or a positive bind error code.
  */
 int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
     if (!req || !fields || !req->body)
-        return 0;
+        return set_bind_error(req, cHTTPX_BIND_INVALID_ARGUMENT, NULL, 0);
 
-    char* body = malloc(req->body_size + 1);
-    if (!body)
-        return 0;
-
-    memcpy(body, (const void*)req->body, req->body_size);
-    body[req->body_size] = '\0';
-
-    cJSON* json = cJSON_Parse(body);
-    free(body);
+    /*
+     * cJSON can parse a bounded byte range directly. Avoid duplicating the
+     * complete request body only to append a temporary NUL terminator.
+     */
+    cJSON* json = cJSON_ParseWithLengthOpts((const char*)req->body, req->body_size, NULL, false);
 
     if (!json)
-    {
-        snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON");
-        return 0;
-    }
+        return set_bind_error(req, cHTTPX_BIND_INVALID_JSON, NULL, 0);
+
+    const char* failed_field = NULL;
 
     for (size_t i = 0; i < field_count; i++)
     {
         chttpx_validation_t* f = &fields[i];
+        failed_field = f->name;
         cJSON* item = cJSON_GetObjectItem(json, f->name);
 
         if (!item)
@@ -431,20 +666,24 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
     }
 
     cJSON_Delete(json);
-    return 1;
+    return cHTTPX_BIND_OK;
 
 memory_error:
     cJSON_Delete(json);
-    snprintf(req->error_msg, sizeof(req->error_msg), "Out of memory");
-    return 0;
+    return set_bind_error(req, cHTTPX_BIND_MEMORY, failed_field, 0);
 
 type_error:
-    snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON field type");
     cJSON_Delete(json);
-    return 0;
+    return set_bind_error(req, cHTTPX_BIND_TYPE, failed_field, 0);
 }
 
 /* Validator email string */
+/**
+ * Is valid email.
+ *
+ * @param email Parameter `email`.
+ * @return Non-zero on success, 0 on failure, or a negative error code.
+ */
 static int is_valid_email(const char* email)
 {
     if (!email)
@@ -467,48 +706,27 @@ static int is_valid_email(const char* email)
     return 1;
 }
 
-static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, int key, const char* field_name, size_t num)
-{
-    validation_messages_t* msg = messages[lang];
-
-    switch (key)
-    {
-    case 0:
-        snprintf(error_msg, error_size, msg->required, field_name);
-        break;
-    case 1:
-        snprintf(error_msg, error_size, msg->min_length, field_name, num);
-        break;
-    case 2:
-        snprintf(error_msg, error_size, msg->max_length, field_name, num);
-        break;
-    case 3:
-        snprintf(error_msg, error_size, msg->invalid_email, field_name);
-        break;
-    default:
-        snprintf(error_msg, error_size, msg->generic, field_name);
-        break;
-    }
-}
-
-/*
- * Validates an array of cHTTPX_FieldValidation structures.
- * This function ensures that required fields are present, string lengths are within limits,
- * and basic validation for integers and boolean fields is performed.
+/**
+ * Validate already parsed field values.
+ *
+ * @param req Current HTTP request.
+ * @param fields Field definitions and parsed targets.
+ * @param field_count Number of entries in fields.
+ * @param l Unused; kept for source compatibility.
+ * @return cHTTPX_BIND_OK or a positive bind error code.
  */
 int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l)
 {
-    i18n_language_t lang = i18n_lang_from_string(l ? l : "en");
+    (void)l;
+    if (!req || !fields)
+        return set_bind_error(req, cHTTPX_BIND_INVALID_ARGUMENT, NULL, 0);
 
     for (size_t i = 0; i < field_count; i++)
     {
         chttpx_validation_t* f = &fields[i];
 
         if (f->required && !f->present)
-        {
-            set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
-            return 0;
-        }
+            return set_bind_error(req, cHTTPX_BIND_REQUIRED, f->name, 0);
 
         if (!f->present)
             continue;
@@ -517,12 +735,9 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
         {
             char* v = *(char**)f->target;
             if (!v)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 4, f->name, 0);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_GENERIC, f->name, 0);
 
-            if (f->normalizers & CHTTPX_TRIM)
+            if (f->normalizers & cHTTPX_TRIM)
             {
                 char* start = v;
                 while (*start && isspace((unsigned char)*start))
@@ -534,12 +749,12 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
                     v[--trim_len] = '\0';
             }
 
-            if (f->normalizers & CHTTPX_LOWERCASE)
+            if (f->normalizers & cHTTPX_LOWERCASE)
             {
                 for (char* p = v; *p; p++)
                     *p = (char)tolower((unsigned char)*p);
             }
-            else if (f->normalizers & CHTTPX_UPPERCASE)
+            else if (f->normalizers & cHTTPX_UPPERCASE)
             {
                 for (char* p = v; *p; p++)
                     *p = (char)toupper((unsigned char)*p);
@@ -548,45 +763,39 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
             size_t len = strlen(v);
 
             if (f->min_length && len < f->min_length)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 1, f->name, f->min_length);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_MIN_LENGTH, f->name, f->min_length);
 
             if (f->max_length && len > f->max_length)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 2, f->name, f->max_length);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_MAX_LENGTH, f->name, f->max_length);
 
             if (f->validator == VALIDATOR_EMAIL && !is_valid_email(v))
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 3, f->name, 0);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_INVALID_EMAIL, f->name, 0);
 
             if (f->custom_validator && !f->custom_validator(v, req->error_msg, sizeof(req->error_msg)))
             {
-                if (!req->error_msg[0])
-                    set_error(req->error_msg, sizeof(req->error_msg), lang, 4, f->name, 0);
-                return 0;
+                req->error_code = cHTTPX_BIND_GENERIC;
+                req->error_num = 0;
+                snprintf(req->error_field, sizeof(req->error_field), "%s", f->name ? f->name : "");
+                return cHTTPX_BIND_GENERIC;
             }
         }
     }
 
-    return 1;
+    return cHTTPX_BIND_OK;
 }
 
-int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_response_t* res, chttpx_validation_t* fields, size_t field_count)
+/**
+ * Parse and validate a JSON request body.
+ *
+ * @param req Current HTTP request.
+ * @param fields Field definitions and output targets.
+ * @param field_count Number of field definitions.
+ * @return cHTTPX_BIND_OK or a positive bind error code.
+ */
+int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
-    if (!req || !res || !fields)
-        return 0;
-
-    if (!cHTTPX_Parse(req, fields, field_count) || !cHTTPX_Validate(req, fields, field_count, req->language[0] ? req->language : "en"))
-    {
-        *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, req->error_msg[0] ? req->error_msg : "invalid request body");
-        return 0;
-    }
-
-    return 1;
+    int result = cHTTPX_Parse(req, fields, field_count);
+    if (result != cHTTPX_BIND_OK)
+        return result;
+    return cHTTPX_Validate(req, fields, field_count, NULL);
 }

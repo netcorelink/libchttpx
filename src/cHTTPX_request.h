@@ -30,14 +30,14 @@ extern "C"
 #define MAX_HEADER_NAME 128
 #define MAX_HEADER_VALUE 4096
 
-    /* Header structure */
+    /** One HTTP request header name/value pair (fixed-size storage). */
     typedef struct
     {
         char name[MAX_HEADER_NAME];
         char value[MAX_HEADER_VALUE];
     } chttpx_header_t;
 
-    /* Query structure */
+    /** Parsed query-string name/value pair (heap strings). */
     typedef struct
     {
         char* name;
@@ -48,7 +48,7 @@ extern "C"
 #define MAX_PARAM_NAME 128
 #define MAX_PARAM_VALUE 1024
 
-    /* Param structure */
+    /** Route template parameter extracted from the request path. */
     typedef struct
     {
         char name[MAX_PARAM_NAME];
@@ -57,7 +57,7 @@ extern "C"
 
 #define MAX_COOKIES 64
 
-    /* Cookie structure */
+    /** Parsed Cookie header entry. */
     typedef struct
     {
         char* name;
@@ -75,7 +75,7 @@ extern "C"
         int same_site;
     } chttpx_cookie_t;
 
-    /* Validation structs */
+    /** JSON field type used by cHTTPX_Parse / cHTTPX_Validate. */
     typedef enum
     {
         FIELD_STRING,
@@ -85,18 +85,41 @@ extern "C"
         FIELD_NUMBER_ARRAY
     } validation_t;
 
+    /**
+     * Result of cHTTPX_Parse, cHTTPX_Validate, and cHTTPX_BindJSON.
+     *
+     * Zero means success. Positive values name the failure. The failing
+     * field, if any, is stored in req->error_field.
+     */
+    typedef enum
+    {
+        cHTTPX_BIND_OK = 0,
+        cHTTPX_BIND_REQUIRED = 1,
+        cHTTPX_BIND_MIN_LENGTH = 2,
+        cHTTPX_BIND_MAX_LENGTH = 3,
+        cHTTPX_BIND_INVALID_EMAIL = 4,
+        cHTTPX_BIND_GENERIC = 5,
+        cHTTPX_BIND_INVALID_JSON = 6,
+        cHTTPX_BIND_TYPE = 7,
+        cHTTPX_BIND_MEMORY = 8,
+        cHTTPX_BIND_INVALID_ARGUMENT = 9
+    } chttpx_bind_error_t;
+
+    /** Parsed JSON array of strings (request-owned items). */
     typedef struct
     {
         char** items;
         size_t count;
     } chttpx_string_array_t;
 
+    /** Parsed JSON array of numbers (request-owned items). */
     typedef struct
     {
         int* items;
         size_t count;
     } chttpx_number_array_t;
 
+    /** Built-in string validator kind for chttpx_validation_t. */
     typedef enum
     {
         VALIDATOR_NONE,
@@ -105,16 +128,26 @@ extern "C"
         VALIDATOR_URL,
     } validator_type_t;
 
+    /** Optional application validator invoked during cHTTPX_Validate. */
     typedef bool (*chttpx_custom_validator_t)(const void* value, char* error, size_t error_size);
 
+    /** Bit flags for normalizing parsed string fields. */
     typedef enum
     {
-        CHTTPX_NORMALIZE_NONE = 0,
-        CHTTPX_TRIM = 1 << 0,
-        CHTTPX_LOWERCASE = 1 << 1,
-        CHTTPX_UPPERCASE = 1 << 2
+        cHTTPX_NORMALIZE_NONE = 0,
+        cHTTPX_TRIM = 1 << 0,
+        cHTTPX_LOWERCASE = 1 << 1,
+        cHTTPX_UPPERCASE = 1 << 2
     } chttpx_normalizer_t;
 
+#ifndef CHTTPX_DISABLE_LEGACY_NORMALIZER_NAMES
+#define CHTTPX_NORMALIZE_NONE cHTTPX_NORMALIZE_NONE
+#define CHTTPX_TRIM cHTTPX_TRIM
+#define CHTTPX_LOWERCASE cHTTPX_LOWERCASE
+#define CHTTPX_UPPERCASE cHTTPX_UPPERCASE
+#endif
+
+    /** One field binding for JSON parse and validate helpers. */
     typedef struct
     {
         const char* name;
@@ -143,11 +176,13 @@ extern "C"
         chttpx_custom_validator_t custom_validator;
     } chttpx_validation_t;
 
-    /* Function for free REQuest context */
+    /** Callback that releases a named request context value. */
     typedef void (*chttpx_context_free_fn)(void*);
 
+    /** Callback registered with cHTTPX_Defer for automatic cleanup. */
     typedef void (*chttpx_cleanup_fn)(void*);
 
+    /** Uploaded file metadata tracked on the request. */
     typedef struct
     {
         const char* path;
@@ -158,9 +193,22 @@ extern "C"
         const char* field_name;
     } chttpx_file_t;
 
+    /** Chunk callback used by cHTTPX_OnBodyChunk. */
     typedef int (*chttpx_body_chunk_fn)(const unsigned char* data, size_t size, void* user_data);
 
-    // REQuest
+    struct chttpx_response;
+
+    /** Internal streaming transport used by long-lived response helpers such as SSE. */
+    typedef struct
+    {
+        void* context;
+        int (*open)(void* context, const struct chttpx_response* response);
+        int (*write)(void* context, const void* data, size_t size);
+        int (*close)(void* context);
+        bool (*connected)(void* context);
+    } chttpx_stream_transport_t;
+
+    /** Per-request HTTP state populated by the server parser. */
     typedef struct
     {
         char* method;
@@ -182,7 +230,7 @@ extern "C"
         /* User-Agent */
         char user_agent[512];
 
-        /* HTTP/1.1 HTTP/2 ... */
+        /* HTTP protocol negotiated for this request. */
         char protocol[16];
 
         /* Client IP REQuest */
@@ -190,6 +238,11 @@ extern "C"
 
         /* Error REQuest message */
         char error_msg[BUFFER_SIZE];
+
+        /* Bind/validate failure: code, field name, and optional numeric detail. */
+        int error_code;
+        char error_field[MAX_PARAM_NAME];
+        size_t error_num;
 
         /* Request metadata */
         char request_id[65];
@@ -235,6 +288,7 @@ extern "C"
 
         /* Internal transport state. NULL for plain HTTP. */
         void* _tls_session;
+        chttpx_stream_transport_t _stream_transport;
 
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
@@ -249,13 +303,12 @@ extern "C"
     /**
      * Allocate zero-initialized memory owned by the current request.
      *
-     * The library automatically releases the allocation after
-     * the request.
+     * The allocation is released automatically during request cleanup unless
+     * it is detached with cHTTPX_Detach().
      *
      * @param req Current HTTP request.
      * @param size Number of bytes to allocate.
-     * @return Allocated memory, or
-     * NULL on invalid input or allocation failure.
+     * @return Request-owned memory or NULL on invalid input/allocation failure.
      */
     void* cHTTPX_Alloc(chttpx_request_t* req, size_t size);
 
@@ -263,143 +316,123 @@ extern "C"
      * Duplicate a string into request-owned memory.
      *
      * @param req Current HTTP request.
-     * @param str Null-terminated string
-     * to duplicate.
-     * @return Request-owned string, or NULL on failure. The caller must not free it.
+     * @param str Null-terminated source string.
+     * @return Request-owned copy or NULL on failure.
      */
     char* cHTTPX_Strdup(chttpx_request_t* req, const char* str);
 
     /**
-     * Register an arbitrary resource for cleanup after the request.
+     * Register an arbitrary resource for automatic request cleanup.
      *
      * @param req Current HTTP request.
-     * @param resource
-     * Resource passed to cleanup_fn during cleanup.
-     * @param cleanup_fn Function that releases the resource.
-     * @return 0 on success, -1 on
-     * invalid input or allocation failure.
+     * @param resource Resource passed to cleanup_fn.
+     * @param cleanup_fn Callback that releases resource.
+     * @return 0 on success or -1 on invalid input/allocation failure.
      */
     int cHTTPX_Defer(chttpx_request_t* req, void* resource, chttpx_cleanup_fn cleanup_fn);
 
     /**
      * Remove a resource from automatic request cleanup.
      *
-     * Ownership is transferred to the caller after a successful detach.
- *
-
-     * * @param req Current HTTP request.
-     * @param resource Previously registered resource.
-     * @return The detached resource, or NULL when it
-     * was not registered.
+     * @param req Current HTTP request.
+     * @param resource Previously deferred resource.
+     * @return Detached resource owned by the caller, or NULL when not found.
      */
     void* cHTTPX_Detach(chttpx_request_t* req, void* resource);
 
     /**
-     * Run all registered request cleanup callbacks.
+     * Run request cleanup callbacks and release internal request-owned state.
      *
-     * This is an internal lifecycle function normally called by the server.
- *
-
-     * * @param req Request whose resources must be released.
+     * This is normally invoked by the server lifecycle rather than application
+     * code.
+     *
+     * @param req Request whose scoped resources should be released.
      */
     void cHTTPX_RequestCleanup(chttpx_request_t* req);
 
     /**
      * Store or replace a named request context.
      *
-     * The cleanup callback is invoked automatically after the request. Replacing
-
-     * * an existing value also cleans up the previous value.
+     * Named contexts use a request-local hash table. Replacing a context invokes
+     * the previous cleanup callback when the previous value differs.
      *
      * @param req Current HTTP request.
-     * @param name Context name.
-     *
+     * @param name Context key.
      * @param value Application value; may be NULL.
-     * @param cleanup_fn Optional value cleanup callback.
-     * @return 0 on success, -1 on
-     * invalid input or allocation failure.
+     * @param cleanup_fn Optional callback used to release value.
+     * @return 0 on success or -1 on invalid input/allocation failure.
      */
     int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chttpx_context_free_fn cleanup_fn);
 
     /**
-     * Get a named request context.
+     * Look up a named request context.
      *
      * @param req Current HTTP request.
-     * @param name Context name.
-     * @return Borrowed
-     * context value, or NULL when it does not exist.
+     * @param name Context key.
+     * @return Borrowed context value or NULL when absent.
      */
     void* cHTTPX_ContextGet(chttpx_request_t* req, const char* name);
 
     /**
-     * Detach a named context from automatic cleanup.
+     * Detach a named context without running its cleanup callback.
      *
      * @param req Current HTTP request.
-     * @param name Context name.
-     *
-     * @return Detached value owned by the caller, or NULL when not found.
+     * @param name Context key.
+     * @return Detached value owned by the caller, or NULL when absent.
      */
     void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name);
 
     /**
-     * Extract a Bearer token from the Authorization header.
-     *
-     * The Bearer prefix is matched case-insensitively.
-     *
+     * Extract a Bearer token from the Authorization request header.
      *
      * @param req Current HTTP request.
-     * @return Borrowed token pointer, or NULL for a missing or invalid header.
+     * @return Borrowed token pointer or NULL for a missing/invalid header.
      */
     const char* cHTTPX_BearerToken(chttpx_request_t* req);
 
     /**
-     * Consume the request body through a chunk callback.
+     * Replay the request body through a bounded chunk callback.
      *
-     * Buffered bodies and temporary uploads are replayed in bounded chunks.
-
-     * *
      * @param req Current HTTP request.
      * @param callback Function invoked for each body chunk.
-     * @param user_data Application
-     * value passed to callback.
-     * @return 0 on success, -1 on invalid input, I/O error, or callback failure.
+     * @param user_data Caller value forwarded to callback.
+     * @return 0 on success or -1 on invalid input, I/O error, or callback failure.
      */
     int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, void* user_data);
 
     /**
-     * Parse a JSON body and validate fields according to the provided definitions.
-     * @param req Pointer to the HTTP request.
-     * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
-     * @param field_count Number of fields in the array.
-     * @return 1 if parsing and validation succeed, 0 if there is an error.
-     * This function automatically checks required fields, string length, boolean types, etc.
+     * Parse a JSON body into validation targets.
+     *
+     * @param req Current HTTP request.
+     * @param fields Field definitions and output targets.
+     * @param field_count Number of entries in fields.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
-    /*
-     * Validates an array of cHTTPX_FieldValidation structures.
-     * This function ensures that required fields are present, string lengths are within limits,
-     * and basic validation for integers and boolean fields is performed.
+    /**
+     * Validate already parsed field values.
+     *
+     * @param req Current HTTP request.
+     * @param fields Field definitions and parsed targets.
+     * @param field_count Number of entries in fields.
+     * @param l Unused; kept for source compatibility.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
-    struct chttpx_response;
     /**
      * Parse and validate a JSON request body.
      *
-     * Parsed strings and arrays are request-owned. On failure this function
-     *
-     * creates a safe JSON 400 response in res.
+     * Does not write an HTTP response. On failure inspect req->error_code,
+     * req->error_field, and req->error_num, then build the response yourself.
      *
      * @param req Current HTTP request.
-     * @param res Response populated when binding
-     * fails.
      * @param fields Field definitions and output targets.
      * @param field_count Number of field definitions.
-     * @return 1 on
-     * success, 0 on parsing or validation failure.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
-    int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
+    int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
 /**
  * Macro to define a string field for JSON request validation.
@@ -418,7 +451,7 @@ extern "C"
 #define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, CHTTPX_NORMALIZE_NONE, NULL                                         \
+        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL                                         \
     }
 
 /**
@@ -434,7 +467,7 @@ extern "C"
 #define chttpx_validation_integer(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                      \
+        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                      \
     }
 
 /**
@@ -450,7 +483,7 @@ extern "C"
 #define chttpx_validation_boolean(name, ptr, required)                                                                                               \
     (chttpx_validation_t)                                                                                                                            \
     {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                        \
+        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL                                                        \
     }
 
 #define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
@@ -460,7 +493,6 @@ extern "C"
     }
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 

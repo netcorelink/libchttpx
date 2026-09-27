@@ -23,7 +23,7 @@ The configuration must be set before the server is created.
 ```c
 chttpx_metrics_t metrics;
 
-if (cHTTPX_ServerMetrics(server, &metrics) == CHTTPX_OK) {
+if (cHTTPX_ServerMetrics(server, &metrics) == cHTTPX_OK) {
     printf("requests: %llu\n",
            (unsigned long long)metrics.requests_total);
     printf("in flight: %llu\n",
@@ -41,6 +41,10 @@ The snapshot includes:
 - request-body and response-body byte counters;
 - parser, timeout and rate-limit failure counters;
 - request-duration count, sum and cumulative histogram buckets.
+
+Worker-runtime metrics are available through `cHTTPX_ServerRuntimeMetrics()`. They include the bounded application queue depth, active workers, rejected jobs, completed jobs, and total queue-wait time. The worker pool is fixed at 32 threads and is intentionally not a public configuration knob.
+
+The Prometheus exporter also publishes these values as `libchttpx_worker_queue_depth`, `libchttpx_workers_active`, `libchttpx_worker_jobs_rejected_total`, `libchttpx_worker_jobs_completed_total`, and `libchttpx_worker_queue_wait_seconds_total`.
 
 The duration buckets are:
 
@@ -65,7 +69,7 @@ chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
 
 cHTTPX_Get(&router, "/health", health_handler);
 
-if (cHTTPX_MetricsRoute(&router, "/metrics") != CHTTPX_OK) {
+if (cHTTPX_MetricsRoute(&router, "/metrics") != cHTTPX_OK) {
     /* metrics are disabled or the route could not be registered */
 }
 ```

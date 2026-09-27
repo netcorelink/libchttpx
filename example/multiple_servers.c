@@ -1,21 +1,24 @@
 #include <libchttpx.h>
 
+/** Health check for the public listener (port 8080). */
 static void public_health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "public");
 }
 
+/** Health check for the admin listener (port 9090). */
 static void admin_health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "admin");
 }
 
+/** Runs two independent HTTP servers in one App runtime. */
 int main(void)
 {
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t public_config = cHTTPX_DefaultConfig();
@@ -42,5 +45,5 @@ int main(void)
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
 
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }

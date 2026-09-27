@@ -10,7 +10,6 @@
 #ifndef LIBCHTTPX_H
 #define LIBCHTTPX_H
 
-
 /* ========================================================================== */
 /* cHTTPX_crosspltm.h */
 /* ========================================================================== */
@@ -22,118 +21,55 @@ extern "C"
 {
 #endif
 
-#include <string.h>
-
-#if defined(_WIN32) || defined(_WIN64)
-#define CHTTPX_PLATFORM_WINDOWS
-#else
-#define CHTTPX_PLATFORM_POSIX
+#if !defined(__linux__)
+#error "libchttpx supports Linux only"
 #endif
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define strdup _strdup
-#else
-#define strdup strdup
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define chttpx_close(s) closesocket(s)
-#else
-#define chttpx_close(s) close(s)
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#include <winsock2.h>
-#include <windows.h>
-#include <ws2tcpip.h>
-#include <time.h>
-#endif
-
-#ifdef _WIN32
-    typedef SOCKET chttpx_socket_t;
-#else
-typedef int chttpx_socket_t;
-#endif
-
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    static inline struct tm* localtime_r(const time_t* timep, struct tm* result)
-    {
-        memset(result, 0, sizeof(*result));
-        localtime_s(result, timep);
-        return result;
-    }
-
-    static inline struct tm* gmtime_r(const time_t* timep, struct tm* result)
-    {
-        memset(result, 0, sizeof(*result));
-        gmtime_s(result, timep);
-        return result;
-    }
-
-    static inline int chttpx_clock_gettime(int clock_id, struct timespec* value)
-    {
-        if (!value)
-            return -1;
-        if (clock_id == CLOCK_MONOTONIC)
-        {
-            LARGE_INTEGER frequency;
-            LARGE_INTEGER counter;
-            QueryPerformanceFrequency(&frequency);
-            QueryPerformanceCounter(&counter);
-            value->tv_sec = (time_t)(counter.QuadPart / frequency.QuadPart);
-            value->tv_nsec = (long)(((counter.QuadPart % frequency.QuadPart) * 1000000000LL) / frequency.QuadPart);
-            return 0;
-        }
-        FILETIME file_time;
-        ULARGE_INTEGER ticks;
-        GetSystemTimeAsFileTime(&file_time);
-        ticks.LowPart = file_time.dwLowDateTime;
-        ticks.HighPart = file_time.dwHighDateTime;
-        unsigned long long unix_ticks = ticks.QuadPart - 116444736000000000ULL;
-        value->tv_sec = (time_t)(unix_ticks / 10000000ULL);
-        value->tv_nsec = (long)((unix_ticks % 10000000ULL) * 100ULL);
-        return 0;
-    }
-
-#define clock_gettime chttpx_clock_gettime
-#endif
-
-#ifdef CHTTPX_PLATFORM_POSIX
-#include <unistd.h>
-#include <sys/time.h>
 #include <arpa/inet.h>
+#include <stddef.h>
+#include <string.h>
 #include <sys/socket.h>
-#endif
+#include <sys/time.h>
+#include <unistd.h>
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-#define strcasecmp _stricmp
-#endif
+#define CHTTPX_PLATFORM_POSIX
+#define chttpx_close(s) close(s)
 
-    static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
-    {
-        if (!needlelen)
-            return (void*)haystack;
-        if (needlelen > haystacklen)
-            return NULL;
+typedef int chttpx_socket_t;
 
-        const unsigned char* h = haystack;
-        const unsigned char* n = needle;
-
-        for (size_t i = 0; i <= haystacklen - needlelen; i++)
-        {
-            if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
-                return (void*)(h + i);
-        }
-
+/**
+ * Find a byte substring within a buffer (POSIX memmem when unavailable).
+ *
+ * @param haystack Buffer to search.
+ * @param haystacklen Length of haystack.
+ * @param needle Substring to find.
+ * @param needlelen Length of needle.
+ * @return Pointer into haystack, or NULL if not found.
+ */
+static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen)
+{
+    if (!needlelen)
+        return (void*)haystack;
+    if (needlelen > haystacklen)
         return NULL;
+
+    const unsigned char* h = haystack;
+    const unsigned char* n = needle;
+
+    for (size_t i = 0; i <= haystacklen - needlelen; i++)
+    {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void*)(h + i);
     }
+
+    return NULL;
+}
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_http.h */
@@ -166,6 +102,8 @@ extern "C"
 #define cHTTPX_CTYPE_CSV "text/csv"
 /* JSON data. Use for REST API responses and requests. */
 #define cHTTPX_CTYPE_JSON "application/json"
+/* Server-Sent Events stream. */
+#define cHTTPX_CTYPE_SSE "text/event-stream"
 /* URL-encoded form data. Typical for HTML form submissions. */
 #define cHTTPX_CTYPE_FORM "application/x-www-form-urlencoded"
 /* Multipart form data. Used for file uploads via forms. */
@@ -319,7 +257,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_request.h */
 /* ========================================================================== */
@@ -337,7 +274,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -409,6 +345,26 @@ extern "C"
         FIELD_NUMBER_ARRAY
     } validation_t;
 
+    /**
+     * Result of cHTTPX_Parse, cHTTPX_Validate, and cHTTPX_BindJSON.
+     *
+     * Zero means success. Positive values name the failure. The failing
+     * field, if any, is stored in req->error_field.
+     */
+    typedef enum
+    {
+        cHTTPX_BIND_OK = 0,
+        cHTTPX_BIND_REQUIRED = 1,
+        cHTTPX_BIND_MIN_LENGTH = 2,
+        cHTTPX_BIND_MAX_LENGTH = 3,
+        cHTTPX_BIND_INVALID_EMAIL = 4,
+        cHTTPX_BIND_GENERIC = 5,
+        cHTTPX_BIND_INVALID_JSON = 6,
+        cHTTPX_BIND_TYPE = 7,
+        cHTTPX_BIND_MEMORY = 8,
+        cHTTPX_BIND_INVALID_ARGUMENT = 9
+    } chttpx_bind_error_t;
+
     typedef struct
     {
         char** items;
@@ -433,11 +389,18 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_NORMALIZE_NONE = 0,
-        CHTTPX_TRIM = 1 << 0,
-        CHTTPX_LOWERCASE = 1 << 1,
-        CHTTPX_UPPERCASE = 1 << 2
+        cHTTPX_NORMALIZE_NONE = 0,
+        cHTTPX_TRIM = 1 << 0,
+        cHTTPX_LOWERCASE = 1 << 1,
+        cHTTPX_UPPERCASE = 1 << 2
     } chttpx_normalizer_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_NORMALIZER_NAMES
+#define CHTTPX_NORMALIZE_NONE cHTTPX_NORMALIZE_NONE
+#define CHTTPX_TRIM cHTTPX_TRIM
+#define CHTTPX_LOWERCASE cHTTPX_LOWERCASE
+#define CHTTPX_UPPERCASE cHTTPX_UPPERCASE
+#endif
 
     typedef struct
     {
@@ -484,6 +447,18 @@ extern "C"
 
     typedef int (*chttpx_body_chunk_fn)(const unsigned char* data, size_t size, void* user_data);
 
+    struct chttpx_response;
+
+    /** Internal streaming transport used by long-lived response helpers such as SSE. */
+    typedef struct
+    {
+        void* context;
+        int (*open)(void* context, const struct chttpx_response* response);
+        int (*write)(void* context, const void* data, size_t size);
+        int (*close)(void* context);
+        bool (*connected)(void* context);
+    } chttpx_stream_transport_t;
+
     // REQuest
     typedef struct
     {
@@ -506,7 +481,7 @@ extern "C"
         /* User-Agent */
         char user_agent[512];
 
-        /* HTTP/1.1 HTTP/2 ... */
+        /* HTTP protocol negotiated for this request. */
         char protocol[16];
 
         /* Client IP REQuest */
@@ -514,6 +489,11 @@ extern "C"
 
         /* Error REQuest message */
         char error_msg[BUFFER_SIZE];
+
+        /* Bind/validate failure: code, field name, and optional numeric detail. */
+        int error_code;
+        char error_field[MAX_PARAM_NAME];
+        size_t error_num;
 
         /* Request metadata */
         char request_id[65];
@@ -559,6 +539,7 @@ extern "C"
 
         /* Internal transport state. NULL for plain HTTP. */
         void* _tls_session;
+        chttpx_stream_transport_t _stream_transport;
 
         /* Internal request lifecycle state. */
         void* _cleanup_entries;
@@ -573,13 +554,12 @@ extern "C"
     /**
      * Allocate zero-initialized memory owned by the current request.
      *
-     * The library automatically releases the allocation after
-     * the request.
+     * The allocation is released automatically during request cleanup unless
+     * it is detached with cHTTPX_Detach().
      *
      * @param req Current HTTP request.
      * @param size Number of bytes to allocate.
-     * @return Allocated memory, or
-     * NULL on invalid input or allocation failure.
+     * @return Request-owned memory or NULL on invalid input/allocation failure.
      */
     void* cHTTPX_Alloc(chttpx_request_t* req, size_t size);
 
@@ -587,143 +567,123 @@ extern "C"
      * Duplicate a string into request-owned memory.
      *
      * @param req Current HTTP request.
-     * @param str Null-terminated string
-     * to duplicate.
-     * @return Request-owned string, or NULL on failure. The caller must not free it.
+     * @param str Null-terminated source string.
+     * @return Request-owned copy or NULL on failure.
      */
     char* cHTTPX_Strdup(chttpx_request_t* req, const char* str);
 
     /**
-     * Register an arbitrary resource for cleanup after the request.
+     * Register an arbitrary resource for automatic request cleanup.
      *
      * @param req Current HTTP request.
-     * @param resource
-     * Resource passed to cleanup_fn during cleanup.
-     * @param cleanup_fn Function that releases the resource.
-     * @return 0 on success, -1 on
-     * invalid input or allocation failure.
+     * @param resource Resource passed to cleanup_fn.
+     * @param cleanup_fn Callback that releases resource.
+     * @return 0 on success or -1 on invalid input/allocation failure.
      */
     int cHTTPX_Defer(chttpx_request_t* req, void* resource, chttpx_cleanup_fn cleanup_fn);
 
     /**
      * Remove a resource from automatic request cleanup.
      *
-     * Ownership is transferred to the caller after a successful detach.
- *
-
-     * * @param req Current HTTP request.
-     * @param resource Previously registered resource.
-     * @return The detached resource, or NULL when it
-     * was not registered.
+     * @param req Current HTTP request.
+     * @param resource Previously deferred resource.
+     * @return Detached resource owned by the caller, or NULL when not found.
      */
     void* cHTTPX_Detach(chttpx_request_t* req, void* resource);
 
     /**
-     * Run all registered request cleanup callbacks.
+     * Run request cleanup callbacks and release internal request-owned state.
      *
-     * This is an internal lifecycle function normally called by the server.
- *
-
-     * * @param req Request whose resources must be released.
+     * This is normally invoked by the server lifecycle rather than application
+     * code.
+     *
+     * @param req Request whose scoped resources should be released.
      */
     void cHTTPX_RequestCleanup(chttpx_request_t* req);
 
     /**
      * Store or replace a named request context.
      *
-     * The cleanup callback is invoked automatically after the request. Replacing
-
-     * * an existing value also cleans up the previous value.
+     * Named contexts use a request-local hash table. Replacing a context invokes
+     * the previous cleanup callback when the previous value differs.
      *
      * @param req Current HTTP request.
-     * @param name Context name.
-     *
+     * @param name Context key.
      * @param value Application value; may be NULL.
-     * @param cleanup_fn Optional value cleanup callback.
-     * @return 0 on success, -1 on
-     * invalid input or allocation failure.
+     * @param cleanup_fn Optional callback used to release value.
+     * @return 0 on success or -1 on invalid input/allocation failure.
      */
     int cHTTPX_ContextSet(chttpx_request_t* req, const char* name, void* value, chttpx_context_free_fn cleanup_fn);
 
     /**
-     * Get a named request context.
+     * Look up a named request context.
      *
      * @param req Current HTTP request.
-     * @param name Context name.
-     * @return Borrowed
-     * context value, or NULL when it does not exist.
+     * @param name Context key.
+     * @return Borrowed context value or NULL when absent.
      */
     void* cHTTPX_ContextGet(chttpx_request_t* req, const char* name);
 
     /**
-     * Detach a named context from automatic cleanup.
+     * Detach a named context without running its cleanup callback.
      *
      * @param req Current HTTP request.
-     * @param name Context name.
-     *
-     * @return Detached value owned by the caller, or NULL when not found.
+     * @param name Context key.
+     * @return Detached value owned by the caller, or NULL when absent.
      */
     void* cHTTPX_ContextDetach(chttpx_request_t* req, const char* name);
 
     /**
-     * Extract a Bearer token from the Authorization header.
-     *
-     * The Bearer prefix is matched case-insensitively.
-     *
+     * Extract a Bearer token from the Authorization request header.
      *
      * @param req Current HTTP request.
-     * @return Borrowed token pointer, or NULL for a missing or invalid header.
+     * @return Borrowed token pointer or NULL for a missing/invalid header.
      */
     const char* cHTTPX_BearerToken(chttpx_request_t* req);
 
     /**
-     * Consume the request body through a chunk callback.
+     * Replay the request body through a bounded chunk callback.
      *
-     * Buffered bodies and temporary uploads are replayed in bounded chunks.
-
-     * *
      * @param req Current HTTP request.
      * @param callback Function invoked for each body chunk.
-     * @param user_data Application
-     * value passed to callback.
-     * @return 0 on success, -1 on invalid input, I/O error, or callback failure.
+     * @param user_data Caller value forwarded to callback.
+     * @return 0 on success or -1 on invalid input, I/O error, or callback failure.
      */
     int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, void* user_data);
 
     /**
-     * Parse a JSON body and validate fields according to the provided definitions.
-     * @param req Pointer to the HTTP request.
-     * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
-     * @param field_count Number of fields in the array.
-     * @return 1 if parsing and validation succeed, 0 if there is an error.
-     * This function automatically checks required fields, string length, boolean types, etc.
+     * Parse a JSON body into validation targets.
+     *
+     * @param req Current HTTP request.
+     * @param fields Field definitions and output targets.
+     * @param field_count Number of entries in fields.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
-    /*
-     * Validates an array of cHTTPX_FieldValidation structures.
-     * This function ensures that required fields are present, string lengths are within limits,
-     * and basic validation for integers and boolean fields is performed.
+    /**
+     * Validate already parsed field values.
+     *
+     * @param req Current HTTP request.
+     * @param fields Field definitions and parsed targets.
+     * @param field_count Number of entries in fields.
+     * @param l Unused; kept for source compatibility.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
     int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l);
 
-    struct chttpx_response;
     /**
      * Parse and validate a JSON request body.
      *
-     * Parsed strings and arrays are request-owned. On failure this function
-     *
-     * creates a safe JSON 400 response in res.
+     * Does not write an HTTP response. On failure inspect req->error_code,
+     * req->error_field, and req->error_num, then build the response yourself.
      *
      * @param req Current HTTP request.
-     * @param res Response populated when binding
-     * fails.
      * @param fields Field definitions and output targets.
      * @param field_count Number of field definitions.
-     * @return 1 on
-     * success, 0 on parsing or validation failure.
+     * @return cHTTPX_BIND_OK or a positive bind error code.
      */
-    int cHTTPX_BindJSON(chttpx_request_t* req, struct chttpx_response* res, chttpx_validation_t* fields, size_t field_count);
+    int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count);
 
 /**
  * Macro to define a string field for JSON request validation.
@@ -739,11 +699,8 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for a string field.
  */
-#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator)                                                             \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, CHTTPX_NORMALIZE_NONE, NULL                                         \
-    }
+#define chttpx_validation_string(name, ptr, required, min_length, max_length, validator) \
+    (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, validator, 0, cHTTPX_NORMALIZE_NONE, NULL}
 
 /**
  * Macro to define an integer field for JSON request validation.
@@ -755,11 +712,8 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for an integer field.
  */
-#define chttpx_validation_integer(name, ptr, required)                                                                                               \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                      \
-    }
+#define chttpx_validation_integer(name, ptr, required) \
+    (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_NUMBER, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL}
 
 /**
  * Macro to define a boolean field for JSON request validation.
@@ -771,25 +725,29 @@ extern "C"
  *
  * @return A chttpx_validation_t structure initialized for a boolean field.
  */
-#define chttpx_validation_boolean(name, ptr, required)                                                                                               \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, CHTTPX_NORMALIZE_NONE, NULL                                                        \
-    }
+#define chttpx_validation_boolean(name, ptr, required) \
+    (chttpx_validation_t){name, ptr, required, 0, 0, FIELD_BOOL, VALIDATOR_NONE, 0, cHTTPX_NORMALIZE_NONE, NULL}
 
-#define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator)                                                      \
-    (chttpx_validation_t)                                                                                                                            \
-    {                                                                                                                                                \
-        name, ptr, required, min_length, max_length, FIELD_STRING, VALIDATOR_NONE, 0, normalizers, validator                                         \
-    }
+/**
+ * Define a string JSON field with normalizers and a custom validator.
+ *
+ * @param name Field name in the JSON body.
+ * @param ptr Pointer to the target string variable.
+ * @param required Non-zero when the field is required.
+ * @param min_length Minimum string length (0 for none).
+ * @param max_length Maximum string length (0 for none).
+ * @param normalizers Bitmask of chttpx_normalizer_t flags.
+ * @param validator Optional custom validator callback.
+ * @return Initialized chttpx_validation_t entry.
+ */
+#define cHTTPX_StringField(name, ptr, required, min_length, max_length, normalizers, validator) \
+    (chttpx_validation_t){name, ptr, required, min_length, max_length, FIELD_STRING, VALIDATOR_NONE, 0, normalizers, validator}
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_response.h */
@@ -809,7 +767,6 @@ extern "C"
 {
 #endif
 
-
 #include <time.h>
 
     struct chttpx_serv;
@@ -817,9 +774,14 @@ extern "C"
     // RESponse
     typedef enum
     {
-        CHTTPX_BODY_BORROWED = 0,
-        CHTTPX_BODY_OWNED = 1
+        cHTTPX_BODY_BORROWED = 0,
+        cHTTPX_BODY_OWNED = 1
     } chttpx_body_ownership_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_BODY_OWNERSHIP_NAMES
+#define CHTTPX_BODY_BORROWED cHTTPX_BODY_BORROWED
+#define CHTTPX_BODY_OWNED cHTTPX_BODY_OWNED
+#endif
 
     typedef struct chttpx_response
     {
@@ -842,6 +804,9 @@ extern "C"
 
         /* Set when response compression must be bypassed. */
         bool compression_disabled;
+
+        /* Internal marker for a response already owned by a streaming transport. */
+        bool _streaming_response;
 
         /* Times for logging */
         struct timespec start_ts;
@@ -935,9 +900,32 @@ extern "C"
      * @param data Buffer
      * to send.
      * @param size Buffer size in bytes.
-     * @return CHTTPX_OK on success, otherwise a negative error code.
+     * @return cHTTPX_OK on success, otherwise a negative error code.
      */
     int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size);
+
+    typedef struct chttpx_sse chttpx_sse_t;
+
+    /** Open a Server-Sent Events stream and send its response headers immediately. */
+    chttpx_sse_t* cHTTPX_SSEOpen(chttpx_request_t* req, chttpx_response_t* res);
+
+    /** Send one SSE event. event and id are optional; data may contain multiple lines. */
+    int cHTTPX_SSESend(chttpx_sse_t* sse, const char* event, const char* id, const char* data);
+
+    /** Send a retry directive in milliseconds. */
+    int cHTTPX_SSERetry(chttpx_sse_t* sse, uint64_t milliseconds);
+
+    /** Send an SSE comment, splitting multiline comments correctly. */
+    int cHTTPX_SSEComment(chttpx_sse_t* sse, const char* comment);
+
+    /** Send an empty SSE comment suitable for keep-alive heartbeats. */
+    int cHTTPX_SSEHeartbeat(chttpx_sse_t* sse);
+
+    /** Return whether the underlying client stream is still writable. */
+    bool cHTTPX_SSEConnected(const chttpx_sse_t* sse);
+
+    /** Gracefully finish the SSE stream. Safe to call more than once. */
+    int cHTTPX_SSEClose(chttpx_sse_t* sse);
 
 #ifdef __cplusplus
     extern
@@ -945,7 +933,6 @@ extern "C"
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_middlewares.h */
@@ -964,8 +951,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
 #include <stdio.h>
 #include <pthread.h>
@@ -1077,7 +1062,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_cors.h */
 /* ========================================================================== */
@@ -1117,21 +1101,17 @@ extern "C"
     /**
      * Enable and configure CORS (Cross-Origin Resource Sharing).
      *
-     * This function enables CORS support for the HTTP server and configures
-     * which origins, HTTP methods, and request headers are allowed.
+     * The function copies the supplied configuration. Allowed origins are
+     * normalized into an immutable sorted table used for logarithmic lookup
+     * while requests are served.
      *
-     * The CORS configuration is applied globally and is typically used together
-     * with the built-in CORS middleware.
-     *
-     * @param origins        Array of allowed origin strings (e.g. "https://example.com").
-     *                       Each origin must match exactly the value of the "Origin" header.
-     * @param origins_count Number of elements in the origins array.
-     * @param methods       Comma-separated list of allowed HTTP methods.
-     *                       If NULL, defaults to:
-     *                       "GET, POST, PUT, DELETE, OPTIONS"
-     * @param headers       Comma-separated list of allowed request headers.
-     *                       If NULL, defaults to:
-     *                       "Content-Type"
+     * @param server Initialized HTTP server to configure.
+     * @param origins Array of exact allowed Origin header values.
+     * @param origins_count Number of elements in origins.
+     * @param methods Comma-separated allowed methods, or NULL for the default
+     * "GET, POST, PUT, DELETE, OPTIONS" set.
+     * @param headers Comma-separated allowed request headers, or NULL for
+     * "Content-Type".
      */
     void cHTTPX_Cors(struct chttpx_serv* server, const char** origins, size_t origins_count, const char* methods, const char* headers);
 
@@ -1141,7 +1121,6 @@ extern "C"
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_serv.h */
@@ -1161,9 +1140,6 @@ extern "C"
 {
 #endif
 
-
-
-
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -1175,40 +1151,73 @@ extern "C"
 
     typedef enum
     {
-        CHTTPX_OK = 0,
-        CHTTPX_ERR_MEMORY = -1,
-        CHTTPX_ERR_SOCKET = -2,
-        CHTTPX_ERR_BIND = -3,
-        CHTTPX_ERR_LISTEN = -4,
-        CHTTPX_ERR_INVALID_ARGUMENT = -5,
-        CHTTPX_ERR_LIMIT = -6,
-        CHTTPX_ERR_IO = -7,
-        CHTTPX_ERR_NOT_FOUND = -8,
-        CHTTPX_ERR_PROTOCOL = -9,
-        CHTTPX_ERR_STATE = -10,
-        CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13,
-        CHTTPX_ERR_COMPRESSION = -14
+        cHTTPX_OK = 0,
+        cHTTPX_ERR_MEMORY = -1,
+        cHTTPX_ERR_SOCKET = -2,
+        cHTTPX_ERR_BIND = -3,
+        cHTTPX_ERR_LISTEN = -4,
+        cHTTPX_ERR_INVALID_ARGUMENT = -5,
+        cHTTPX_ERR_LIMIT = -6,
+        cHTTPX_ERR_IO = -7,
+        cHTTPX_ERR_NOT_FOUND = -8,
+        cHTTPX_ERR_PROTOCOL = -9,
+        cHTTPX_ERR_STATE = -10,
+        cHTTPX_ERR_UNAVAILABLE = -11,
+        cHTTPX_ERR_TIMEOUT = -12,
+        cHTTPX_ERR_TLS = -13,
+        cHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
+
+    /* Backward compatibility for the legacy all-uppercase result names. */
+#ifndef CHTTPX_DISABLE_LEGACY_ERROR_NAMES
+#define CHTTPX_OK cHTTPX_OK
+#define CHTTPX_ERR_MEMORY cHTTPX_ERR_MEMORY
+#define CHTTPX_ERR_SOCKET cHTTPX_ERR_SOCKET
+#define CHTTPX_ERR_BIND cHTTPX_ERR_BIND
+#define CHTTPX_ERR_LISTEN cHTTPX_ERR_LISTEN
+#define CHTTPX_ERR_INVALID_ARGUMENT cHTTPX_ERR_INVALID_ARGUMENT
+#define CHTTPX_ERR_LIMIT cHTTPX_ERR_LIMIT
+#define CHTTPX_ERR_IO cHTTPX_ERR_IO
+#define CHTTPX_ERR_NOT_FOUND cHTTPX_ERR_NOT_FOUND
+#define CHTTPX_ERR_PROTOCOL cHTTPX_ERR_PROTOCOL
+#define CHTTPX_ERR_STATE cHTTPX_ERR_STATE
+#define CHTTPX_ERR_UNAVAILABLE cHTTPX_ERR_UNAVAILABLE
+#define CHTTPX_ERR_TIMEOUT cHTTPX_ERR_TIMEOUT
+#define CHTTPX_ERR_TLS cHTTPX_ERR_TLS
+#define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
+#endif
 
     typedef enum
     {
-        CHTTPX_LOG_DEBUG,
-        CHTTPX_LOG_INFO,
-        CHTTPX_LOG_WARN,
-        CHTTPX_LOG_ERROR,
-        CHTTPX_LOG_OFF
+        cHTTPX_LOG_DEBUG,
+        cHTTPX_LOG_INFO,
+        cHTTPX_LOG_WARN,
+        cHTTPX_LOG_ERROR,
+        cHTTPX_LOG_OFF
     } chttpx_log_level_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_LOG_DEBUG cHTTPX_LOG_DEBUG
+#define CHTTPX_LOG_INFO cHTTPX_LOG_INFO
+#define CHTTPX_LOG_WARN cHTTPX_LOG_WARN
+#define CHTTPX_LOG_ERROR cHTTPX_LOG_ERROR
+#define CHTTPX_LOG_OFF cHTTPX_LOG_OFF
+#endif
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
     typedef enum
     {
-        CHTTPX_NETWORK_IPV4 = 0,
-        CHTTPX_NETWORK_IPV6,
-        CHTTPX_NETWORK_DUAL
+        cHTTPX_NETWORK_IPV4 = 0,
+        cHTTPX_NETWORK_IPV6,
+        cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_NETWORK_IPV4 cHTTPX_NETWORK_IPV4
+#define CHTTPX_NETWORK_IPV6 cHTTPX_NETWORK_IPV6
+#define CHTTPX_NETWORK_DUAL cHTTPX_NETWORK_DUAL
+#endif
 
     typedef struct
     {
@@ -1313,6 +1322,8 @@ extern "C"
         void* rate_limiter_state;
         void* compression_state;
         void* metrics_state;
+        void* runtime_state;
+        void* websocket_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
@@ -1339,22 +1350,36 @@ extern "C"
     /** Create a router bound to one App-managed server. */
     chttpx_router_t cHTTPX_RoutePathPrefix(chttpx_serv_t* server, const char* prefix);
 
+    /** Register a route with an explicit HTTP method on a router. */
     void cHTTPX_RegisterRoute(chttpx_router_t* r, const char* method, const char* path, chttpx_handler_t handler);
 
+    /** Register a GET handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Get(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a POST handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Post(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a PUT handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Put(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a PATCH handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Patch(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register a DELETE handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Delete(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
+    /** Register an OPTIONS handler; returns the route handle or NULL on failure. */
     chttpx_route_t* cHTTPX_Options(chttpx_router_t* router, const char* path, chttpx_handler_t handler);
 
+    /** Create a nested router that shares middleware with its parent. */
     chttpx_router_t cHTTPX_RouteGroup(const chttpx_router_t* parent, const char* prefix);
 
+    /** Attach middleware that runs before handlers on this router. @return cHTTPX_OK on success. */
     int cHTTPX_RouterUse(chttpx_router_t* router, chttpx_middleware_t middleware);
+    /** Attach middleware that runs after handlers on this router. @return cHTTPX_OK on success. */
     int cHTTPX_RouterUseAfter(chttpx_router_t* router, chttpx_middleware_t middleware);
+    /** Attach middleware that runs before this route's handler. @return cHTTPX_OK on success. */
     int cHTTPX_RouteUse(chttpx_route_t* route, chttpx_middleware_t middleware);
+    /** Attach middleware that runs after this route's handler. @return cHTTPX_OK on success. */
     int cHTTPX_RouteUseAfter(chttpx_route_t* route, chttpx_middleware_t middleware);
+    /** Set upload constraints for one route. @return cHTTPX_OK on success. */
     int cHTTPX_RouteUploadPolicy(chttpx_route_t* route, const chttpx_upload_policy_t* policy);
+    /** Release router-owned resources (normally unused with App-managed servers). */
     void cHTTPX_RouterFree(chttpx_router_t* router);
 
     /** Configure logging for one App-managed component. */
@@ -1372,12 +1397,8 @@ extern "C"
      * The provider allocates *output with malloc-compatible ownership. The
      * library owns that buffer after a successful compression operation.
      */
-    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input,
-                                                size_t input_size,
-                                                int level,
-                                                unsigned char** output,
-                                                size_t* output_size,
-                                                void* user_data);
+    typedef int (*chttpx_compression_encode_fn)(const unsigned char* input, size_t input_size, int level,
+                                                unsigned char** output, size_t* output_size, void* user_data);
 
     typedef struct
     {
@@ -1410,13 +1431,11 @@ extern "C"
     /** Enable or disable compression for one response. */
     void cHTTPX_ResponseCompression(chttpx_response_t* response, bool enabled);
 
-
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_metrics.h */
@@ -1458,10 +1477,54 @@ extern "C"
         uint64_t request_duration_buckets[CHTTPX_METRICS_DURATION_BUCKETS];
     } chttpx_metrics_t;
 
-    /** Copy a consistent per-server metrics snapshot. */
+    /**
+     * Snapshot of the bounded application worker pool.
+     *
+     * The pool is internal to the server runtime and uses a fixed 32 workers.
+     * Queue depth and active_workers are gauges; the remaining fields are
+     * monotonic counters for the lifetime of the server runtime.
+     */
+    typedef struct
+    {
+        uint64_t worker_queue_depth;
+        uint64_t active_workers;
+        uint64_t rejected_jobs_total;
+        uint64_t completed_jobs_total;
+        uint64_t queue_wait_nanoseconds_total;
+    } chttpx_runtime_metrics_t;
+
+    /**
+     * Copy the current server metrics into a caller-owned snapshot.
+     *
+     * Global counters are read atomically. Individual fields may advance while
+     * the snapshot is copied, which is expected for monitoring data.
+     *
+     * @param server Server whose metrics should be read.
+     * @param metrics Output structure populated on success.
+     * @return cHTTPX_OK on success, cHTTPX_ERR_INVALID_ARGUMENT for invalid
+     * input, or cHTTPX_ERR_UNAVAILABLE when metrics are disabled.
+     */
     int cHTTPX_ServerMetrics(chttpx_serv_t* server, chttpx_metrics_t* metrics);
 
-    /** Register a Prometheus text exposition route. */
+    /**
+     * Copy bounded worker-pool runtime metrics.
+     *
+     * @param server Server whose worker runtime should be inspected.
+     * @param metrics Output runtime metrics snapshot.
+     * @return cHTTPX_OK on success or cHTTPX_ERR_UNAVAILABLE when runtime
+     * metrics are not available.
+     */
+    int cHTTPX_ServerRuntimeMetrics(chttpx_serv_t* server, chttpx_runtime_metrics_t* metrics);
+
+    /**
+     * Register a Prometheus text exposition endpoint.
+     *
+     * Metrics must be enabled before the server is created.
+     *
+     * @param router Router that owns the metrics endpoint.
+     * @param path Route path used for the Prometheus endpoint.
+     * @return cHTTPX_OK on success or an appropriate error code.
+     */
     int cHTTPX_MetricsRoute(chttpx_router_t* router, const char* path);
 
 #ifdef __cplusplus
@@ -1469,7 +1532,6 @@ extern "C"
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_app.h */
@@ -1487,7 +1549,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -1529,9 +1590,14 @@ extern "C"
      *
      * ca_file == NULL uses the system trust store. Client certificate/key
      * fields are optional and enable mutual TLS when both are provided.
+     *
+     * @param app Application runtime.
+     * @param name Logical name used with cHTTPX_Call().
+     * @param base_url Remote base URL (http:// or https://).
+     * @param tls_config Client TLS options; may be NULL for defaults.
+     * @return cHTTPX_OK on success or a negative error code.
      */
-    int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url,
-                           const chttpx_tls_client_config_t* tls_config);
+    int cHTTPX_AppRemoteEx(chttpx_app_t* app, const char* name, const char* base_url, const chttpx_tls_client_config_t* tls_config);
 
     /** Start every local server in the App in its own listener thread. */
     int cHTTPX_AppStart(chttpx_app_t* app);
@@ -1580,7 +1646,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_inet.h */
 /* ========================================================================== */
@@ -1598,7 +1663,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
     /**
      * Get client IP address from the underlying socket connection.
@@ -1625,7 +1689,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_params.h */
 /* ========================================================================== */
@@ -1643,7 +1706,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
     /**
      * Get a route parameter value by its name.
@@ -1664,12 +1726,10 @@ extern "C"
     int cHTTPX_ParamBool(chttpx_request_t* req, const char* name, bool* value);
 
 #ifdef __cplusplus
-    extern
 }
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_queries.h */
@@ -1688,7 +1748,6 @@ extern "C"
 extern "C"
 {
 #endif
-
 
     /**
      * Get a query parameter value by name.
@@ -1740,7 +1799,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_headers.h */
 /* ========================================================================== */
@@ -1758,8 +1816,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
     /**
      * Get a request header by name.
@@ -1812,7 +1868,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_cookies.h */
 /* ========================================================================== */
@@ -1823,8 +1878,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
     /* Parse cookie in request */
     void _parse_req_cookies(chttpx_request_t* req);
@@ -1869,7 +1922,6 @@ extern "C"
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_i18n.h */
@@ -1977,7 +2029,7 @@ extern "C"
      * codes.
      * @param count     Number of elements in languages.
      * @param fallback  Fallback language code.
-     * @return CHTTPX_OK on
+     * @return cHTTPX_OK on
      * success, otherwise a negative error code.
      */
     int cHTTPX_i18n_languages(struct chttpx_serv* server, const char** languages, size_t count, const char* fallback);
@@ -1987,7 +2039,6 @@ extern "C"
 #endif
 
 #endif
-
 
 /* ========================================================================== */
 /* cHTTPX_media.h */
@@ -2006,8 +2057,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
 #define FILE_BUFFER 65536
 
@@ -2053,7 +2102,6 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_json.h */
 /* ========================================================================== */
@@ -2064,8 +2112,6 @@ extern "C"
 extern "C"
 {
 #endif
-
-
 
     typedef struct chttpx_json chttpx_json_t;
 
@@ -2117,62 +2163,192 @@ extern "C"
 
 #endif
 
-
 /* ========================================================================== */
 /* cHTTPX_websocket.h */
 /* ========================================================================== */
 /**
- * Copyright (c) 2026 netcorelink
- *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * WebSocket over HTTP/2 (RFC 8441) API.
  */
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-#include <stdlib.h>
-
+/** WebSocket continuation frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_CONTINUATION 0x0
+/** WebSocket text frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_TEXT 0x1
+/** WebSocket binary frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_BINARY 0x2
+/** WebSocket close frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_CLOSE 0x8
+/** WebSocket ping frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_PING 0x9
+/** WebSocket pong frame opcode. */
 #define CHTTPX_WSOCKET_OPCODE_PONG 0xA
 
+/**
+ * Parsed WebSocket frame metadata and payload.
+ *
+ * Used by legacy or diagnostic paths that expose a decoded frame.
+ */
 typedef struct
 {
-    /* FIN - final fragment
-     * 1 eq. this is the last frame of the message
-     * 0 eq. the message is divided into several parts
-     */
     int fin;
-    /* Check define CHTTPX_WSOCKET_OPCODE */
     int opcode;
     int masked;
-    /* Length data in payload */
     uint64_t payload_len;
-    /* Mask for XOR payload */
     unsigned char mask[4];
-    /* Data in socket */
     unsigned char* payload;
 } wsocket_frame_t;
 
-typedef struct
+/**
+ * Active WebSocket connection handle.
+ *
+ * Created by the HTTP/2 Extended CONNECT bridge. Application code registers
+ * message and close callbacks, then sends frames through the public helpers.
+ */
+typedef struct chttpx_wsocket
 {
-    int socket;
+    chttpx_socket_t socket;
     int connected;
+    int opcode;
+    chttpx_request_t* request;
+    void* user_data;
+    void* _internal;
 } chttpx_wsocket_t;
 
+/**
+ * Callback invoked for a complete text or binary message.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Message payload bytes.
+ * @param len Payload length in bytes.
+ */
 typedef void (*chttpx_wsocket_handler_t)(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
 
+/**
+ * Callback invoked when the peer closes or the connection is aborted.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param code Close status code.
+ * @param reason Optional UTF-8 close reason.
+ * @param len Reason length in bytes.
+ */
+typedef void (*chttpx_wsocket_close_handler_t)(chttpx_wsocket_t* wsocket, uint16_t code, const unsigned char* reason, size_t len);
+
+/**
+ * Route entry callback invoked after a successful WebSocket handshake.
+ *
+ * @param wsocket Newly accepted WebSocket connection.
+ */
 typedef void (*chttpx_wsocket_route_t)(chttpx_wsocket_t* wsocket);
 
-void cHTTPX_WSocketRegisterRoute(chttpx_router_t* r, const char* path, chttpx_wsocket_route_t handler);
+/**
+ * Register a WebSocket route on a router path prefix.
+ *
+ * @param router Target router.
+ * @param path Path relative to the router prefix.
+ * @param handler Callback invoked after handshake success.
+ */
+void cHTTPX_WSocketRegisterRoute(chttpx_router_t* router, const char* path, chttpx_wsocket_route_t handler);
 
-int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
+/**
+ * Set the message handler for an active WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param handler Callback for complete text or binary messages.
+ */
+void cHTTPX_WSocketOnMessage(chttpx_wsocket_t* wsocket, chttpx_wsocket_handler_t handler);
 
+/**
+ * Set the close handler for an active WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param handler Callback for peer close or abrupt abort.
+ */
+void cHTTPX_WSocketOnClose(chttpx_wsocket_t* wsocket, chttpx_wsocket_close_handler_t handler);
+
+/**
+ * Attach opaque application data to a WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param user_data Pointer stored on the connection.
+ */
+void cHTTPX_WSocketSetData(chttpx_wsocket_t* wsocket, void* user_data);
+
+/**
+ * Return opaque application data previously attached to a WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @return Stored user data pointer, or NULL.
+ */
+void* cHTTPX_WSocketData(chttpx_wsocket_t* wsocket);
+
+/**
+ * Send a text WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data UTF-8 payload bytes.
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_WSocketSend(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
 
+/**
+ * Send a binary WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Binary payload bytes.
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
+int cHTTPX_WSocketSendBinary(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+
+/**
+ * Send a WebSocket ping frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Optional ping payload.
+ * @param len Payload length in bytes (at most 125).
+ * @return Zero on success or a negative error code.
+ */
+int cHTTPX_WSocketPing(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len);
+
+/**
+ * Send a WebSocket close frame and mark the connection closing.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param code Close status code, or 0 for 1000.
+ * @param reason Optional UTF-8 close reason.
+ * @return Zero on success or a negative error code.
+ */
+int cHTTPX_WSocketClose(chttpx_wsocket_t* wsocket, uint16_t code, const char* reason);
+
+/**
+ * Legacy HTTP/1.1 upgrade helper retained for source compatibility.
+ *
+ * Always returns unavailable: WebSockets are served over HTTP/2 Extended CONNECT.
+ *
+ * @param client_socket Unused client socket.
+ * @param sec_wsocket_key Unused Sec-WebSocket-Key value.
+ * @return Always cHTTPX_ERR_UNAVAILABLE.
+ */
+int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key);
+
+/**
+ * Legacy synchronous receive helper retained for source compatibility.
+ *
+ * @param wsocket Unused connection handle.
+ * @param buffer Unused output buffer.
+ * @param len Unused buffer capacity.
+ * @return Always cHTTPX_ERR_UNAVAILABLE.
+ */
 int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t len);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBCHTTPX_H */

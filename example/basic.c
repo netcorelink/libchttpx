@@ -1,15 +1,17 @@
 #include <libchttpx.h>
 
+/** Liveness check; responds with plain text "healthy". */
 static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "healthy");
 }
 
+/** Minimal single-server example on port 8080. */
 int main(void)
 {
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
@@ -28,5 +30,5 @@ int main(void)
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
 
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }

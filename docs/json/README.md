@@ -38,7 +38,7 @@ static void create_user(
             true,
             3,
             254,
-            CHTTPX_TRIM | CHTTPX_LOWERCASE,
+            cHTTPX_TRIM | cHTTPX_LOWERCASE,
             NULL
         ),
         cHTTPX_StringField(
@@ -47,17 +47,20 @@ static void create_user(
             true,
             3,
             32,
-            CHTTPX_TRIM,
+            cHTTPX_TRIM,
             validate_username
         ),
     };
 
-    if (!cHTTPX_BindJSON(
-            req,
-            res,
-            fields,
-            CHTTPX_ARRAY_LEN(fields)))
+    int bind = cHTTPX_BindJSON(req, fields, CHTTPX_ARRAY_LEN(fields));
+    if (bind != cHTTPX_BIND_OK)
+    {
+        if (bind == cHTTPX_BIND_REQUIRED)
+            *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, req->error_field);
+        else
+            *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, "invalid request body");
         return;
+    }
 
     *res = cHTTPX_ResMessage(
         cHTTPX_StatusCreated,
@@ -66,13 +69,13 @@ static void create_user(
 }
 ```
 
-On failure, `BindJSON` returns 0 and builds a safe HTTP 400 response.
+`BindJSON` does not write the HTTP response. `0` is success. On failure it returns a code such as `cHTTPX_BIND_REQUIRED` (`1`) and sets `req->error_field` / `req->error_num`.
 
 ## Normalizers
 
-- `CHTTPX_TRIM`
-- `CHTTPX_LOWERCASE`
-- `CHTTPX_UPPERCASE`
+- `cHTTPX_TRIM`
+- `cHTTPX_LOWERCASE`
+- `cHTTPX_UPPERCASE`
 
 They can be OR-combined.
 

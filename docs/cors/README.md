@@ -45,7 +45,7 @@ The server copies CORS configuration into its own state.
 A CORS preflight looks like:
 
 ```http
-OPTIONS /api/v2/users HTTP/1.1
+OPTIONS /api/v2/users HTTP/2
 Origin: https://example.com
 Access-Control-Request-Method: POST
 ```

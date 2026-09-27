@@ -15,12 +15,14 @@ static const char page[] =
     "<p>This intentionally repetitive response demonstrates gzip negotiation.</p>"
     "</body></html>";
 
+/** Serves a large HTML page eligible for gzip compression. */
 static void page_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResHtml(cHTTPX_StatusOK, "%s", page);
 }
 
+/** Health endpoint with compression explicitly disabled on the response. */
 static void health_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -28,10 +30,11 @@ static void health_handler(chttpx_request_t* req, chttpx_response_t* res)
     cHTTPX_ResponseCompression(res, false);
 }
 
+/** Demonstrates server-wide gzip and per-route/response opt-out. */
 int main(void)
 {
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
@@ -49,7 +52,7 @@ int main(void)
     compression.level = 5;
 
     int compression_result = cHTTPX_CompressionUse(server, &compression);
-    if (compression_result != CHTTPX_OK)
+    if (compression_result != cHTTPX_OK)
     {
         fprintf(stderr, "compression configuration failed: %d\n", compression_result);
         cHTTPX_AppShutdown(&app);
@@ -66,5 +69,5 @@ int main(void)
 
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }

@@ -52,13 +52,13 @@ const char* cHTTPX_HeaderGet(chttpx_request_t* req, const char* name)
 /**
  * Add a new HTTP header.
  *
- * This function appends a header to the request/response header list.
- * Unlike HeaderSet, it does NOT replace existing headers with the same name.
- * This is required for headers like "Set-Cookie" that may appear multiple times.
+ * Appends a header to the response header list. Unlike HeaderSet, it does not
+ * replace existing headers with the same name (required for Set-Cookie).
  *
- * @param req   Pointer to HTTP request/response structure.
- * @param name  Header name.
+ * @param res Pointer to HTTP response structure.
+ * @param name Header name.
  * @param value Header value.
+ * @return 0 on success, -1 on error.
  */
 int cHTTPX_HeaderAdd(chttpx_response_t* res, const char* name, const char* value)
 {
@@ -123,10 +123,10 @@ int cHTTPX_HeaderSet(chttpx_request_t* req, const char* name, const char* value)
 }
 
 /**
- * Get the client's IP from the HEADER request.
+ * Get the client's IP from request headers (X-Forwarded-For or Remote-Addr).
  *
- * @param req a pointer to the query structure
- * @return const char* Client's IP
+ * @param req Pointer to the HTTP request.
+ * @return Client IP string, or NULL if not present.
  */
 const char* cHTTPX_ClientIP(chttpx_request_t* req)
 {
@@ -140,6 +140,14 @@ const char* cHTTPX_ClientIP(chttpx_request_t* req)
     return ip;
 }
 
+/**
+ * Append one parsed header to the request (truncates overlong name/value).
+ *
+ * @param req Request to update.
+ * @param name Header name.
+ * @param value Header value.
+ * @return 1 on success, 0 when MAX_HEADERS is reached.
+ */
 static int add_header(chttpx_request_t* req, const char* name, const char* value)
 {
     if (req->headers_count >= MAX_HEADERS)
@@ -198,6 +206,13 @@ static int valid_header_name(const char* name, size_t length)
     return 1;
 }
 
+/**
+ * Validate an HTTP field-value (no bare CR/LF or DEL).
+ *
+ * @param value Field value bytes (not necessarily null-terminated).
+ * @param length Number of bytes in value.
+ * @return 1 if valid, otherwise 0.
+ */
 static int valid_header_value(const char* value, size_t length)
 {
     if (!value)
@@ -213,7 +228,13 @@ static int valid_header_value(const char* value, size_t length)
     return 1;
 }
 
-/* Parse headers in request */
+/**
+ * Parse HTTP headers from a raw request buffer.
+ *
+ * @param req Pointer to the HTTP request being parsed.
+ * @param buffer Raw bytes containing the request line and headers.
+ * @param buffer_len Length of buffer in bytes.
+ */
 void _parse_req_headers(chttpx_request_t* req, char* buffer, size_t buffer_len)
 {
     if (!req || !buffer)

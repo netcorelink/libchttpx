@@ -2,6 +2,9 @@
 
 Static project website for GitHub Pages.
 
+The documentation layout follows a Mongoose-style docs UI: sticky header,
+collapsible left sidebar with search, chevron breadcrumbs, and dark code blocks.
+
 ## Files
 
 - `index.html` — landing page
@@ -12,9 +15,8 @@ Static project website for GitHub Pages.
 - `blog.html` — project updates and release links
 - `support.html` — community, commercial and sponsorship support
 - `about.html` — project information
-- `styles.css` — shared styles
-- `app.js` — mobile navigation, copy buttons, docs filter and GitHub repository stats
-- `styles.css` — shared styles and DM Sans typography
+- `styles.css` — shared documentation layout (sidebar, breadcrumbs, dark code)
+- `app.js` — navigation, sidebar, copy buttons, syntax highlighting and GitHub stats
 
 The site has no framework. GitHub Pages has a small build step that recreates `docs/site/content` from the canonical module READMEs under `docs/`, so website documentation cannot drift from repository documentation.
 

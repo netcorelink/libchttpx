@@ -2,12 +2,14 @@
 
 #include <stdio.h>
 
+/** JSON health payload indicating HTTPS is active. */
 static void health(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResJson(cHTTPX_StatusOK, "{\"https\":true}");
 }
 
+/** HTTPS server on port 8443; certificate and key paths are CLI arguments. */
 int main(int argc, char** argv)
 {
     if (argc != 3)
@@ -17,7 +19,7 @@ int main(int argc, char** argv)
     }
 
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
@@ -39,5 +41,5 @@ int main(int argc, char** argv)
     printf("HTTPS server listening on https://localhost:%u\n", server->port);
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }

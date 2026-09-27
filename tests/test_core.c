@@ -8,12 +8,14 @@
 
 static int cleanup_calls;
 
+/** @param value Pointer to an int; value is summed into cleanup_calls before free. */
 static void count_cleanup(void* value)
 {
     cleanup_calls += *(int*)value;
     free(value);
 }
 
+/** Custom validator used by test_bind_and_json; accepts only "valid_user". */
 static bool username_validator(const void* value, char* error, size_t error_size)
 {
     if (strcmp(value, "valid_user") == 0)
@@ -22,6 +24,7 @@ static bool username_validator(const void* value, char* error, size_t error_size
     return false;
 }
 
+/** No-op middleware that always continues the chain. */
 static chttpx_middleware_result_t middleware(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
@@ -29,14 +32,17 @@ static chttpx_middleware_result_t middleware(chttpx_request_t* req, chttpx_respo
     return next;
 }
 
+/** Returns HTTP 204 No Content. */
 static void handler(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResNoContent();
 }
 
+/** Verifies alloc, defer, context, and cleanup callback ordering. */
 static void test_request_lifecycle(void)
 {
+    cleanup_calls = 0;
     chttpx_request_t req = {0};
     char* text = cHTTPX_Strdup(&req, "owned");
     assert(text && strcmp(text, "owned") == 0);
@@ -54,6 +60,49 @@ static void test_request_lifecycle(void)
     assert(cleanup_calls == 5);
 }
 
+/** Stresses context and defer registries beyond initial hash capacity. */
+static void test_request_internal_indexes(void)
+{
+    chttpx_request_t req = {0};
+
+    for (size_t i = 0; i < 80; ++i)
+    {
+        char name[32];
+        snprintf(name, sizeof(name), "ctx-%zu", i);
+
+        int* value = malloc(sizeof(*value));
+        assert(value);
+        *value = (int)i;
+
+        assert(cHTTPX_ContextSet(&req, name, value, free) == 0);
+    }
+
+    for (size_t i = 0; i < 80; ++i)
+    {
+        char name[32];
+        snprintf(name, sizeof(name), "ctx-%zu", i);
+
+        int* value = cHTTPX_ContextGet(&req, name);
+        assert(value && *value == (int)i);
+    }
+
+    int* detached = cHTTPX_ContextDetach(&req, "ctx-40");
+    assert(detached && *detached == 40);
+    assert(cHTTPX_ContextGet(&req, "ctx-40") == NULL);
+    free(detached);
+
+    for (size_t i = 0; i < 96; ++i)
+    {
+        int* value = malloc(sizeof(*value));
+        assert(value);
+        *value = (int)i;
+        assert(cHTTPX_Defer(&req, value, free) == 0);
+    }
+
+    cHTTPX_RequestCleanup(&req);
+}
+
+/** Covers route params, query parsing, and typed query accessors. */
 static void test_typed_values(void)
 {
     chttpx_request_t req = {0};
@@ -81,17 +130,20 @@ static void test_typed_values(void)
     free(req.query);
 }
 
+/** Covers BindJSON, JsonObject, and JSON escaping in responses. */
 static void test_bind_and_json(void)
 {
     chttpx_request_t req = {0};
-    const char body[] = "{\"username\":\"  VALID_USER  \"}";
-    req.body = (unsigned char*)body;
-    req.body_size = strlen(body);
+    const char source[] = "{\"username\":\"  VALID_USER  \"}";
+    req.body_size = strlen(source);
+    req.body = malloc(req.body_size);
+    assert(req.body);
+    memcpy(req.body, source, req.body_size);
     strcpy(req.language, "en");
     char* username = NULL;
-    chttpx_validation_t fields[] = {cHTTPX_StringField("username", &username, true, 3, 32, CHTTPX_TRIM | CHTTPX_LOWERCASE, username_validator)};
+    chttpx_validation_t fields[] = {cHTTPX_StringField("username", &username, true, 3, 32, cHTTPX_TRIM | cHTTPX_LOWERCASE, username_validator)};
     chttpx_response_t response = {0};
-    assert(cHTTPX_BindJSON(&req, &response, fields, CHTTPX_ARRAY_LEN(fields)));
+    assert(cHTTPX_BindJSON(&req, fields, CHTTPX_ARRAY_LEN(fields)) == cHTTPX_BIND_OK);
     assert(strcmp(username, "valid_user") == 0);
 
     chttpx_json_t* object = cHTTPX_JsonObject(&req);
@@ -99,12 +151,15 @@ static void test_bind_and_json(void)
     assert(cHTTPX_JsonString(object, "message", "quote: \"") == 0);
     assert(cHTTPX_JsonNumber(object, "id", 42) == 0);
     response = cHTTPX_ResJsonObject(cHTTPX_StatusOK, object);
-    assert(response.body_ownership == CHTTPX_BODY_OWNED);
+    assert(response.body_ownership == cHTTPX_BODY_OWNED);
     assert(strstr((const char*)response.body, "\\\"") != NULL);
     cHTTPX_ResponseCleanup(&response);
+    free(req.body);
+    req.body = NULL;
     cHTTPX_RequestCleanup(&req);
 }
 
+/** Parses a small in-memory multipart form and temp file lifecycle. */
 static void test_multipart(void)
 {
     chttpx_request_t req = {0};
@@ -129,11 +184,11 @@ static void test_multipart(void)
     assert(fopen(path, "rb") == NULL);
 }
 
-
+/** Ensures header parsing stops at the header/body boundary. */
 static void test_header_boundary(void)
 {
     chttpx_request_t req = {0};
-    char request[] = "POST /body HTTP/1.1\r\n"
+    char request[] = "POST /body HTTP/2\r\n"
                      "Host: localhost\r\n"
                      "Content-Length: 13\r\n\r\n"
                      "Fake: header\r\n";
@@ -145,6 +200,7 @@ static void test_header_boundary(void)
     assert(cHTTPX_HeaderGet(&req, "Fake") == NULL);
 }
 
+/** Rejects duplicate Content-Length and unsupported Transfer-Encoding on body parse. */
 static void test_request_framing(void)
 {
     chttpx_serv_t server = {0};
@@ -159,7 +215,7 @@ static void test_request_framing(void)
     strcpy(req.headers[1].name, "Content-Length");
     strcpy(req.headers[1].value, "6");
     req.headers_count = 2;
-    char request[] = "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
+    char request[] = "POST / HTTP/2\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello";
     _parse_req_body(&req, 0, request, strlen(request));
     assert(req._parse_status == cHTTPX_StatusBadRequest);
 
@@ -174,6 +230,7 @@ static void test_request_framing(void)
 
 }
 
+/** Chunked raw octet-stream upload via disk-backed stream. */
 static void test_streamed_raw_chunked_upload(void)
 {
     chttpx_serv_t server = {0};
@@ -189,7 +246,7 @@ static void test_streamed_raw_chunked_upload(void)
     strcpy(req.headers[1].value, "chunked");
     req.headers_count = 2;
 
-    char request[] = "POST /upload HTTP/1.1\r\n"
+    char request[] = "POST /upload HTTP/2\r\n"
                      "Content-Type: application/octet-stream\r\n"
                      "Transfer-Encoding: chunked\r\n\r\n"
                      "8\r\nRAW-DATA\r\n0\r\n\r\n";
@@ -218,6 +275,7 @@ static void test_streamed_raw_chunked_upload(void)
     assert(fopen(path, "rb") == NULL);
 }
 
+/** Multipart upload with Content-Length and chunked framing. */
 static void test_streamed_multipart(void)
 {
     chttpx_serv_t server = {0};
@@ -235,7 +293,7 @@ static void test_streamed_multipart(void)
     char request[2048];
     int body_size = (int)strlen(body);
     int request_size = snprintf(request, sizeof(request),
-                                "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                                "POST /upload HTTP/2\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
                                 "Content-Length: %d\r\n\r\n%s",
                                 body_size, body);
     assert(request_size > 0 && (size_t)request_size < sizeof(request));
@@ -268,7 +326,7 @@ static void test_streamed_multipart(void)
     assert(chunked_body_size > 0 && (size_t)chunked_body_size < sizeof(chunked_body));
 
     request_size = snprintf(request, sizeof(request),
-                            "POST /upload HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
+                            "POST /upload HTTP/2\r\nContent-Type: multipart/form-data; boundary=StreamBoundary\r\n"
                             "Transfer-Encoding: chunked\r\n\r\n%s",
                             chunked_body);
     assert(request_size > 0 && (size_t)request_size < sizeof(request));
@@ -295,6 +353,7 @@ static void test_streamed_multipart(void)
     cHTTPX_RequestCleanup(&req);
 }
 
+/** Frees routes registered on a stack-allocated test server. */
 static void free_test_routes(chttpx_serv_t* server)
 {
     for (size_t i = 0; i < server->routes_count; i++)
@@ -318,13 +377,14 @@ static void free_test_routes(chttpx_serv_t* server)
     server->routes_capacity = 0;
 }
 
+/** Router groups, middleware stacks, and upload policy snapshotting. */
 static void test_routing_api(void)
 {
     chttpx_serv_t server = {0};
     server.initialized = true;
     chttpx_router_t api = cHTTPX_RoutePathPrefix(&server, "/api/v2");
     chttpx_router_t private_routes = cHTTPX_RouteGroup(&api, "");
-    assert(cHTTPX_RouterUse(&private_routes, middleware) == CHTTPX_OK);
+    assert(cHTTPX_RouterUse(&private_routes, middleware) == cHTTPX_OK);
 
     chttpx_route_t* route = cHTTPX_Get(&private_routes, "/users/me", handler);
     assert(route && strcmp(route->path, "/api/v2/users/me") == 0);
@@ -339,18 +399,19 @@ static void test_routing_api(void)
     }
 
     assert(strcmp(route->path, "/api/v2/users/me") == 0);
-    assert(cHTTPX_RouteUseAfter(route, middleware) == CHTTPX_OK);
+    assert(cHTTPX_RouteUseAfter(route, middleware) == cHTTPX_OK);
     assert(route->after_middleware_count == 1);
 
     char mutable_type[] = "image/*";
     const char* allowed_types[] = {mutable_type};
     chttpx_upload_policy_t policy = {.max_size = 4096, .allowed_types = allowed_types, .allowed_types_count = 1};
-    assert(cHTTPX_RouteUploadPolicy(route, &policy) == CHTTPX_OK);
+    assert(cHTTPX_RouteUploadPolicy(route, &policy) == cHTTPX_OK);
     mutable_type[0] = 'v';
     assert(strcmp(route->upload_policy.allowed_types[0], "image/*") == 0);
 
     free_test_routes(&server);
 }
+/** Status reasons, MIME helpers, Bearer token, and ResMessage escaping. */
 static void test_helpers(void)
 {
     assert(strcmp(cHTTPX_StatusReason(404), "Not Found") == 0);
@@ -366,9 +427,11 @@ static void test_helpers(void)
     cHTTPX_ResponseCleanup(&response);
 }
 
+/** Runs core unit tests for request parsing, binding, and routing helpers. */
 int main(void)
 {
     test_request_lifecycle();
+    test_request_internal_indexes();
     test_typed_values();
     test_bind_and_json();
     test_multipart();

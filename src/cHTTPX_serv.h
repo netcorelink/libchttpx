@@ -26,43 +26,88 @@ extern "C"
 
     struct chttpx_app;
 
+/**
+ * Library-wide status codes.
+ */
     typedef enum
     {
-        CHTTPX_OK = 0,
-        CHTTPX_ERR_MEMORY = -1,
-        CHTTPX_ERR_SOCKET = -2,
-        CHTTPX_ERR_BIND = -3,
-        CHTTPX_ERR_LISTEN = -4,
-        CHTTPX_ERR_INVALID_ARGUMENT = -5,
-        CHTTPX_ERR_LIMIT = -6,
-        CHTTPX_ERR_IO = -7,
-        CHTTPX_ERR_NOT_FOUND = -8,
-        CHTTPX_ERR_PROTOCOL = -9,
-        CHTTPX_ERR_STATE = -10,
-        CHTTPX_ERR_UNAVAILABLE = -11,
-        CHTTPX_ERR_TIMEOUT = -12,
-        CHTTPX_ERR_TLS = -13,
-        CHTTPX_ERR_COMPRESSION = -14
+        cHTTPX_OK = 0,
+        cHTTPX_ERR_MEMORY = -1,
+        cHTTPX_ERR_SOCKET = -2,
+        cHTTPX_ERR_BIND = -3,
+        cHTTPX_ERR_LISTEN = -4,
+        cHTTPX_ERR_INVALID_ARGUMENT = -5,
+        cHTTPX_ERR_LIMIT = -6,
+        cHTTPX_ERR_IO = -7,
+        cHTTPX_ERR_NOT_FOUND = -8,
+        cHTTPX_ERR_PROTOCOL = -9,
+        cHTTPX_ERR_STATE = -10,
+        cHTTPX_ERR_UNAVAILABLE = -11,
+        cHTTPX_ERR_TIMEOUT = -12,
+        cHTTPX_ERR_TLS = -13,
+        cHTTPX_ERR_COMPRESSION = -14
     } chttpx_error_t;
 
+    /* Backward compatibility for the legacy all-uppercase result names. */
+#ifndef CHTTPX_DISABLE_LEGACY_ERROR_NAMES
+#define CHTTPX_OK cHTTPX_OK
+#define CHTTPX_ERR_MEMORY cHTTPX_ERR_MEMORY
+#define CHTTPX_ERR_SOCKET cHTTPX_ERR_SOCKET
+#define CHTTPX_ERR_BIND cHTTPX_ERR_BIND
+#define CHTTPX_ERR_LISTEN cHTTPX_ERR_LISTEN
+#define CHTTPX_ERR_INVALID_ARGUMENT cHTTPX_ERR_INVALID_ARGUMENT
+#define CHTTPX_ERR_LIMIT cHTTPX_ERR_LIMIT
+#define CHTTPX_ERR_IO cHTTPX_ERR_IO
+#define CHTTPX_ERR_NOT_FOUND cHTTPX_ERR_NOT_FOUND
+#define CHTTPX_ERR_PROTOCOL cHTTPX_ERR_PROTOCOL
+#define CHTTPX_ERR_STATE cHTTPX_ERR_STATE
+#define CHTTPX_ERR_UNAVAILABLE cHTTPX_ERR_UNAVAILABLE
+#define CHTTPX_ERR_TIMEOUT cHTTPX_ERR_TIMEOUT
+#define CHTTPX_ERR_TLS cHTTPX_ERR_TLS
+#define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
+#endif
+
+/**
+ * Server logging verbosity.
+ */
     typedef enum
     {
-        CHTTPX_LOG_DEBUG,
-        CHTTPX_LOG_INFO,
-        CHTTPX_LOG_WARN,
-        CHTTPX_LOG_ERROR,
-        CHTTPX_LOG_OFF
+        cHTTPX_LOG_DEBUG,
+        cHTTPX_LOG_INFO,
+        cHTTPX_LOG_WARN,
+        cHTTPX_LOG_ERROR,
+        cHTTPX_LOG_OFF
     } chttpx_log_level_t;
+
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_LOG_DEBUG cHTTPX_LOG_DEBUG
+#define CHTTPX_LOG_INFO cHTTPX_LOG_INFO
+#define CHTTPX_LOG_WARN cHTTPX_LOG_WARN
+#define CHTTPX_LOG_ERROR cHTTPX_LOG_ERROR
+#define CHTTPX_LOG_OFF cHTTPX_LOG_OFF
+#endif
 
     typedef void (*chttpx_logger_fn)(chttpx_log_level_t level, const char* request_id, const char* message, void* user_data);
 
+/**
+ * Address family binding mode for listeners.
+ */
     typedef enum
     {
-        CHTTPX_NETWORK_IPV4 = 0,
-        CHTTPX_NETWORK_IPV6,
-        CHTTPX_NETWORK_DUAL
+        cHTTPX_NETWORK_IPV4 = 0,
+        cHTTPX_NETWORK_IPV6,
+        cHTTPX_NETWORK_DUAL
     } chttpx_network_mode_t;
 
+#ifndef CHTTPX_DISABLE_LEGACY_SERVER_ENUM_NAMES
+#define CHTTPX_NETWORK_IPV4 cHTTPX_NETWORK_IPV4
+#define CHTTPX_NETWORK_IPV6 cHTTPX_NETWORK_IPV6
+#define CHTTPX_NETWORK_DUAL cHTTPX_NETWORK_DUAL
+#endif
+
+/**
+ * Server TLS certificate configuration.
+ */
     typedef struct
     {
         bool enabled;
@@ -72,6 +117,9 @@ extern "C"
         bool require_client_cert;
     } chttpx_tls_config_t;
 
+/**
+ * Outbound TLS trust and client certificate settings.
+ */
     typedef struct
     {
         bool verify_peer;
@@ -80,6 +128,9 @@ extern "C"
         const char* client_key_file;
     } chttpx_tls_client_config_t;
 
+/**
+ * User-supplied server configuration.
+ */
     typedef struct
     {
         uint16_t port;
@@ -102,6 +153,9 @@ extern "C"
         void* logger_data;
     } chttpx_config_t;
 
+/**
+ * Route-level upload limits and allowed media types.
+ */
     typedef struct
     {
         size_t max_size;
@@ -109,6 +163,9 @@ extern "C"
         size_t allowed_types_count;
     } chttpx_upload_policy_t;
 
+/**
+ * Registered HTTP method, path, handler, and middleware chain.
+ */
     typedef struct chttpx_route
     {
         const char* method;
@@ -123,6 +180,9 @@ extern "C"
         bool compression_disabled;
     } chttpx_route_t;
 
+/**
+ * HTTP server instance with routes and runtime state.
+ */
     typedef struct chttpx_serv
     {
         struct chttpx_app* app;
@@ -166,16 +226,24 @@ extern "C"
         void* rate_limiter_state;
         void* compression_state;
         void* metrics_state;
+        void* runtime_state;
+        void* websocket_state;
 
         chttpx_cors_t cors;
     } chttpx_serv_t;
 
+/**
+ * Accepted client socket passed to worker jobs.
+ */
     typedef struct
     {
         chttpx_serv_t* server;
         chttpx_socket_t client_fd;
     } chttpx_client_ctx_t;
 
+/**
+ * Mutable route registration scope with middleware stacks.
+ */
     typedef struct chttpx_router
     {
         chttpx_serv_t* serv;

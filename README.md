@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` is a compact cross-platform HTTP/1.1 server library for C. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
+`libchttpx` is a compact HTTP/2 server library for C on Linux. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
 
 The library is designed so handlers contain application logic instead of repetitive HTTP plumbing.
 
 ## Highlights
 
-- Linux and Windows support
+- Linux support
 - multiple independent HTTP servers inside one `cHTTPX_App`
 - local direct server-to-server calls and remote HTTP/HTTPS calls
 - route groups and `{parameter}` paths
@@ -19,9 +19,10 @@ The library is designed so handlers contain application logic instead of repetit
 - CORS, cookies, logging callbacks, and rate limiting
 - configurable gzip response compression with `Accept-Encoding` negotiation
 - optional built-in metrics with thread-safe snapshots and a Prometheus exporter
+- first-class HTTP/2 Server-Sent Events with retry, heartbeat, and disconnect handling
 - configurable server limits and graceful shutdown
 
-> `cHTTPX_ResFile()` currently reads the complete file into memory. Streaming responses, `sendfile()`, and zero-copy output are not implemented in the current API.
+> `cHTTPX_ResFile()` currently reads the complete file into memory. SSE has its own streaming HTTP/2 path; a generic streaming response API, `sendfile()`, and zero-copy file output are not implemented yet.
 
 ## Installation
 
@@ -89,23 +90,13 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Download the package for your distribution from [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Legacy installer scripts
+### Legacy installer script
 
-The existing shell and PowerShell installers are kept as compatibility fallbacks.
-
-Linux:
+The existing shell installer is kept as a compatibility fallback:
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
 ```
-
-Windows:
-
-```powershell
-iwr https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.ps1 -UseBasicParsing | iex
-```
-
-Restart the terminal after the Windows installation so environment changes are visible.
 
 ### Docker
 
@@ -115,7 +106,7 @@ Pull the published runtime image:
 docker pull noneandundefined/libchttpx:latest
 ```
 
-The image contains the installed shared library, headers, pkg-config metadata, and the cJSON runtime.
+The image contains the installed shared library, headers, pkg-config metadata, and the cJSON, zlib, and nghttp2 runtimes.
 
 ```dockerfile
 FROM noneandundefined/libchttpx:latest
@@ -126,11 +117,11 @@ CMD ["/usr/local/bin/my-server"]
 
 ### Build from source on Linux
 
-Requirements: GCC, Make, pkg-config, cJSON development files, and zlib development files.
+Requirements: GCC, Make, pkg-config, cJSON development files, zlib development files, and nghttp2 development files.
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev
+sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev libnghttp2-dev
 
 git clone https://github.com/netcorelink/libchttpx.git
 cd libchttpx
@@ -164,20 +155,6 @@ make test-compression
 
 TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response compression](docs/compression/README.md).
 
-### Build from source on Windows
-
-Use MinGW/GCC. The Windows build uses the bundled `lib/cjson` source and requires zlib (for MSYS2/MinGW64: `mingw-w64-x86_64-zlib`).
-
-```powershell
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make win-lib
-make test-win
-```
-
-The generated DLL/import library and headers are copied into `tools/`.
-
 ## Documentation
 
 Detailed documentation is split by functionality:
@@ -200,6 +177,7 @@ Detailed documentation is split by functionality:
 - [Request IDs and i18n](docs/i18n/README.md)
 - [Logging](docs/logging/README.md)
 - [Rate limiting](docs/rate-limiting/README.md)
+- [Server-Sent Events](docs/sse/README.md)
 - [WebSocket API — experimental](docs/websocket/README.md)
 
 ## License

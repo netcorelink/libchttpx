@@ -77,8 +77,8 @@ Use `cHTTPX_Status*` and `cHTTPX_CTYPE_*` constants from `http.h`. `cHTTPX_Statu
 
 ## Ownership
 
-- `CHTTPX_BODY_OWNED` → response cleanup frees the body;
-- `CHTTPX_BODY_BORROWED` → library does not free the body.
+- `cHTTPX_BODY_OWNED` → response cleanup frees the body;
+- `cHTTPX_BODY_BORROWED` → library does not free the body.
 
 Response helpers that allocate content create owned responses. Normal handler code should not manually free helper-produced bodies; the server cleans them after send.
 

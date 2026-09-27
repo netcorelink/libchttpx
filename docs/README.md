@@ -21,6 +21,7 @@ The root README contains only the project overview, installation methods, and na
 | i18n | [i18n](i18n/README.md) | request IDs, `Accept-Language`, translations |
 | Logging | [logging](logging/README.md) | logger callbacks and request logging middleware |
 | Rate limiting | [rate-limiting](rate-limiting/README.md) | per-server fixed-window limiter |
+| Server-Sent Events | [sse](sse/README.md) | HTTP/2 event streams, retry, heartbeat, disconnect handling |
 | WebSocket | [websocket](websocket/README.md) | current experimental API and limitations |
 
 ## Recommended reading order
@@ -39,3 +40,8 @@ Examples assume:
 ```
 
 unless a module explicitly states otherwise.
+
+## Maintainer documentation
+
+- [Maintainer architecture baseline](maintainers/architecture.md) — runtime ownership, worker model, API/ABI policy, error model, CI gates, and benchmark protocol.
+- Repository contribution and merge requirements are defined in [`CONTRIBUTING.md`](../CONTRIBUTING.md).

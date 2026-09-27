@@ -2,16 +2,18 @@
 
 #include <stdio.h>
 
+/** Simple handler used to generate request metrics. */
 static void hello(chttpx_request_t* req, chttpx_response_t* res)
 {
     (void)req;
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "hello");
 }
 
+/** Enables server metrics and exposes GET /metrics for Prometheus scraping. */
 int main(void)
 {
     chttpx_app_t app;
-    if (cHTTPX_AppInit(&app) != CHTTPX_OK)
+    if (cHTTPX_AppInit(&app) != cHTTPX_OK)
         return 1;
 
     chttpx_config_t config = cHTTPX_DefaultConfig();
@@ -26,8 +28,7 @@ int main(void)
     }
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
-    if (!cHTTPX_Get(&router, "/hello", hello) ||
-        cHTTPX_MetricsRoute(&router, "/metrics") != CHTTPX_OK)
+    if (!cHTTPX_Get(&router, "/hello", hello) || cHTTPX_MetricsRoute(&router, "/metrics") != cHTTPX_OK)
     {
         cHTTPX_AppShutdown(&app);
         return 1;
@@ -38,5 +39,5 @@ int main(void)
 
     int result = cHTTPX_AppRun(&app);
     cHTTPX_AppShutdown(&app);
-    return result == CHTTPX_OK ? 0 : 1;
+    return result == cHTTPX_OK ? 0 : 1;
 }
