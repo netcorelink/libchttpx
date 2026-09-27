@@ -230,6 +230,33 @@ static void exchange_ipv6(uint16_t port, const char* request, char* response, si
     exchange_family(port, AF_INET6, request, response, response_size);
 }
 
+/** Sends a real HTTP/1.1 request to verify automatic cleartext fallback. */
+static void exchange_http11(uint16_t port, const char* request, char* response, size_t response_size)
+{
+    chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(socket_fd >= 0);
+
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
+    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == cHTTPX_OK);
+    shutdown(socket_fd, SHUT_WR);
+
+    size_t total = 0;
+    while (total + 1 < response_size)
+    {
+        int received = recv(socket_fd, response + total, response_size - total - 1, 0);
+        if (received <= 0)
+            break;
+        total += (size_t)received;
+    }
+
+    response[total] = '\0';
+    chttpx_close(socket_fd);
+}
+
 /** Opens a TCP connection left idle to exercise concurrency limits. */
 static chttpx_socket_t open_idle_connection(uint16_t port)
 {
@@ -335,6 +362,11 @@ int main(void)
     wait_until_listening(internal_api);
 
     char response[4096];
+
+    exchange_http11(public_port, "GET /ip HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    assert(strstr(response, "Connection: close") != NULL);
+    assert(strcmp(observed_client_ip, "127.0.0.1") == 0);
 
     chttpx_socket_t idle_connections[40];
     for (size_t i = 0; i < CHTTPX_ARRAY_LEN(idle_connections); i++)
