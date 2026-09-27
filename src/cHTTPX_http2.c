@@ -1161,6 +1161,14 @@ static int h2_process_ready(chttpx_h2_server_t* connection)
  */
 static int h2_server_begin_headers(nghttp2_session* session, const nghttp2_frame* frame, void* user_data)
 {
+    chttpx_h2_server_t* connection = user_data;
+    if (!connection || !frame || frame->hd.type != NGHTTP2_HEADERS || frame->headers.cat != NGHTTP2_HCAT_REQUEST)
+        return 0;
+
+    chttpx_h2_stream_t* stream = calloc(1, sizeof(*stream));
+    if (!stream)
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    stream->id = frame->hd.stream_id;
     stream->connection = connection;
 
     int rv = nghttp2_session_set_stream_user_data(session, stream->id, stream);
