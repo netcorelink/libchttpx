@@ -102,13 +102,12 @@ lib-install: libchttpx.so
 # Linux tests
 # -
 
-TEST_WEBSOCKET_TARGET = $(BINDIR)/test_websocket
-TEST_SSE_TARGET = $(BINDIR)/test_sse
+test: $(TEST_TARGET) $(TEST_SERVER_TARGET) $(TEST_METRICS_TARGET) $(TEST_WEBSOCKET_TARGET) $(TEST_SSE_TARGET)
 	$(TEST_TARGET)
 	$(TEST_SERVER_TARGET)
 	$(TEST_METRICS_TARGET)
-TEST_WEBSOCKET_TARGET = $(BINDIR)/test_websocket
-TEST_SSE_TARGET = $(BINDIR)/test_sse
+	$(TEST_WEBSOCKET_TARGET)
+	$(TEST_SSE_TARGET)
 
 $(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
@@ -117,10 +116,6 @@ $(TEST_TARGET): tests/test_core.c $(LIN_SRCS)
 $(TEST_SERVER_TARGET): tests/test_server.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_server.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
-
-$(TEST_SSE_TARGET): tests/test_sse.c $(LIN_SRCS)
-	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_sse.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 test-sanitize:
 	@mkdir -p $(BINDIR)
@@ -168,6 +163,10 @@ $(TEST_METRICS_TARGET): tests/test_metrics.c $(LIN_SRCS)
 $(TEST_WEBSOCKET_TARGET): tests/test_websocket.c $(LIN_SRCS)
 	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -std=gnu11 -O2 -g tests/test_websocket.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
+
+$(TEST_SSE_TARGET): tests/test_sse.c $(LIN_SRCS)
+	@mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) -std=gnu11 -g tests/test_sse.c $(LIN_SRCS) -o $@ $(LIN_LDFLAGS) -pthread
 
 # Linux lib compile
 # -
