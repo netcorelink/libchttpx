@@ -1,19 +1,19 @@
 Package: libchttpx-dev
-Version: 1.6.0-1
+Version: 1.8.0-1
 Architecture: amd64
 Maintainer: netcorelink
-Installed-Size: 200
-Depends: libcjson1, zlib1g
+Installed-Size: 257
+Depends: libcjson1, zlib1g, libnghttp2-14
 Provides: libchttpx
-Filename: pool/main/l/libchttpx/libchttpx-dev_1.6.0-1_amd64.deb
-Size: 76856
-MD5sum: 33c2ea8bb7be3d6be2eff685fd9f890f
-SHA1: 6c369062efe09a8fc61630d276f1c39bffd51162
-SHA256: 2670b35cb6b0a8a6b6d896b35f12c59be9f830a00cfb9f2b50e9a3de74e00b23
+Filename: pool/main/l/libchttpx/libchttpx-dev_1.8.0-1_amd64.deb
+Size: 102328
+MD5sum: 05ea826cf247051e522a9846d68536db
+SHA1: dfceb76ec0eacc7d2a088d41428f1b9742645596
+SHA256: 16c2124d735d3cbf3b33766dee286dc1b14e04e284120552cd2d5211d5def561
 Section: devel
 Priority: optional
 Homepage: https://github.com/netcorelink/libchttpx
-Description: Development package for libchttpx, a compact cross-platform HTTP/1.1
+Description: Development package for libchttpx, a compact cross-platform HTTP/2
  server library for C/C++ with routing, middleware, JSON, uploads,
  request-scoped memory, CORS, cookies, i18n, logging and graceful shutdown.
 
