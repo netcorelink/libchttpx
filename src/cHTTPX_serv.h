@@ -67,7 +67,6 @@ extern "C"
 #define CHTTPX_ERR_COMPRESSION cHTTPX_ERR_COMPRESSION
 #endif
 
-
 /**
  * Server logging verbosity.
  */

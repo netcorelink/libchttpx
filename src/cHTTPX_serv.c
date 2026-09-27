@@ -46,11 +46,7 @@ static void default_logger(chttpx_log_level_t level, const char* request_id, con
  */
 static void server_sleep_ms(unsigned int milliseconds)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    Sleep(milliseconds);
-#else
     usleep(milliseconds * 1000U);
-#endif
 }
 
 /**
@@ -61,11 +57,7 @@ static void server_sleep_ms(unsigned int milliseconds)
  */
 static bool socket_valid(chttpx_socket_t fd)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return fd != INVALID_SOCKET;
-#else
     return fd >= 0;
-#endif
 }
 
 /**
@@ -75,11 +67,7 @@ static bool socket_valid(chttpx_socket_t fd)
  */
 static void invalidate_socket(chttpx_serv_t* server)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    server->server_fd = INVALID_SOCKET;
-#else
     server->server_fd = -1;
-#endif
 }
 
 /**
@@ -251,11 +239,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     {
         int ipv6_only = config->network_mode == cHTTPX_NETWORK_IPV6 ? 1 : 0;
         if (setsockopt(server->server_fd, IPPROTO_IPV6, IPV6_V6ONLY,
-#ifdef CHTTPX_PLATFORM_WINDOWS
-                       (const char*)&ipv6_only,
-#else
                        &ipv6_only,
-#endif
                        sizeof(ipv6_only)) < 0)
         {
             chttpx_close(server->server_fd);
@@ -266,11 +250,7 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
 
     int opt = 1;
     setsockopt(server->server_fd, SOL_SOCKET, SO_REUSEADDR,
-#ifdef CHTTPX_PLATFORM_WINDOWS
-               (const char*)&opt,
-#else
                &opt,
-#endif
                sizeof(opt));
 
     struct sockaddr_storage addr = {0};
@@ -705,11 +685,7 @@ void _chttpx_server_shutdown(chttpx_serv_t* server)
 
     if (socket_valid(server->server_fd))
     {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        shutdown(server->server_fd, SD_BOTH);
-#else
         shutdown(server->server_fd, SHUT_RDWR);
-#endif
         chttpx_close(server->server_fd);
         invalidate_socket(server);
     }

@@ -36,13 +36,8 @@ struct chttpx_worker_pool
     chttpx_worker_execute_fn execute;
     void* context;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    CRITICAL_SECTION mutex;
-    CONDITION_VARIABLE ready;
-#else
     pthread_mutex_t mutex;
     pthread_cond_t ready;
-#endif
 };
 
 /**
@@ -52,16 +47,12 @@ struct chttpx_worker_pool
  */
 static uint64_t monotonic_ns(void)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return GetTickCount64() * 1000000ULL;
-#else
     struct timespec now;
 
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
         return 0;
 
     return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
-#endif
 }
 
 /**
@@ -71,11 +62,7 @@ static uint64_t monotonic_ns(void)
  */
 static void pool_lock(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    EnterCriticalSection(&pool->mutex);
-#else
     pthread_mutex_lock(&pool->mutex);
-#endif
 }
 
 /**
@@ -85,11 +72,7 @@ static void pool_lock(chttpx_worker_pool_t* pool)
  */
 static void pool_unlock(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    LeaveCriticalSection(&pool->mutex);
-#else
     pthread_mutex_unlock(&pool->mutex);
-#endif
 }
 
 /**
@@ -99,11 +82,7 @@ static void pool_unlock(chttpx_worker_pool_t* pool)
  */
 static void pool_wait(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    SleepConditionVariableCS(&pool->ready, &pool->mutex, INFINITE);
-#else
     pthread_cond_wait(&pool->ready, &pool->mutex);
-#endif
 }
 
 /**
@@ -113,11 +92,7 @@ static void pool_wait(chttpx_worker_pool_t* pool)
  */
 static void pool_signal(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WakeConditionVariable(&pool->ready);
-#else
     pthread_cond_signal(&pool->ready);
-#endif
 }
 
 /**
@@ -127,11 +102,7 @@ static void pool_signal(chttpx_worker_pool_t* pool)
  */
 static void pool_broadcast(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WakeAllConditionVariable(&pool->ready);
-#else
     pthread_cond_broadcast(&pool->ready);
-#endif
 }
 
 /**
@@ -142,11 +113,6 @@ static void pool_broadcast(chttpx_worker_pool_t* pool)
  */
 static int pool_sync_init(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    InitializeCriticalSection(&pool->mutex);
-    InitializeConditionVariable(&pool->ready);
-    return 0;
-#else
     if (pthread_mutex_init(&pool->mutex, NULL) != 0)
         return -1;
 
@@ -157,7 +123,6 @@ static int pool_sync_init(chttpx_worker_pool_t* pool)
     }
 
     return 0;
-#endif
 }
 
 /**
@@ -167,12 +132,8 @@ static int pool_sync_init(chttpx_worker_pool_t* pool)
  */
 static void pool_sync_destroy(chttpx_worker_pool_t* pool)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DeleteCriticalSection(&pool->mutex);
-#else
     pthread_cond_destroy(&pool->ready);
     pthread_mutex_destroy(&pool->mutex);
-#endif
 }
 
 /**

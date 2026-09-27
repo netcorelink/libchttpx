@@ -22,17 +22,12 @@
 
 #include "cHTTPX_request.h"
 
-#include "cHTTPX_i18n.h"
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_headers.h"
 #include "cHTTPX_response.h"
 #include "cHTTPX_http.h"
 
-#if defined(_WIN32) || defined(_WIN64)
-#include "../lib/cjson/cJSON.h"
-#else
 #include <cjson/cJSON.h>
-#endif
 
 #include <ctype.h>
 #include <stdio.h>
@@ -514,36 +509,43 @@ int cHTTPX_OnBodyChunk(chttpx_request_t* req, chttpx_body_chunk_fn callback, voi
     return 0;
 }
 
-/** Localized validation error message templates. */
-typedef struct
+/**
+ * Record a bind/validate failure on the request.
+ *
+ * @param req Current HTTP request.
+ * @param code Bind error code.
+ * @param field Failing field name, or NULL.
+ * @param num Optional numeric detail such as min/max length.
+ * @return The same code, for direct return from callers.
+ */
+static int set_bind_error(chttpx_request_t* req, int code, const char* field, size_t num)
 {
-    const char* required;
-    const char* min_length;
-    const char* max_length;
-    const char* invalid_email;
-    const char* generic;
-} validation_messages_t;
+    if (!req)
+        return code;
 
-validation_messages_t messages_en = {"field '%s' is required", "field '%s' min length is %zu", "field '%s' max length is %zu",
-                                     "field '%s' is not a valid email", "field '%s' validation error"};
+    req->error_code = code;
+    req->error_num = num;
+    req->error_field[0] = '\0';
+    req->error_msg[0] = '\0';
 
-validation_messages_t messages_ru = {"поле '%s' обязательно", "минимальная длина поля '%s' — %zu", "максимальная длина поля '%s' — %zu",
-                                     "поле '%s' имеет неверный формат email", "ошибка валидации поля '%s'"};
-
-validation_messages_t* messages[LANG_COUNT] = {&messages_en, &messages_ru, &messages_en, &messages_en};
+    if (field)
+        snprintf(req->error_field, sizeof(req->error_field), "%s", field);
+    
+    return code;
+}
 
 /**
- * Parse a JSON body and validate fields according to the provided definitions.
- * @param req Pointer to the HTTP request.
- * @param fields Array of field validation definitions (cHTTPX_FieldValidation).
- * @param field_count Number of fields in the array.
- * @return 1 if parsing and validation succeed, 0 if there is an error.
- * This function automatically checks required fields, string length, boolean types, etc.
+ * Parse a JSON body into validation targets.
+ *
+ * @param req Current HTTP request.
+ * @param fields Field definitions and output targets.
+ * @param field_count Number of entries in fields.
+ * @return cHTTPX_BIND_OK or a positive bind error code.
  */
 int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
     if (!req || !fields || !req->body)
-        return 0;
+        return set_bind_error(req, cHTTPX_BIND_INVALID_ARGUMENT, NULL, 0);
 
     /*
      * cJSON can parse a bounded byte range directly. Avoid duplicating the
@@ -552,14 +554,14 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
     cJSON* json = cJSON_ParseWithLengthOpts((const char*)req->body, req->body_size, NULL, false);
 
     if (!json)
-    {
-        snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON");
-        return 0;
-    }
+        return set_bind_error(req, cHTTPX_BIND_INVALID_JSON, NULL, 0);
+
+    const char* failed_field = NULL;
 
     for (size_t i = 0; i < field_count; i++)
     {
         chttpx_validation_t* f = &fields[i];
+        failed_field = f->name;
         cJSON* item = cJSON_GetObjectItem(json, f->name);
 
         if (!item)
@@ -664,17 +666,15 @@ int cHTTPX_Parse(chttpx_request_t* req, chttpx_validation_t* fields, size_t fiel
     }
 
     cJSON_Delete(json);
-    return 1;
+    return cHTTPX_BIND_OK;
 
 memory_error:
     cJSON_Delete(json);
-    snprintf(req->error_msg, sizeof(req->error_msg), "Out of memory");
-    return 0;
+    return set_bind_error(req, cHTTPX_BIND_MEMORY, failed_field, 0);
 
 type_error:
-    snprintf(req->error_msg, sizeof(req->error_msg), "Invalid JSON field type");
     cJSON_Delete(json);
-    return 0;
+    return set_bind_error(req, cHTTPX_BIND_TYPE, failed_field, 0);
 }
 
 /* Validator email string */
@@ -707,57 +707,26 @@ static int is_valid_email(const char* email)
 }
 
 /**
- * Set error.
+ * Validate already parsed field values.
  *
- * @param error_msg Parameter `error_msg`.
- * @param error_size Parameter `error_size`.
- * @param lang Parameter `lang`.
- * @param key Parameter `key`.
- * @param field_name Parameter `field_name`.
- * @param num Parameter `num`.
- */
-static void set_error(char* error_msg, size_t error_size, i18n_language_t lang, int key, const char* field_name, size_t num)
-{
-    validation_messages_t* msg = messages[lang];
-
-    switch (key)
-    {
-    case 0:
-        snprintf(error_msg, error_size, msg->required, field_name);
-        break;
-    case 1:
-        snprintf(error_msg, error_size, msg->min_length, field_name, num);
-        break;
-    case 2:
-        snprintf(error_msg, error_size, msg->max_length, field_name, num);
-        break;
-    case 3:
-        snprintf(error_msg, error_size, msg->invalid_email, field_name);
-        break;
-    default:
-        snprintf(error_msg, error_size, msg->generic, field_name);
-        break;
-    }
-}
-
-/*
- * Validates an array of cHTTPX_FieldValidation structures.
- * This function ensures that required fields are present, string lengths are within limits,
- * and basic validation for integers and boolean fields is performed.
+ * @param req Current HTTP request.
+ * @param fields Field definitions and parsed targets.
+ * @param field_count Number of entries in fields.
+ * @param l Unused; kept for source compatibility.
+ * @return cHTTPX_BIND_OK or a positive bind error code.
  */
 int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count, const char* l)
 {
-    i18n_language_t lang = i18n_lang_from_string(l ? l : "en");
+    (void)l;
+    if (!req || !fields)
+        return set_bind_error(req, cHTTPX_BIND_INVALID_ARGUMENT, NULL, 0);
 
     for (size_t i = 0; i < field_count; i++)
     {
         chttpx_validation_t* f = &fields[i];
 
         if (f->required && !f->present)
-        {
-            set_error(req->error_msg, sizeof(req->error_msg), lang, 0, f->name, 0);
-            return 0;
-        }
+            return set_bind_error(req, cHTTPX_BIND_REQUIRED, f->name, 0);
 
         if (!f->present)
             continue;
@@ -766,10 +735,7 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
         {
             char* v = *(char**)f->target;
             if (!v)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 4, f->name, 0);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_GENERIC, f->name, 0);
 
             if (f->normalizers & cHTTPX_TRIM)
             {
@@ -797,54 +763,39 @@ int cHTTPX_Validate(chttpx_request_t* req, chttpx_validation_t* fields, size_t f
             size_t len = strlen(v);
 
             if (f->min_length && len < f->min_length)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 1, f->name, f->min_length);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_MIN_LENGTH, f->name, f->min_length);
 
             if (f->max_length && len > f->max_length)
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 2, f->name, f->max_length);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_MAX_LENGTH, f->name, f->max_length);
 
             if (f->validator == VALIDATOR_EMAIL && !is_valid_email(v))
-            {
-                set_error(req->error_msg, sizeof(req->error_msg), lang, 3, f->name, 0);
-                return 0;
-            }
+                return set_bind_error(req, cHTTPX_BIND_INVALID_EMAIL, f->name, 0);
 
             if (f->custom_validator && !f->custom_validator(v, req->error_msg, sizeof(req->error_msg)))
             {
-                if (!req->error_msg[0])
-                    set_error(req->error_msg, sizeof(req->error_msg), lang, 4, f->name, 0);
-                return 0;
+                req->error_code = cHTTPX_BIND_GENERIC;
+                req->error_num = 0;
+                snprintf(req->error_field, sizeof(req->error_field), "%s", f->name ? f->name : "");
+                return cHTTPX_BIND_GENERIC;
             }
         }
     }
 
-    return 1;
+    return cHTTPX_BIND_OK;
 }
 
 /**
- * Parse and validate a JSON request body, writing a 400 response on failure.
+ * Parse and validate a JSON request body.
  *
  * @param req Current HTTP request.
- * @param res Response populated when binding fails.
  * @param fields Field definitions and output targets.
  * @param field_count Number of field definitions.
- * @return 1 on success, 0 on parsing or validation failure.
+ * @return cHTTPX_BIND_OK or a positive bind error code.
  */
-int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_response_t* res, chttpx_validation_t* fields, size_t field_count)
+int cHTTPX_BindJSON(chttpx_request_t* req, chttpx_validation_t* fields, size_t field_count)
 {
-    if (!req || !res || !fields)
-        return 0;
-
-    if (!cHTTPX_Parse(req, fields, field_count) || !cHTTPX_Validate(req, fields, field_count, req->language[0] ? req->language : "en"))
-    {
-        *res = cHTTPX_ResError(cHTTPX_StatusBadRequest, req->error_msg[0] ? req->error_msg : "invalid request body");
-        return 0;
-    }
-
-    return 1;
+    int result = cHTTPX_Parse(req, fields, field_count);
+    if (result != cHTTPX_BIND_OK)
+        return result;
+    return cHTTPX_Validate(req, fields, field_count, NULL);
 }

@@ -14,10 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef CHTTPX_PLATFORM_POSIX
 #include <netdb.h>
 #include <strings.h>
-#endif
 
 #define CHTTPX_H2_PROTOCOL "HTTP/2"
 #define CHTTPX_H2_CALL_TIMEOUT_SEC 30
@@ -522,7 +520,6 @@ static int h2_submit_text_response(chttpx_h2_server_t* connection, chttpx_h2_str
         stream->responded = true;
     return rv;
 }
-
 
 static ssize_t h2_websocket_data_read(nghttp2_session* session, int32_t stream_id, uint8_t* buf, size_t length,
                                       uint32_t* data_flags, nghttp2_data_source* source, void* user_data)
@@ -1148,17 +1145,10 @@ static int h2_parse_url(const char* base_url, chttpx_h2_url_t* parsed)
  */
 static int h2_set_call_timeouts(chttpx_socket_t fd)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DWORD timeout_ms = CHTTPX_H2_CALL_TIMEOUT_SEC * 1000U;
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0 ||
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
-        return cHTTPX_ERR_UNAVAILABLE;
-#else
     struct timeval timeout = {.tv_sec = CHTTPX_H2_CALL_TIMEOUT_SEC, .tv_usec = 0};
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0 ||
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
         return cHTTPX_ERR_UNAVAILABLE;
-#endif
     return cHTTPX_OK;
 }
 
@@ -1187,11 +1177,7 @@ static int h2_connect(const chttpx_h2_url_t* remote, chttpx_socket_t* connected)
     for (struct addrinfo* current = result; current; current = current->ai_next)
     {
         chttpx_socket_t fd = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        if (fd == INVALID_SOCKET)
-#else
         if (fd < 0)
-#endif
             continue;
 
         if (h2_set_call_timeouts(fd) != cHTTPX_OK)
@@ -1436,11 +1422,7 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
     if (!h2_parse_url(base_url, &remote))
         return cHTTPX_ERR_PROTOCOL;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    chttpx_socket_t fd = INVALID_SOCKET;
-#else
     chttpx_socket_t fd = -1;
-#endif
     int result = h2_connect(&remote, &fd);
     if (result != cHTTPX_OK)
         return result;

@@ -15,6 +15,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * One registered WebSocket route entry.
+ */
 typedef struct chttpx_wsocket_route_entry
 {
     char* path;
@@ -22,11 +25,17 @@ typedef struct chttpx_wsocket_route_entry
     struct chttpx_wsocket_route_entry* next;
 } chttpx_wsocket_route_entry_t;
 
+/**
+ * Per-server list of registered WebSocket routes.
+ */
 typedef struct
 {
     chttpx_wsocket_route_entry_t* routes;
 } chttpx_wsocket_server_state_t;
 
+/**
+ * Private WebSocket connection state owned by chttpx_wsocket_t::_internal.
+ */
 typedef struct
 {
     chttpx_serv_t* server;
@@ -45,11 +54,24 @@ typedef struct
     bool close_received;
 } chttpx_wsocket_internal_t;
 
+/**
+ * Return the private state pointer for a WebSocket handle.
+ *
+ * @param wsocket Public WebSocket handle.
+ * @return Internal state, or NULL when wsocket is NULL.
+ */
 static chttpx_wsocket_internal_t* websocket_internal(chttpx_wsocket_t* wsocket)
 {
     return wsocket ? (chttpx_wsocket_internal_t*)wsocket->_internal : NULL;
 }
 
+/**
+ * Validate that a byte sequence is well-formed UTF-8.
+ *
+ * @param data Bytes to inspect.
+ * @param len Number of bytes in data.
+ * @return True when the sequence is valid UTF-8.
+ */
 static bool websocket_valid_utf8(const unsigned char* data, size_t len)
 {
     size_t i = 0;
@@ -101,6 +123,15 @@ static bool websocket_valid_utf8(const unsigned char* data, size_t len)
     return true;
 }
 
+/**
+ * Grow a dynamic buffer until it can hold the required number of bytes.
+ *
+ * @param buffer In/out buffer pointer.
+ * @param capacity In/out allocated capacity.
+ * @param required Minimum number of bytes needed.
+ * @param limit Hard upper bound for the buffer size.
+ * @return Zero on success or a negative error code.
+ */
 static int websocket_ensure(unsigned char** buffer, size_t* capacity, size_t required, size_t limit)
 {
     if (required > limit)
@@ -127,6 +158,16 @@ static int websocket_ensure(unsigned char** buffer, size_t* capacity, size_t req
     return cHTTPX_OK;
 }
 
+/**
+ * Encode and send one outbound WebSocket frame through the transport.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param opcode Frame opcode.
+ * @param data Optional payload bytes.
+ * @param len Payload length in bytes.
+ * @param end_stream Whether the transport should end the HTTP/2 stream.
+ * @return Zero on success or a negative error code.
+ */
 static int websocket_send_frame(chttpx_wsocket_t* wsocket, int opcode, const unsigned char* data, size_t len, bool end_stream)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -174,6 +215,12 @@ static int websocket_send_frame(chttpx_wsocket_t* wsocket, int opcode, const uns
     return result;
 }
 
+/**
+ * Return whether a WebSocket close status code is permitted by RFC 6455.
+ *
+ * @param code Candidate close status code.
+ * @return True when the code may be sent or accepted.
+ */
 static bool websocket_close_code_valid(uint16_t code)
 {
     if (code < 1000 || code >= 5000)
@@ -185,6 +232,14 @@ static bool websocket_close_code_valid(uint16_t code)
     return true;
 }
 
+/**
+ * Send a close frame once and mark the local side as disconnected.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Optional close payload (status code and reason).
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
 static int websocket_send_close_payload(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -202,6 +257,13 @@ static int websocket_send_close_payload(chttpx_wsocket_t* wsocket, const unsigne
     return result;
 }
 
+/**
+ * Respond to a protocol violation with a close frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param code Protocol close status code to send.
+ * @return Always cHTTPX_ERR_PROTOCOL.
+ */
 static int websocket_protocol_close(chttpx_wsocket_t* wsocket, uint16_t code)
 {
     unsigned char payload[2] = {(unsigned char)(code >> 8), (unsigned char)(code & 0xFF)};
@@ -209,6 +271,14 @@ static int websocket_protocol_close(chttpx_wsocket_t* wsocket, uint16_t code)
     return cHTTPX_ERR_PROTOCOL;
 }
 
+/**
+ * Append bytes to the current fragmented message buffer.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Payload fragment bytes.
+ * @param len Number of bytes to append.
+ * @return Zero on success or a negative error code.
+ */
 static int websocket_append_message(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -229,6 +299,14 @@ static int websocket_append_message(chttpx_wsocket_t* wsocket, const unsigned ch
     return cHTTPX_OK;
 }
 
+/**
+ * Invoke the application message handler for a complete message.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param opcode Message opcode (text or binary).
+ * @param data Complete message payload.
+ * @param len Payload length in bytes.
+ */
 static void websocket_emit_message(chttpx_wsocket_t* wsocket, int opcode, const unsigned char* data, size_t len)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -238,6 +316,16 @@ static void websocket_emit_message(chttpx_wsocket_t* wsocket, int opcode, const 
     internal->message_handler(wsocket, data, len);
 }
 
+/**
+ * Handle one fully decoded inbound WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param fin FIN bit from the frame header.
+ * @param opcode Frame opcode.
+ * @param payload Unmasked payload bytes.
+ * @param payload_len Payload length in bytes.
+ * @return Zero on success or a negative protocol/error code.
+ */
 static int websocket_process_frame(chttpx_wsocket_t* wsocket, bool fin, int opcode, unsigned char* payload, size_t payload_len)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -323,6 +411,13 @@ static int websocket_process_frame(chttpx_wsocket_t* wsocket, bool fin, int opco
     return cHTTPX_OK;
 }
 
+/**
+ * Register a WebSocket route on a router path prefix.
+ *
+ * @param router Target router.
+ * @param path Path relative to the router prefix.
+ * @param handler Callback invoked after handshake success.
+ */
 void cHTTPX_WSocketRegisterRoute(chttpx_router_t* router, const char* path, chttpx_wsocket_route_t handler)
 {
     if (!router || !router->serv || !router->serv->initialized || !path || !handler)
@@ -365,6 +460,13 @@ void cHTTPX_WSocketRegisterRoute(chttpx_router_t* router, const char* path, chtt
     state->routes = entry;
 }
 
+/**
+ * Look up a registered WebSocket route handler for a request path.
+ *
+ * @param server Owning server instance.
+ * @param path Request path, optionally with a query string.
+ * @return Matching route handler, or NULL when none is registered.
+ */
 chttpx_wsocket_route_t _chttpx_websocket_find_route(chttpx_serv_t* server, const char* path)
 {
     chttpx_wsocket_server_state_t* state = server ? server->websocket_state : NULL;
@@ -381,6 +483,12 @@ chttpx_wsocket_route_t _chttpx_websocket_find_route(chttpx_serv_t* server, const
     return NULL;
 }
 
+/**
+ * Set the message handler for an active WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param handler Callback for complete text or binary messages.
+ */
 void cHTTPX_WSocketOnMessage(chttpx_wsocket_t* wsocket, chttpx_wsocket_handler_t handler)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -388,6 +496,12 @@ void cHTTPX_WSocketOnMessage(chttpx_wsocket_t* wsocket, chttpx_wsocket_handler_t
         internal->message_handler = handler;
 }
 
+/**
+ * Set the close handler for an active WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param handler Callback for peer close or abrupt abort.
+ */
 void cHTTPX_WSocketOnClose(chttpx_wsocket_t* wsocket, chttpx_wsocket_close_handler_t handler)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -395,32 +509,76 @@ void cHTTPX_WSocketOnClose(chttpx_wsocket_t* wsocket, chttpx_wsocket_close_handl
         internal->close_handler = handler;
 }
 
+/**
+ * Attach opaque application data to a WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param user_data Pointer stored on the connection.
+ */
 void cHTTPX_WSocketSetData(chttpx_wsocket_t* wsocket, void* user_data)
 {
     if (wsocket)
         wsocket->user_data = user_data;
 }
 
+/**
+ * Return opaque application data previously attached to a WebSocket.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @return Stored user data pointer, or NULL.
+ */
 void* cHTTPX_WSocketData(chttpx_wsocket_t* wsocket)
 {
     return wsocket ? wsocket->user_data : NULL;
 }
 
+/**
+ * Send a text WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data UTF-8 payload bytes.
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_WSocketSend(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len)
 {
     return websocket_send_frame(wsocket, CHTTPX_WSOCKET_OPCODE_TEXT, data, len, false);
 }
 
+/**
+ * Send a binary WebSocket frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Binary payload bytes.
+ * @param len Payload length in bytes.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_WSocketSendBinary(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len)
 {
     return websocket_send_frame(wsocket, CHTTPX_WSOCKET_OPCODE_BINARY, data, len, false);
 }
 
+/**
+ * Send a WebSocket ping frame.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Optional ping payload.
+ * @param len Payload length in bytes (at most 125).
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_WSocketPing(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len)
 {
     return websocket_send_frame(wsocket, CHTTPX_WSOCKET_OPCODE_PING, data, len, false);
 }
 
+/**
+ * Send a WebSocket close frame and mark the connection closing.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param code Close status code, or 0 for 1000.
+ * @param reason Optional UTF-8 close reason.
+ * @return Zero on success or a negative error code.
+ */
 int cHTTPX_WSocketClose(chttpx_wsocket_t* wsocket, uint16_t code, const char* reason)
 {
     if (!wsocket)
@@ -442,6 +600,13 @@ int cHTTPX_WSocketClose(chttpx_wsocket_t* wsocket, uint16_t code, const char* re
     return websocket_send_close_payload(wsocket, payload, reason_len + 2);
 }
 
+/**
+ * Legacy HTTP/1.1 upgrade helper retained for source compatibility.
+ *
+ * @param client_socket Unused client socket.
+ * @param sec_wsocket_key Unused Sec-WebSocket-Key value.
+ * @return Always cHTTPX_ERR_UNAVAILABLE.
+ */
 int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key)
 {
     (void)client_socket;
@@ -449,6 +614,14 @@ int cHTTPX_WSocketUpgrade(int client_socket, const char* sec_wsocket_key)
     return cHTTPX_ERR_UNAVAILABLE;
 }
 
+/**
+ * Legacy synchronous receive helper retained for source compatibility.
+ *
+ * @param wsocket Unused connection handle.
+ * @param buffer Unused output buffer.
+ * @param len Unused buffer capacity.
+ * @return Always cHTTPX_ERR_UNAVAILABLE.
+ */
 int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t len)
 {
     (void)wsocket;
@@ -457,6 +630,16 @@ int cHTTPX_WSocketRecv(chttpx_wsocket_t* wsocket, unsigned char* buffer, size_t 
     return cHTTPX_ERR_UNAVAILABLE;
 }
 
+/**
+ * Allocate a WebSocket handle bound to an HTTP/2 transport send callback.
+ *
+ * @param server Owning server instance.
+ * @param socket Client socket associated with the connection.
+ * @param request Handshake request metadata.
+ * @param transport_send Callback that writes encoded frames.
+ * @param transport_context Opaque context for transport_send.
+ * @return New WebSocket handle, or NULL on allocation failure.
+ */
 chttpx_wsocket_t* _chttpx_websocket_create(chttpx_serv_t* server, chttpx_socket_t socket, chttpx_request_t* request,
                                            chttpx_wsocket_transport_send_fn transport_send, void* transport_context)
 {
@@ -481,12 +664,25 @@ chttpx_wsocket_t* _chttpx_websocket_create(chttpx_serv_t* server, chttpx_socket_
     return wsocket;
 }
 
+/**
+ * Mark a WebSocket connection as ready for application traffic.
+ *
+ * @param wsocket WebSocket handle created by the HTTP/2 bridge.
+ */
 void _chttpx_websocket_mark_connected(chttpx_wsocket_t* wsocket)
 {
     if (wsocket)
         wsocket->connected = 1;
 }
 
+/**
+ * Feed inbound WebSocket bytes into the frame parser.
+ *
+ * @param wsocket Active WebSocket connection.
+ * @param data Newly received bytes.
+ * @param len Number of bytes in data.
+ * @return Zero on success or a negative protocol/error code.
+ */
 int _chttpx_websocket_feed(chttpx_wsocket_t* wsocket, const unsigned char* data, size_t len)
 {
     chttpx_wsocket_internal_t* internal = websocket_internal(wsocket);
@@ -583,6 +779,11 @@ int _chttpx_websocket_feed(chttpx_wsocket_t* wsocket, const unsigned char* data,
     return cHTTPX_OK;
 }
 
+/**
+ * Destroy a WebSocket handle and release internal buffers.
+ *
+ * @param wsocket WebSocket handle to free.
+ */
 void _chttpx_websocket_destroy(chttpx_wsocket_t* wsocket)
 {
     if (!wsocket)
@@ -605,6 +806,11 @@ void _chttpx_websocket_destroy(chttpx_wsocket_t* wsocket)
     free(wsocket);
 }
 
+/**
+ * Free all WebSocket routes registered on a server.
+ *
+ * @param server Server whose websocket_state should be released.
+ */
 void _chttpx_websocket_server_cleanup(chttpx_serv_t* server)
 {
     chttpx_wsocket_server_state_t* state = server ? server->websocket_state : NULL;

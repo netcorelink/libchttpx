@@ -19,10 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef CHTTPX_PLATFORM_POSIX
 #include <fcntl.h>
 #include <netdb.h>
-#endif
 
 #define CHTTPX_CALL_TIMEOUT_SEC 30
 
@@ -177,12 +175,6 @@ int cHTTPX_AppInit(chttpx_app_t* app)
 
     memset(app, 0, sizeof(*app));
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-        return cHTTPX_ERR_SOCKET;
-#endif
-
     app->_network_initialized = true;
     app->_initialized = true;
     return cHTTPX_OK;
@@ -222,7 +214,6 @@ chttpx_serv_t* cHTTPX_AppServer(chttpx_app_t* app, const char* name, const chttp
     item->server = server;
     return server;
 }
-
 
 /**
  * Return default outbound TLS client settings.
@@ -450,11 +441,6 @@ void cHTTPX_AppShutdown(chttpx_app_t* app)
     }
     free(app->_remotes);
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    if (app->_network_initialized)
-        WSACleanup();
-#endif
-
     memset(app, 0, sizeof(*app));
 }
 
@@ -516,11 +502,7 @@ static int local_call(chttpx_request_t* source, chttpx_serv_t* target, const cha
 
     chttpx_request_t internal = {0};
     internal._server = target;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    internal.client_fd = INVALID_SOCKET;
-#else
     internal.client_fd = -1;
-#endif
 
     internal.method = strdup(method);
     internal.path = strdup(path);
@@ -694,11 +676,7 @@ static int parse_remote_url(const char* url, chttpx_remote_url_t* parsed)
  */
 static int socket_last_error(void)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return WSAGetLastError();
-#else
     return errno;
-#endif
 }
 
 /**
@@ -709,11 +687,7 @@ static int socket_last_error(void)
  */
 static bool socket_error_is_timeout(int error)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return error == WSAETIMEDOUT || error == WSAEWOULDBLOCK;
-#else
     return error == ETIMEDOUT || error == EAGAIN || error == EWOULDBLOCK;
-#endif
 }
 
 /**
@@ -724,11 +698,7 @@ static bool socket_error_is_timeout(int error)
  */
 static bool socket_error_is_in_progress(int error)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    return error == WSAEWOULDBLOCK || error == WSAEINPROGRESS;
-#else
     return error == EINPROGRESS || error == EWOULDBLOCK;
-#endif
 }
 
 /**
@@ -740,10 +710,6 @@ static bool socket_error_is_in_progress(int error)
  */
 static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    u_long mode = enabled ? 1UL : 0UL;
-    return ioctlsocket(socket_fd, FIONBIO, &mode) == 0 ? cHTTPX_OK : cHTTPX_ERR_UNAVAILABLE;
-#else
     int flags = fcntl(socket_fd, F_GETFL, 0);
     if (flags < 0)
         return cHTTPX_ERR_UNAVAILABLE;
@@ -754,7 +720,6 @@ static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
         flags &= ~O_NONBLOCK;
 
     return fcntl(socket_fd, F_SETFL, flags) == 0 ? cHTTPX_OK : cHTTPX_ERR_UNAVAILABLE;
-#endif
 }
 
 /**
@@ -765,19 +730,11 @@ static int socket_set_nonblocking(chttpx_socket_t socket_fd, bool enabled)
  */
 static int socket_set_call_timeouts(chttpx_socket_t socket_fd)
 {
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    DWORD timeout_ms = CHTTPX_CALL_TIMEOUT_SEC * 1000U;
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
-        return cHTTPX_ERR_UNAVAILABLE;
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout_ms, sizeof(timeout_ms)) != 0)
-        return cHTTPX_ERR_UNAVAILABLE;
-#else
     struct timeval timeout = {.tv_sec = CHTTPX_CALL_TIMEOUT_SEC, .tv_usec = 0};
     if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0)
         return cHTTPX_ERR_UNAVAILABLE;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
         return cHTTPX_ERR_UNAVAILABLE;
-#endif
     return cHTTPX_OK;
 }
 
@@ -798,11 +755,7 @@ static int wait_for_connect(chttpx_socket_t socket_fd)
 
     struct timeval timeout = {.tv_sec = CHTTPX_CALL_TIMEOUT_SEC, .tv_usec = 0};
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    int ready = select(0, NULL, &write_set, &error_set, &timeout);
-#else
     int ready = select(socket_fd + 1, NULL, &write_set, &error_set, &timeout);
-#endif
 
     if (ready == 0)
         return cHTTPX_ERR_TIMEOUT;
@@ -811,18 +764,10 @@ static int wait_for_connect(chttpx_socket_t socket_fd)
         return socket_error_is_timeout(socket_last_error()) ? cHTTPX_ERR_TIMEOUT : cHTTPX_ERR_UNAVAILABLE;
 
     int socket_error = 0;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    int error_size = sizeof(socket_error);
-#else
     socklen_t error_size = sizeof(socket_error);
-#endif
 
     if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR,
-#ifdef CHTTPX_PLATFORM_WINDOWS
-                   (char*)&socket_error,
-#else
                    &socket_error,
-#endif
                    &error_size) != 0)
         return cHTTPX_ERR_UNAVAILABLE;
 
@@ -844,11 +789,7 @@ static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* co
     if (!remote || !connected)
         return cHTTPX_ERR_INVALID_ARGUMENT;
 
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    *connected = INVALID_SOCKET;
-#else
     *connected = -1;
-#endif
 
     struct addrinfo hints;
     struct addrinfo* result = NULL;
@@ -865,11 +806,7 @@ static int connect_remote(const chttpx_remote_url_t* remote, chttpx_socket_t* co
     for (struct addrinfo* current = result; current; current = current->ai_next)
     {
         chttpx_socket_t socket_fd = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        if (socket_fd == INVALID_SOCKET)
-#else
         if (socket_fd < 0)
-#endif
             continue;
 
         if (socket_set_nonblocking(socket_fd, true) != cHTTPX_OK)

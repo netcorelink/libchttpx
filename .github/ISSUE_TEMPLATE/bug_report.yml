@@ -14,8 +14,6 @@ body:
       label: Operating system
       options:
         - Linux
-        - Windows
-        - macOS
         - Other
     validations:
       required: true
@@ -33,7 +31,7 @@ body:
     id: compiler
     attributes:
       label: Compiler
-      placeholder: gcc 13, MSVC 2022, clang 18, etc.
+      placeholder: gcc 13, clang 18, etc.
     validations:
       required: true
 

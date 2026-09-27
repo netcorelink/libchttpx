@@ -226,10 +226,6 @@ static int chunked_reader_read(chunked_reader_t* reader, unsigned char* output, 
     }
 
     size_t wanted = output_size;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-    if (wanted > INT_MAX)
-        wanted = INT_MAX;
-#endif
     int result = _chttpx_io_recv(reader->client_fd, reader->tls_session, output, wanted);
     if (result == cHTTPX_ERR_TLS)
         _chttpx_tls_log_error(reader->server, reader->request_id, "TLS chunked-body read failed");
@@ -620,19 +616,13 @@ void _parse_req_body(chttpx_request_t* req, chttpx_socket_t client_fd, char* buf
     while (remaining > 0)
     {
         size_t wanted = remaining;
-#ifdef CHTTPX_PLATFORM_WINDOWS
-        if (wanted > INT_MAX)
-            wanted = INT_MAX;
-#endif
         int n = _chttpx_io_recv(client_fd, req->_tls_session, (char*)req->body + total_read, wanted);
         if (n == cHTTPX_ERR_TLS)
             _chttpx_tls_log_error(req->_server, req->request_id, "TLS request-body read failed");
         if (n < 0)
         {
-#ifdef CHTTPX_PLATFORM_POSIX
             if (errno == EINTR)
                 continue;
-#endif
             break;
         }
         if (n == 0)
