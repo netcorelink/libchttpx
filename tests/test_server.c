@@ -2,6 +2,7 @@
 #include "cHTTPX_http2.h"
 
 #include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -11,6 +12,7 @@ static char observed_body[64];
 static char observed_language[16];
 static char observed_request_id[65];
 static char observed_client_ip[46];
+static pthread_mutex_t observed_client_ip_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char internal_observed_body[64];
 static uint16_t public_port;
 static uint16_t internal_port;
@@ -42,8 +44,18 @@ static void sse_handler(chttpx_request_t* req, chttpx_response_t* res)
 /** Captures client_ip and returns 204. */
 static void ip_handler(chttpx_request_t* req, chttpx_response_t* res)
 {
+    pthread_mutex_lock(&observed_client_ip_mutex);
     snprintf(observed_client_ip, sizeof(observed_client_ip), "%s", req->client_ip);
+    pthread_mutex_unlock(&observed_client_ip_mutex);
     *res = cHTTPX_ResNoContent();
+}
+
+/** Verifies the client IP captured by the worker without racing it. */
+static void assert_observed_client_ip(const char* expected)
+{
+    pthread_mutex_lock(&observed_client_ip_mutex);
+    assert(strcmp(observed_client_ip, expected) == 0);
+    pthread_mutex_unlock(&observed_client_ip_mutex);
 }
 
 /** OPTIONS handler for CORS preflight bypass tests. */
@@ -230,6 +242,33 @@ static void exchange_ipv6(uint16_t port, const char* request, char* response, si
     exchange_family(port, AF_INET6, request, response, response_size);
 }
 
+/** Sends a real HTTP/1.1 request to verify automatic cleartext fallback. */
+static void exchange_http11(uint16_t port, const char* request, char* response, size_t response_size)
+{
+    chttpx_socket_t socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(socket_fd >= 0);
+
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) == 0);
+    assert(cHTTPX_SendAll(socket_fd, request, strlen(request)) == cHTTPX_OK);
+    shutdown(socket_fd, SHUT_WR);
+
+    size_t total = 0;
+    while (total + 1 < response_size)
+    {
+        int received = recv(socket_fd, response + total, response_size - total - 1, 0);
+        if (received <= 0)
+            break;
+        total += (size_t)received;
+    }
+
+    response[total] = '\0';
+    chttpx_close(socket_fd);
+}
+
 /** Opens a TCP connection left idle to exercise concurrency limits. */
 static chttpx_socket_t open_idle_connection(uint16_t port)
 {
@@ -336,6 +375,11 @@ int main(void)
 
     char response[4096];
 
+    exchange_http11(public_port, "GET /ip HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 204 No Content") != NULL);
+    assert(strstr(response, "Connection: close") != NULL);
+    assert_observed_client_ip("127.0.0.1");
+
     chttpx_socket_t idle_connections[40];
     for (size_t i = 0; i < CHTTPX_ARRAY_LEN(idle_connections); i++)
         idle_connections[i] = open_idle_connection(public_port);
@@ -354,11 +398,11 @@ int main(void)
 
     exchange_ipv6(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
     assert(strstr(response, "HTTP/2 204 No Content") != NULL);
-    assert(strcmp(observed_client_ip, "::1") == 0);
+    assert_observed_client_ip("::1");
 
     exchange(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
     assert(strstr(response, "HTTP/2 204 No Content") != NULL);
-    assert(strcmp(observed_client_ip, "127.0.0.1") == 0);
+    assert_observed_client_ip("127.0.0.1");
 
     exchange(public_port, "GET /events HTTP/2\r\nHost: localhost\r\nOrigin: https://example.com\r\nX-Request-ID: sse-integration\r\n\r\n", response, sizeof(response));
     assert(strstr(response, "HTTP/2 200 OK") != NULL);

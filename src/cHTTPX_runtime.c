@@ -25,6 +25,7 @@
 typedef enum
 {
     CHTTPX_CONN_TLS,
+    CHTTPX_CONN_PROTOCOL,
     CHTTPX_CONN_HTTP2_READY,
     CHTTPX_CONN_READING_HEADERS,
     CHTTPX_CONN_READING_BODY,
@@ -60,6 +61,7 @@ typedef struct chttpx_connection
     chttpx_socket_t fd;
     void* tls_session;
     chttpx_connection_state_t state;
+    bool http2;
     char* headers;
     size_t header_size;
     size_t header_capacity;
@@ -248,8 +250,25 @@ static void runtime_worker_execute(void* job, void* context)
 
     if (runtime_is_stopping(runtime))
         connection->worker_result = cHTTPX_ERR_STATE;
-    else
+    else if (connection->http2)
         connection->worker_result = _chttpx_http2_serve(connection->server, connection->fd, connection->tls_session);
+    else
+    {
+        unsigned char* body = connection->body;
+        FILE* stream = connection->body_stream;
+        connection->body = NULL;
+        connection->body_stream = NULL;
+
+        connection->worker_result = _chttpx_execute_prefetched(connection->server, connection->fd, connection->tls_session,
+                                                               connection->headers, connection->header_end, body, connection->body_size,
+                                                               stream, connection->content_length, NULL,
+                                                               &connection->write_buffer, &connection->write_size);
+
+        free(connection->headers);
+        connection->headers = NULL;
+        connection->header_size = 0;
+        connection->header_capacity = 0;
+    }
 
     completion_push(runtime, connection);
 }
@@ -721,9 +740,34 @@ static bool connection_body_complete(chttpx_connection_t* connection)
  */
 static int connection_error_response(chttpx_runtime_t* runtime, chttpx_connection_t* connection, int status)
 {
-    (void)status;
-    connection_close(runtime, connection);
-    return 0;
+    const char* reason = cHTTPX_StatusReason((uint16_t)status);
+    char buffer[256];
+    int size = snprintf(buffer, sizeof(buffer), "HTTP/1.1 %d %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", status, reason);
+    if (size <= 0 || (size_t)size >= sizeof(buffer))
+    {
+        connection_close(runtime, connection);
+        return 0;
+    }
+
+    connection->write_buffer = malloc((size_t)size);
+    if (!connection->write_buffer)
+    {
+        connection_close(runtime, connection);
+        return 0;
+    }
+
+    memcpy(connection->write_buffer, buffer, (size_t)size);
+    connection->write_size = (size_t)size;
+    connection->write_offset = 0;
+    connection->state = CHTTPX_CONN_WRITING;
+    connection_touch(connection);
+
+    if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
+    {
+        connection_close(runtime, connection);
+        return 0;
+    }
+    return 1;
 }
 
 /**
@@ -735,8 +779,14 @@ static int connection_error_response(chttpx_runtime_t* runtime, chttpx_connectio
  */
 static int connection_submit(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
 {
+    if (!connection->http2 && connection->body_stream)
+    {
+        if (fflush(connection->body_stream) != 0 || fseek(connection->body_stream, 0, SEEK_SET) != 0)
+            return connection_error_response(runtime, connection, cHTTPX_StatusInternalServerError);
+    }
+
     _chttpx_event_del(runtime->event_loop, connection->fd);
-    if (connection_set_blocking(connection) != 0)
+    if (connection->http2 && connection_set_blocking(connection) != 0)
     {
         connection_close(runtime, connection);
         return 0;
@@ -866,6 +916,54 @@ static int connection_process_bytes(chttpx_runtime_t* runtime, chttpx_connection
 }
 
 /**
+ * Detect HTTP/2 prior knowledge or fall back to HTTP/1.1 without consuming bytes.
+ *
+ * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
+ * @param connection Active client connection managed by the runtime.
+ * @return Non-zero while the connection remains active.
+ */
+static int connection_detect_protocol(chttpx_runtime_t* runtime, chttpx_connection_t* connection)
+{
+    static const unsigned char h2_preface[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    unsigned char probe[sizeof(h2_preface) - 1];
+
+    int result = recv(connection->fd, (char*)probe, sizeof(probe), MSG_PEEK);
+    if (result > 0)
+    {
+        size_t received = (size_t)result;
+        size_t compare_size = received < sizeof(probe) ? received : sizeof(probe);
+
+        if (memcmp(probe, h2_preface, compare_size) == 0)
+        {
+            if (received < sizeof(probe))
+                return 1;
+            connection->http2 = true;
+            connection->state = CHTTPX_CONN_HTTP2_READY;
+        }
+        else
+        {
+            connection->http2 = false;
+            connection->state = CHTTPX_CONN_READING_HEADERS;
+        }
+
+        connection_touch(connection);
+        return 1;
+    }
+
+    if (result == 0)
+    {
+        connection_close(runtime, connection);
+        return 0;
+    }
+
+    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        return 1;
+
+    connection_close(runtime, connection);
+    return 0;
+}
+
+/**
  * Advance non-blocking server TLS handshake for a connection.
  *
  * @param runtime Runtime coordinating accepts, I/O, and worker dispatch.
@@ -877,7 +975,8 @@ static int connection_tls_step(chttpx_runtime_t* runtime, chttpx_connection_t* c
     int result = _chttpx_tls_accept_step(connection->tls_session);
     if (result == cHTTPX_OK)
     {
-        connection->state = CHTTPX_CONN_HTTP2_READY;
+        connection->http2 = _chttpx_tls_is_http2(connection->tls_session) != 0;
+        connection->state = connection->http2 ? CHTTPX_CONN_HTTP2_READY : CHTTPX_CONN_READING_HEADERS;
         connection_touch(connection);
         if (_chttpx_event_mod(runtime->event_loop, connection->fd, CHTTPX_EVENT_READ, connection) != 0)
         {
@@ -1019,7 +1118,18 @@ static void drain_completions(chttpx_runtime_t* runtime)
     {
         chttpx_connection_t* next = connection->completion_next;
         connection->completion_next = NULL;
-        connection_close(runtime, connection);
+
+        if (connection->http2 || runtime_is_stopping(runtime) || connection->worker_result != cHTTPX_OK || !connection->write_buffer)
+            connection_close(runtime, connection);
+        else
+        {
+            connection->state = CHTTPX_CONN_WRITING;
+            connection->write_offset = 0;
+            connection_touch(connection);
+            if (_chttpx_event_add(runtime->event_loop, connection->fd, CHTTPX_EVENT_WRITE, connection) != 0)
+                connection_close(runtime, connection);
+        }
+
         connection = next;
     }
 }
@@ -1086,7 +1196,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
 
         if (!server->tls.enabled)
         {
-            connection->state = CHTTPX_CONN_HTTP2_READY;
+            connection->state = CHTTPX_CONN_PROTOCOL;
             if (_chttpx_event_add(runtime->event_loop, fd, CHTTPX_EVENT_READ, connection) != 0)
                 connection_close(runtime, connection);
             continue;
@@ -1096,7 +1206,8 @@ static void accept_connections(chttpx_runtime_t* runtime)
         int step = _chttpx_tls_accept_step(connection->tls_session);
         if (step == cHTTPX_OK)
         {
-            connection->state = CHTTPX_CONN_HTTP2_READY;
+            connection->http2 = _chttpx_tls_is_http2(connection->tls_session) != 0;
+            connection->state = connection->http2 ? CHTTPX_CONN_HTTP2_READY : CHTTPX_CONN_READING_HEADERS;
             if (_chttpx_event_add(runtime->event_loop, fd, CHTTPX_EVENT_READ, connection) != 0)
                 connection_close(runtime, connection);
             continue;
@@ -1266,6 +1377,14 @@ void _chttpx_runtime_listen(chttpx_serv_t* server)
             int alive = 1;
             if (connection->state == CHTTPX_CONN_TLS)
                 alive = connection_tls_step(runtime, connection);
+            else if (connection->state == CHTTPX_CONN_PROTOCOL)
+            {
+                alive = connection_detect_protocol(runtime, connection);
+                if (alive && connection->state == CHTTPX_CONN_HTTP2_READY)
+                    alive = connection_submit(runtime, connection);
+                else if (alive && connection->state == CHTTPX_CONN_READING_HEADERS)
+                    alive = connection_read_ready(runtime, connection);
+            }
             else if (connection->state == CHTTPX_CONN_HTTP2_READY)
                 alive = connection_submit(runtime, connection);
             else if (connection->state == CHTTPX_CONN_READING_HEADERS || connection->state == CHTTPX_CONN_READING_BODY)

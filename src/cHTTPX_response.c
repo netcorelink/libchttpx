@@ -480,8 +480,12 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
         return cHTTPX_ERR_MEMORY;
     size_t length = 0;
     const char* allowed_origin = server && server->cors.enabled ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
+    const char* response_protocol = strcmp(req->protocol, "HTTP/1.1") == 0 ? "HTTP/1.1" : "HTTP/2";
 
-    if (!append_response_header(header, capacity, &length, "HTTP/2 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n", res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
+    if (!append_response_header(header, capacity, &length, "%s %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n", response_protocol, res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
+        goto limit_error;
+
+    if (strcmp(response_protocol, "HTTP/1.1") == 0 && !append_response_header(header, capacity, &length, "Connection: close\r\n"))
         goto limit_error;
 
     const char* etag = generate_etag(res.body, res.body_size);
