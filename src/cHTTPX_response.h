@@ -52,6 +52,14 @@ extern "C"
 
         chttpx_body_ownership_t body_ownership;
 
+        /*
+         * Internal disk-backed file response state.
+         * cHTTPX_ResFile() keeps the file open and streams it in bounded chunks
+         * instead of allocating a buffer equal to the complete file size.
+         */
+        FILE* _file_stream;
+        uint64_t _file_size;
+
         /* Set when response compression must be bypassed. */
         bool compression_disabled;
 
