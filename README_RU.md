@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` — компактная HTTP/2-библиотека для C под Linux. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
+`libchttpx` — компактная HTTP/2-библиотека для C под Linux и macOS. Она предоставляет App-runtime, routing, middleware, разбор запросов, JSON binding/response, uploads, request-scoped память, CORS, cookies, i18n, logging, rate limiting и graceful shutdown, сохраняя простой C-style API.
 
 Идея библиотеки: handler должен содержать бизнес-логику приложения, а не повторяющийся HTTP boilerplate.
 
 ## Основные возможности
 
-- поддержка Linux
+- поддержка Linux и macOS
 - несколько независимых HTTP-серверов внутри одного `cHTTPX_App`
 - прямые local-вызовы между серверами и remote-вызовы по HTTP/HTTPS
 - route groups и пути с `{parameter}`
@@ -22,7 +22,7 @@
 - first-class Server-Sent Events по HTTP/2 с retry, heartbeat и disconnect handling
 - лимиты сервера и graceful shutdown
 
-> `cHTTPX_ResFile()` пока полностью читает файл в память. Для SSE используется отдельный streaming path поверх HTTP/2; generic streaming response API, `sendfile()` и zero-copy для файлов пока не реализованы.
+> `cHTTPX_ResFile()` теперь работает напрямую с файлом и отправляет его ограниченными чанками по 64 КиБ, поэтому для ответа на несколько гигабайт не требуется столько же RAM. Zero-copy через `sendfile()` пока не реализован.
 
 ## Установка
 
@@ -124,6 +124,22 @@ cd libchttpx
 
 make lin-lib
 sudo make lib-install PREFIX=/usr/local DESTDIR=
+```
+
+### Самостоятельная сборка на macOS
+
+Понадобятся Xcode Command Line Tools, Homebrew, Make, pkg-config, cJSON, zlib и nghttp2.
+
+```bash
+xcode-select --install
+brew install cjson nghttp2 pkg-config
+
+git clone https://github.com/netcorelink/libchttpx.git
+cd libchttpx
+
+make mac
+make libchttpx.dylib
+make test
 ```
 
 Тесты:
