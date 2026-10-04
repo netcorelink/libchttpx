@@ -101,6 +101,12 @@ jobs:
       - name: Build dynamic library
         run: make libchttpx.dylib
 
+      - name: Run server test with ASan/UBSan
+        run: |
+          mkdir -p .build
+          cc ${CFLAGS:-} -Wall -Wextra -Wpedantic -O1 -g -Iinclude -Isrc             $(pkg-config --cflags libcjson libnghttp2)             -fno-omit-frame-pointer -fsanitize=address,undefined             tests/test_server.c src/*.c -o .build/test_server_macos_sanitize             $(pkg-config --libs libcjson libnghttp2) -lz -pthread
+          .build/test_server_macos_sanitize
+
       - name: Run tests
         run: make test
 
