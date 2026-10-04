@@ -66,29 +66,36 @@ static const char* response_body(http_response_t* response)
 }
 
 /** Issues GET path against port via _chttpx_http2_call. */
-static http_response_t exchange(uint16_t port, const char* path)
+static void exchange(uint16_t port, const char* path, http_response_t* response)
 {
-    http_response_t response;
-    memset(&response, 0, sizeof(response));
+    assert(response);
+    memset(response, 0, sizeof(*response));
 
     char base_url[128];
     snprintf(base_url, sizeof(base_url), "http://127.0.0.1:%u", port);
 
-    chttpx_request_t source = {0};
-    chttpx_response_t result = {0};
-    assert(_chttpx_http2_call(&source, base_url, NULL, cHTTPX_MethodGet, path, NULL, 0, NULL, &result) == cHTTPX_OK);
+    /*
+     * Keep the large public request/response structs off pthread stacks.
+     * macOS worker threads have a smaller default stack than Linux threads.
+     */
+    chttpx_request_t* source = calloc(1, sizeof(*source));
+    chttpx_response_t* result = calloc(1, sizeof(*result));
+    assert(source && result);
+    assert(_chttpx_http2_call(source, base_url, NULL, cHTTPX_MethodGet, path, NULL, 0, NULL, result) == cHTTPX_OK);
 
-    int written = snprintf(response.bytes, sizeof(response.bytes), "HTTP/2 %d %s\r\n\r\n",
-                           result.status, cHTTPX_StatusReason((uint16_t)result.status));
-    assert(written > 0 && (size_t)written < sizeof(response.bytes));
-    response.header_size = (size_t)written;
-    assert(response.header_size + result.body_size < sizeof(response.bytes));
-    if (result.body_size)
-        memcpy(response.bytes + response.header_size, result.body, result.body_size);
-    response.size = response.header_size + result.body_size;
-    response.bytes[response.size] = '\0';
-    cHTTPX_ResponseCleanup(&result);
-    return response;
+    int written = snprintf(response->bytes, sizeof(response->bytes), "HTTP/2 %d %s\r\n\r\n",
+                           result->status, cHTTPX_StatusReason((uint16_t)result->status));
+    assert(written > 0 && (size_t)written < sizeof(response->bytes));
+    response->header_size = (size_t)written;
+    assert(response->header_size + result->body_size < sizeof(response->bytes));
+    if (result->body_size)
+        memcpy(response->bytes + response->header_size, result->body, result->body_size);
+    response->size = response->header_size + result->body_size;
+    response->bytes[response->size] = '\0';
+
+    cHTTPX_ResponseCleanup(result);
+    free(result);
+    free(source);
 }
 
 /** Concurrent client hammering /users/{id} routes. */
@@ -99,7 +106,8 @@ static void* worker(void* data)
     {
         char path[64];
         snprintf(path, sizeof(path), "/users/%d", i);
-        http_response_t response = exchange(ctx->port, path);
+        http_response_t response;
+        exchange(ctx->port, path, &response);
         assert(strncmp(response.bytes, "HTTP/2 200 OK", strlen("HTTP/2 200 OK")) == 0);
     }
     return NULL;
@@ -189,7 +197,8 @@ int main(void)
     {
         char path[64];
         snprintf(path, sizeof(path), "/route/%zu", i);
-        http_response_t response = exchange(server->port, path);
+        http_response_t response;
+        exchange(server->port, path, &response);
         assert(strncmp(response.bytes, "HTTP/2 200 OK", strlen("HTTP/2 200 OK")) == 0);
     }
 
@@ -215,7 +224,8 @@ int main(void)
     assert(runtime_metrics.completed_jobs_total >= expected_requests);
     assert(runtime_metrics.rejected_jobs_total == 0);
 
-    http_response_t scrape = exchange(server->port, "/metrics");
+    http_response_t scrape;
+    exchange(server->port, "/metrics", &scrape);
     assert(strncmp(scrape.bytes, "HTTP/2 200 OK", strlen("HTTP/2 200 OK")) == 0);
 
     const char* body = response_body(&scrape);
