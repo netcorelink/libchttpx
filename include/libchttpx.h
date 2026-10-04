@@ -21,8 +21,8 @@ extern "C"
 {
 #endif
 
-#if !defined(__linux__)
-#error "libchttpx supports Linux only"
+#if !defined(__linux__) && !defined(__APPLE__)
+#error "libchttpx supports Linux and macOS only"
 #endif
 
 #include <arpa/inet.h>
@@ -807,7 +807,7 @@ extern "C"
          * cHTTPX_ResFile() keeps the file open and streams it in bounded chunks
          * instead of allocating a buffer equal to the complete file size.
          */
-        FILE* _file_stream;
+        void* _file_stream;
         uint64_t _file_size;
 
         /* Set when response compression must be bypassed. */
