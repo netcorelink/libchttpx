@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` is a compact HTTP/2 server library for C on Linux. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
+`libchttpx` is a compact HTTP/2 server library for C on Linux and macOS. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
 
 The library is designed so handlers contain application logic instead of repetitive HTTP plumbing.
 
 ## Highlights
 
-- Linux support
+- Linux and macOS support
 - multiple independent HTTP servers inside one `cHTTPX_App`
 - local direct server-to-server calls and remote HTTP/HTTPS calls
 - route groups and `{parameter}` paths
@@ -22,7 +22,7 @@ The library is designed so handlers contain application logic instead of repetit
 - first-class HTTP/2 Server-Sent Events with retry, heartbeat, and disconnect handling
 - configurable server limits and graceful shutdown
 
-> `cHTTPX_ResFile()` currently reads the complete file into memory. SSE has its own streaming HTTP/2 path; a generic streaming response API, `sendfile()`, and zero-copy file output are not implemented yet.
+> `cHTTPX_ResFile()` is disk-backed and streams files in bounded 64 KiB chunks, so multi-gigabyte responses do not require an equally large RAM allocation. Generic zero-copy `sendfile()` output is still not implemented.
 
 ## Installation
 
@@ -128,6 +128,22 @@ cd libchttpx
 
 make lin-lib
 sudo make lib-install PREFIX=/usr/local DESTDIR=
+```
+
+### Build from source on macOS
+
+Requirements: Xcode Command Line Tools, Homebrew, Make, pkg-config, cJSON, zlib, and nghttp2.
+
+```bash
+xcode-select --install
+brew install cjson nghttp2 pkg-config
+
+git clone https://github.com/netcorelink/libchttpx.git
+cd libchttpx
+
+make mac
+make libchttpx.dylib
+make test
 ```
 
 Tests:
