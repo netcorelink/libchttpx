@@ -22,7 +22,27 @@ typedef pthread_t thread_t;
  */
 static inline int _thread_create(thread_t* thread, void* (*func)(void*), void* arg)
 {
+#ifdef __APPLE__
+    /*
+     * macOS pthreads use a substantially smaller default stack than Linux.
+     * Request/response objects intentionally contain fixed-size header tables,
+     * so worker execution can exceed the macOS default stack under real
+     * request handling. Match the common Linux pthread stack size to keep the
+     * same runtime behaviour across both supported POSIX platforms.
+     */
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0)
+        return -1;
+
+    int result = pthread_attr_setstacksize(&attr, 8U * 1024U * 1024U);
+    if (result == 0)
+        result = pthread_create(thread, &attr, func, arg);
+
+    pthread_attr_destroy(&attr);
+    return result;
+#else
     return pthread_create(thread, NULL, func, arg);
+#endif
 }
 
 /**
