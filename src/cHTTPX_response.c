@@ -1068,13 +1068,21 @@ static int stream_file_response(chttpx_request_t* req, chttpx_response_t* res)
             {
                 result = req->_stream_transport.write(req->_stream_transport.context, buffer, read_size);
                 if (result != cHTTPX_OK)
+                {
+                    if (req->_stream_transport.close)
+                        req->_stream_transport.close(req->_stream_transport.context);
                     return result;
+                }
             }
 
             if (read_size < sizeof(buffer))
             {
                 if (ferror(file))
+                {
+                    if (req->_stream_transport.close)
+                        req->_stream_transport.close(req->_stream_transport.context);
                     return cHTTPX_ERR_IO;
+                }
                 break;
             }
         }
