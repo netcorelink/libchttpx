@@ -57,7 +57,7 @@ extern "C"
          * cHTTPX_ResFile() keeps the file open and streams it in bounded chunks
          * instead of allocating a buffer equal to the complete file size.
          */
-        FILE* _file_stream;
+        void* _file_stream;
         uint64_t _file_size;
 
         /* Set when response compression must be bypassed. */
