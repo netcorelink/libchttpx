@@ -98,6 +98,25 @@ static void exchange(uint16_t port, const char* path, http_response_t* response)
     free(source);
 }
 
+/** Create integration-test threads with enough stack for the public fixed-size HTTP structs on macOS. */
+static int create_test_thread(pthread_t* thread, void* (*entry)(void*), void* data)
+{
+#ifdef __APPLE__
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0)
+        return -1;
+
+    int result = pthread_attr_setstacksize(&attr, 8U * 1024U * 1024U);
+    if (result == 0)
+        result = pthread_create(thread, &attr, entry, data);
+
+    pthread_attr_destroy(&attr);
+    return result;
+#else
+    return pthread_create(thread, NULL, entry, data);
+#endif
+}
+
 /** Concurrent client hammering /users/{id} routes. */
 static void* worker(void* data)
 {
@@ -138,7 +157,6 @@ int main(void)
 {
     chttpx_app_t app;
     assert(cHTTPX_AppInit(&app) == cHTTPX_OK);
-    fprintf(stderr, "metrics checkpoint: app init\n");
 
     chttpx_config_t disabled_config = cHTTPX_DefaultConfig();
     disabled_config.port = 0;
@@ -147,14 +165,12 @@ int main(void)
     chttpx_serv_t* disabled =
         cHTTPX_AppServer(&app, "metrics-disabled", &disabled_config);
     assert(disabled);
-    fprintf(stderr, "metrics checkpoint: disabled server\n");
 
     chttpx_metrics_t disabled_metrics;
     assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == cHTTPX_ERR_UNAVAILABLE);
 
     chttpx_runtime_metrics_t disabled_runtime_metrics;
     assert(cHTTPX_ServerRuntimeMetrics(disabled, &disabled_runtime_metrics) == cHTTPX_OK);
-    fprintf(stderr, "metrics checkpoint: disabled snapshots\n");
 
     chttpx_router_t disabled_router = cHTTPX_RoutePathPrefix(disabled, "");
     assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == cHTTPX_ERR_UNAVAILABLE);
@@ -166,7 +182,6 @@ int main(void)
 
     chttpx_serv_t* server = cHTTPX_AppServer(&app, "metrics", &config);
     assert(server);
-    fprintf(stderr, "metrics checkpoint: enabled server\n");
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     assert(cHTTPX_Get(&router, "/users/{id}", user_handler));
@@ -177,16 +192,13 @@ int main(void)
         assert(cHTTPX_Get(&router, path, static_handler));
     }
     assert(cHTTPX_MetricsRoute(&router, "/metrics") == cHTTPX_OK);
-    fprintf(stderr, "metrics checkpoint: routes\n");
 
     assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
     wait_until_listening(server);
-    fprintf(stderr, "metrics checkpoint: listening\n");
 
     snapshot_ctx_t snapshot_ctx = {.server = server, .stop = 0};
     pthread_t snapshot_thread;
-    assert(pthread_create(&snapshot_thread, NULL, snapshot_reader, &snapshot_ctx) == 0);
-    fprintf(stderr, "metrics checkpoint: snapshot thread\n");
+    assert(create_test_thread(&snapshot_thread, snapshot_reader, &snapshot_ctx) == 0);
 
     pthread_t workers[WORKER_COUNT];
     worker_ctx_t worker_ctx = {
@@ -195,7 +207,7 @@ int main(void)
     };
 
     for (size_t i = 0; i < WORKER_COUNT; i++)
-        assert(pthread_create(&workers[i], NULL, worker, &worker_ctx) == 0);
+        assert(create_test_thread(&workers[i], worker, &worker_ctx) == 0);
 
     for (size_t i = 0; i < WORKER_COUNT; i++)
         assert(pthread_join(workers[i], NULL) == 0);
