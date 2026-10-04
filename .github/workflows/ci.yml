@@ -81,6 +81,29 @@ jobs:
       - name: Run tests
         run: make test
 
+  build-macos:
+    name: Build and test (macOS)
+    needs: [style, static-analysis]
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cjson nghttp2 pkg-config
+
+      - name: Build binary
+        run: make mac
+
+      - name: Build examples
+        run: make examples
+
+      - name: Build dynamic library
+        run: make libchttpx.dylib
+
+      - name: Run tests
+        run: make test
+
   sanitizers:
     name: ASan, UBSan and TSan
     needs: build-linux
