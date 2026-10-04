@@ -57,7 +57,7 @@ Prefer the JSON builder or escaping helpers for untrusted strings.
 );
 ```
 
-Current limitation: `ResFile` reads the complete file into RAM before sending.
+`ResFile` keeps the file disk-backed and streams it in 64 KiB chunks for both HTTP/1.1 and HTTP/2. A 10 GiB file therefore does not require a 10 GiB response buffer in RAM.
 
 ## Headers
 
