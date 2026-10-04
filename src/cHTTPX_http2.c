@@ -676,11 +676,17 @@ static int h2_sse_open(void* context, const struct chttpx_response* response)
     char status_text[4];
     snprintf(status_text, sizeof(status_text), "%03d", response->status);
 
-    nghttp2_nv headers[MAX_HEADERS + 2];
+    nghttp2_nv headers[MAX_HEADERS + 3];
     char names[MAX_HEADERS][MAX_HEADER_NAME];
+    char content_length[32];
     size_t count = 0;
     headers[count++] = h2_nv(":status", status_text);
     headers[count++] = h2_nv("content-type", response->content_type ? response->content_type : cHTTPX_CTYPE_SSE);
+    if (response->_file_stream)
+    {
+        snprintf(content_length, sizeof(content_length), "%llu", (unsigned long long)response->_file_size);
+        headers[count++] = h2_nv("content-length", content_length);
+    }
 
     for (size_t i = 0; i < response->headers_count && count < CHTTPX_ARRAY_LEN(headers); i++)
     {
