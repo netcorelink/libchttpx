@@ -39,6 +39,10 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <limits.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+#define CHTTPX_FILE_STREAM_CHUNK 65536
 
 int cHTTPX_SendAll(chttpx_socket_t fd, const void* data, size_t size)
 {
@@ -482,13 +486,14 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
     const char* allowed_origin = server && server->cors.enabled ? allowed_origin_cors(server, cHTTPX_HeaderGet(req, "Origin")) : NULL;
     const char* response_protocol = strcmp(req->protocol, "HTTP/1.1") == 0 ? "HTTP/1.1" : "HTTP/2";
 
-    if (!append_response_header(header, capacity, &length, "%s %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n", response_protocol, res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, res.body_size))
+    uint64_t content_length = res._file_stream ? res._file_size : (uint64_t)res.body_size;
+    if (!append_response_header(header, capacity, &length, "%s %d %s\r\nContent-Type: %s\r\nContent-Length: %llu\r\n", response_protocol, res.status, cHTTPX_StatusReason((uint16_t)res.status), res.content_type ? res.content_type : cHTTPX_CTYPE_OCTET, (unsigned long long)content_length))
         goto limit_error;
 
     if (strcmp(response_protocol, "HTTP/1.1") == 0 && !append_response_header(header, capacity, &length, "Connection: close\r\n"))
         goto limit_error;
 
-    const char* etag = generate_etag(res.body, res.body_size);
+    const char* etag = res._file_stream ? NULL : generate_etag(res.body, res.body_size);
     if (etag)
     {
         if (!append_response_header(header, capacity, &length, "Etag: %s\r\n", etag))
@@ -514,10 +519,11 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
 
     if (!append_response_header(header, capacity, &length, "\r\n"))
         goto limit_error;
-    if (res.body_size > SIZE_MAX - length)
+    size_t payload_size = res._file_stream ? 0 : res.body_size;
+    if (payload_size > SIZE_MAX - length)
         goto limit_error;
 
-    size_t total = length + res.body_size;
+    size_t total = length + payload_size;
     char* response = malloc(total ? total : 1);
     if (!response)
     {
@@ -525,8 +531,8 @@ static int build_response_buffer(chttpx_request_t* req, chttpx_response_t res, c
         return cHTTPX_ERR_MEMORY;
     }
     memcpy(response, header, length);
-    if (res.body && res.body_size)
-        memcpy(response + length, res.body, res.body_size);
+    if (res.body && payload_size)
+        memcpy(response + length, res.body, payload_size);
     free(header);
     *output = response;
     *output_size = total;
@@ -1040,6 +1046,81 @@ int _chttpx_dispatch(chttpx_serv_t* server, chttpx_request_t* req, chttpx_respon
     return cHTTPX_OK;
 }
 
+static int stream_file_response(chttpx_request_t* req, chttpx_response_t* res)
+{
+    if (!req || !res || !res->_file_stream)
+        return cHTTPX_ERR_INVALID_ARGUMENT;
+
+    FILE* file = (FILE*)res->_file_stream;
+    unsigned char buffer[CHTTPX_FILE_STREAM_CHUNK];
+
+    if (req->_stream_transport.open)
+    {
+        int result = req->_stream_transport.open(req->_stream_transport.context, res);
+        if (result != cHTTPX_OK)
+            return result;
+
+        res->_streaming_response = true;
+        for (;;)
+        {
+            size_t read_size = fread(buffer, 1, sizeof(buffer), file);
+            if (read_size)
+            {
+                result = req->_stream_transport.write(req->_stream_transport.context, buffer, read_size);
+                if (result != cHTTPX_OK)
+                    return result;
+            }
+
+            if (read_size < sizeof(buffer))
+            {
+                if (ferror(file))
+                    return cHTTPX_ERR_IO;
+                break;
+            }
+        }
+
+        return req->_stream_transport.close
+                   ? req->_stream_transport.close(req->_stream_transport.context)
+                   : cHTTPX_OK;
+    }
+
+    int flags = fcntl(req->client_fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(req->client_fd, F_SETFL, flags & ~O_NONBLOCK) != 0)
+        return cHTTPX_ERR_IO;
+    set_client_timeout(req->_server, req->client_fd);
+
+    char* header = NULL;
+    size_t header_size = 0;
+    int result = build_response_buffer(req, *res, &header, &header_size);
+    if (result != cHTTPX_OK)
+        return result;
+
+    result = _chttpx_io_send_all(req->client_fd, req->_tls_session, header, header_size);
+    free(header);
+    if (result != cHTTPX_OK)
+        return result;
+
+    for (;;)
+    {
+        size_t read_size = fread(buffer, 1, sizeof(buffer), file);
+        if (read_size)
+        {
+            result = _chttpx_io_send_all(req->client_fd, req->_tls_session, buffer, read_size);
+            if (result != cHTTPX_OK)
+                return result;
+        }
+
+        if (read_size < sizeof(buffer))
+        {
+            if (ferror(file))
+                return cHTTPX_ERR_IO;
+            break;
+        }
+    }
+
+    return cHTTPX_OK;
+}
+
 int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd, void* tls_session, char* headers, size_t header_size, unsigned char* body, size_t body_size, FILE* body_stream, size_t content_length, const chttpx_stream_transport_t* stream_transport, char** output, size_t* output_size)
 {
     if (!server || !headers || !output || !output_size)
@@ -1070,6 +1151,16 @@ int _chttpx_execute_prefetched(chttpx_serv_t* server, chttpx_socket_t client_fd,
         int dispatch_result = _chttpx_dispatch(server, req, &res);
         if (dispatch_result != cHTTPX_OK)
             res = cHTTPX_ResError(cHTTPX_StatusInternalServerError, "request dispatch failed");
+    }
+
+    if (res._file_stream)
+    {
+        int result = stream_file_response(req, &res);
+        *output = NULL;
+        *output_size = SIZE_MAX;
+        cHTTPX_ResponseCleanup(&res);
+        free_request_object(req);
+        return result;
     }
 
     if (res._streaming_response)
@@ -1270,50 +1361,29 @@ chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type, co
  */
 chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, const char* path)
 {
-    FILE* f = fopen(path, "rb");
-    if (!f)
-    {
+    if (!path || !*path)
+        return cHTTPX_ResError(cHTTPX_StatusNotFound, "file not found");
+
+    FILE* file = fopen(path, "rb");
+    if (!file)
         return cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"file not found\"}");
+
+    struct stat info;
+    if (fstat(fileno(file), &info) != 0 || info.st_size < 0 || !S_ISREG(info.st_mode))
+    {
+        fclose(file);
+        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to stat file");
     }
 
-    if (fseek(f, 0, SEEK_END) != 0)
-    {
-        fclose(f);
-        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to read file");
-    }
-    long size = ftell(f);
-    if (size < 0 || fseek(f, 0, SEEK_SET) != 0)
-    {
-        fclose(f);
-        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to read file");
-    }
-
-    if (size == 0)
-    {
-        fclose(f);
-        return cHTTPX_ResBinary(status, content_type, NULL, 0);
-    }
-
-    unsigned char* data = malloc(size);
-    if (!data)
-    {
-        fclose(f);
-        return cHTTPX_ResJson(cHTTPX_StatusInternalServerError, "{\"error\": \"internal server error\"}");
-    }
-
-    if (fread(data, 1, (size_t)size, f) != (size_t)size)
-    {
-        free(data);
-        fclose(f);
-        return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to read file");
-    }
-    fclose(f);
-
+    uint64_t file_size = (uint64_t)info.st_size;
     return (chttpx_response_t){.status = status,
                                .content_type = content_type,
-                               .body = data,
-                               .body_size = size,
-                               .body_ownership = cHTTPX_BODY_OWNED,
+                               .body = NULL,
+                               .body_size = file_size <= SIZE_MAX ? (size_t)file_size : 0,
+                               .body_ownership = cHTTPX_BODY_BORROWED,
+                               ._file_stream = file,
+                               ._file_size = file_size,
+                               .compression_disabled = true,
                                .start_ts = {0},
                                .end_ts = {0}};
 }
@@ -1324,6 +1394,10 @@ void cHTTPX_ResponseCleanup(chttpx_response_t* res)
         return;
     if (res->body_ownership == cHTTPX_BODY_OWNED)
         free((void*)res->body);
+    if (res->_file_stream)
+        fclose((FILE*)res->_file_stream);
+    res->_file_stream = NULL;
+    res->_file_size = 0;
     res->body = NULL;
     res->body_size = 0;
     res->body_ownership = cHTTPX_BODY_BORROWED;
