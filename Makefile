@@ -3,8 +3,15 @@ TARGET=chttpx-server
 RELEASE_DIR = libchttpx-dev
 TAR = $(RELEASE_DIR).tar.gz
 
-CC = gcc
-CFLAGS = -Wall -Wextra -Wpedantic -O2 -Iinclude -Isrc
+CC ?= cc
+PKG_CONFIG ?= pkg-config
+
+CJSON_CFLAGS := $(shell $(PKG_CONFIG) --cflags libcjson 2>/dev/null)
+CJSON_LIBS := $(shell $(PKG_CONFIG) --libs libcjson 2>/dev/null)
+NGHTTP2_CFLAGS := $(shell $(PKG_CONFIG) --cflags libnghttp2 2>/dev/null)
+NGHTTP2_LIBS := $(shell $(PKG_CONFIG) --libs libnghttp2 2>/dev/null)
+
+CFLAGS = -Wall -Wextra -Wpedantic -O2 -Iinclude -Isrc $(CJSON_CFLAGS) $(NGHTTP2_CFLAGS)
 
 # Native TLS is opt-in so cleartext HTTP/2 builds keep zero OpenSSL dependency.
 TLS ?= 0
@@ -27,7 +34,8 @@ PREFIX ?= /usr/local
 DESTDIR ?= pkg
 PKGDIR ?= /pkg/usr/local
 
-LIN_LDFLAGS = -lcjson -lz -lnghttp2 $(TLS_LDFLAGS)
+DEP_LDFLAGS = $(if $(strip $(CJSON_LIBS)),$(CJSON_LIBS),-lcjson) -lz $(if $(strip $(NGHTTP2_LIBS)),$(NGHTTP2_LIBS),-lnghttp2)
+LIN_LDFLAGS = $(DEP_LDFLAGS) $(TLS_LDFLAGS)
 TEST_TARGET = $(BINDIR)/test_core
 TEST_SERVER_TARGET = $(BINDIR)/test_server
 TEST_SANITIZE_TARGET = $(BINDIR)/test_core_sanitize
@@ -50,10 +58,12 @@ FORMAT_SRCS = $(wildcard src/*.c src/*.h include/*.h example/*.c tests/*.c)
 
 LIN_OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(LIN_SRCS))
 
-# Linux build
+# Linux/macOS build
 # -
 
 lin: $(BINDIR)/$(TARGET)
+
+mac: $(BINDIR)/$(TARGET)
 
 $(BINDIR)/$(TARGET): $(LIN_OBJS) $(EXAMPLE_OBJ)
 	@mkdir -p $(BINDIR)
@@ -82,6 +92,14 @@ examples-compression: $(BINDIR)/example-compression
 
 libchttpx.so: $(LIN_OBJS)
 	$(CC) -shared -fPIC -o libchttpx.so $(LIN_OBJS) $(LIN_LDFLAGS) -pthread
+
+# macOS shared library
+# -
+
+libchttpx.dylib: $(LIN_OBJS)
+	$(CC) -dynamiclib -fPIC -o libchttpx.dylib $(LIN_OBJS) $(LIN_LDFLAGS) -pthread
+
+mac-lib: clean libchttpx.dylib
 
 # Linux lib install
 # -
@@ -215,4 +233,4 @@ run: lin-run
 clean:
 	rm -rf $(OBJDIR) $(BINDIR) *.a
 	rm -rf $(RELEASE_DIR)
-	rm -rf libchttpx.so
+	rm -rf libchttpx.so libchttpx.dylib
