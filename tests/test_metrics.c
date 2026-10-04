@@ -138,6 +138,7 @@ int main(void)
 {
     chttpx_app_t app;
     assert(cHTTPX_AppInit(&app) == cHTTPX_OK);
+    fprintf(stderr, "metrics checkpoint: app init\n");
 
     chttpx_config_t disabled_config = cHTTPX_DefaultConfig();
     disabled_config.port = 0;
@@ -146,12 +147,14 @@ int main(void)
     chttpx_serv_t* disabled =
         cHTTPX_AppServer(&app, "metrics-disabled", &disabled_config);
     assert(disabled);
+    fprintf(stderr, "metrics checkpoint: disabled server\n");
 
     chttpx_metrics_t disabled_metrics;
     assert(cHTTPX_ServerMetrics(disabled, &disabled_metrics) == cHTTPX_ERR_UNAVAILABLE);
 
     chttpx_runtime_metrics_t disabled_runtime_metrics;
     assert(cHTTPX_ServerRuntimeMetrics(disabled, &disabled_runtime_metrics) == cHTTPX_OK);
+    fprintf(stderr, "metrics checkpoint: disabled snapshots\n");
 
     chttpx_router_t disabled_router = cHTTPX_RoutePathPrefix(disabled, "");
     assert(cHTTPX_MetricsRoute(&disabled_router, "/metrics") == cHTTPX_ERR_UNAVAILABLE);
@@ -163,6 +166,7 @@ int main(void)
 
     chttpx_serv_t* server = cHTTPX_AppServer(&app, "metrics", &config);
     assert(server);
+    fprintf(stderr, "metrics checkpoint: enabled server\n");
 
     chttpx_router_t router = cHTTPX_RoutePathPrefix(server, "");
     assert(cHTTPX_Get(&router, "/users/{id}", user_handler));
@@ -173,13 +177,16 @@ int main(void)
         assert(cHTTPX_Get(&router, path, static_handler));
     }
     assert(cHTTPX_MetricsRoute(&router, "/metrics") == cHTTPX_OK);
+    fprintf(stderr, "metrics checkpoint: routes\n");
 
     assert(cHTTPX_AppStart(&app) == cHTTPX_OK);
     wait_until_listening(server);
+    fprintf(stderr, "metrics checkpoint: listening\n");
 
     snapshot_ctx_t snapshot_ctx = {.server = server, .stop = 0};
     pthread_t snapshot_thread;
     assert(pthread_create(&snapshot_thread, NULL, snapshot_reader, &snapshot_ctx) == 0);
+    fprintf(stderr, "metrics checkpoint: snapshot thread\n");
 
     pthread_t workers[WORKER_COUNT];
     worker_ctx_t worker_ctx = {
