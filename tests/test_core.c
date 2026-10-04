@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static int cleanup_calls;
 
@@ -411,6 +412,33 @@ static void test_routing_api(void)
 
     free_test_routes(&server);
 }
+/** Verifies that ResFile keeps even a 10 GiB file disk-backed instead of copying it into RAM. */
+static void test_large_file_response_is_disk_backed(void)
+{
+    char path[] = "/tmp/libchttpx-resfile-XXXXXX";
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+
+    const uint64_t file_size = 10ULL * 1024ULL * 1024ULL * 1024ULL;
+    off_t sparse_size = (off_t)file_size;
+    assert((uint64_t)sparse_size == file_size);
+    assert(ftruncate(fd, sparse_size) == 0);
+    close(fd);
+
+    chttpx_response_t response = cHTTPX_ResFile(cHTTPX_StatusOK, cHTTPX_CTYPE_OCTET, path);
+    assert(response.status == cHTTPX_StatusOK);
+    assert(response.body == NULL);
+    assert(response._file_stream != NULL);
+    assert(response._file_size == file_size);
+#if SIZE_MAX >= UINT64_MAX
+    assert(response.body_size == (size_t)file_size);
+#endif
+
+    cHTTPX_ResponseCleanup(&response);
+    assert(response._file_stream == NULL);
+    unlink(path);
+}
+
 /** Status reasons, MIME helpers, Bearer token, and ResMessage escaping. */
 static void test_helpers(void)
 {
@@ -440,6 +468,7 @@ int main(void)
     test_streamed_raw_chunked_upload();
     test_streamed_multipart();
     test_routing_api();
+    test_large_file_response_is_disk_backed();
     test_helpers();
     puts("all tests passed");
     return 0;
