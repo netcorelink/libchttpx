@@ -106,7 +106,7 @@ runs:
                 "includedir=${prefix}/include",
                 "",
                 "Name: libchttpx",
-                "Description: A compact cross-platform HTTP/2 server library for C/C++.",
+                "Description: A compact HTTP/2 server library for C on Linux.",
                 f"Version: {version}",
                 "Libs: -L${libdir} -lchttpx",
                 "Libs.private: -lz -lnghttp2",

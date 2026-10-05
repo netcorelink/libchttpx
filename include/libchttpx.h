@@ -77,8 +77,7 @@ static inline void* chttpx_memmem(const void* haystack, size_t haystacklen, cons
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef HTTP_H
@@ -263,8 +262,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef REQUEST_H
@@ -755,8 +753,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef RESPONSE_H
@@ -940,8 +937,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef MIDDLEWARES_H
@@ -1068,8 +1064,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef CORS_H
@@ -1128,8 +1123,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef SERV_H
@@ -1652,8 +1646,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef INET_H
@@ -1695,8 +1688,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef PARAMS_H
@@ -1737,8 +1729,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef QUERIES_H
@@ -1805,8 +1796,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef HEADERS_H
@@ -1929,8 +1919,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef I18N_H
@@ -2046,8 +2035,7 @@ extern "C"
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef MEDIA_H

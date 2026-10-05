@@ -2,7 +2,7 @@
 
 libchttpx поддерживает WebSocket поверх HTTP/2 через Extended CONNECT из RFC 8441. Сервер объявляет `SETTINGS_ENABLE_CONNECT_PROTOCOL=1`, принимает `:method = CONNECT` вместе с `:protocol = websocket`, после чего обычные WebSocket-фреймы RFC 6455 передаются внутри HTTP/2 DATA.
 
-Fallback на HTTP/1.1 `Upgrade: websocket` специально не добавляется, потому что сервер в `develop` работает как HTTP/2-only.
+Fallback на HTTP/1.1 `Upgrade: websocket` специально не добавляется, потому что сервер работает как HTTP/2-only.
 
 ## WebSocket-маршрут
 

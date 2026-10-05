@@ -170,7 +170,7 @@ TLS остаётся отдельной опцией сборки: `make TLS=1 l
 - [Uploads, multipart forms и MIME helpers](docs/uploads/README_RU.md)
 - [CORS](docs/cors/README_RU.md)
 - [Cookies](docs/cookies/README_RU.md)
-- [Request ID и i18n](docs/i18n/README.md)
+- [Request ID и i18n](docs/i18n/README_RU.md)
 - [Logging](docs/logging/README_RU.md)
 - [Rate limiting](docs/rate-limiting/README_RU.md)
 - [Server-Sent Events](docs/sse/README_RU.md)

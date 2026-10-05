@@ -1,8 +1,7 @@
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license. See `libchttpx.c` for details.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef RESPONSE_H

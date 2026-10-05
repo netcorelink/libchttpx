@@ -1,8 +1,7 @@
 /**
  * Copyright (c) 2026 netcorelink
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the MIT license.
+ * Distributed under the BSD 3-Clause License. See LICENSE for details.
  */
 
 #ifndef CHTTPX_WEBSOCKET_H
