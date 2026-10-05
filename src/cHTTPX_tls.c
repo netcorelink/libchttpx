@@ -20,7 +20,7 @@
 #include <openssl/x509_vfy.h>
 
 /**
- * Select HTTP/2 during TLS ALPN negotiation.
+ * Prefer HTTP/2 and fall back to HTTP/1.1 during TLS ALPN negotiation.
  *
  * @param ssl OpenSSL session participating in ALPN selection.
  * @param out Output pointer to the selected ALPN protocol bytes.
@@ -30,25 +30,38 @@
  * @param arg Unused ALPN callback user argument.
  * @return SSL_TLSEXT_ERR_OK when HTTP/2 is selected, otherwise a fatal alert code.
  */
-static int chttpx_h2_alpn_select(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg)
+static int chttpx_alpn_select(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg)
 {
     (void)ssl;
     (void)arg;
     const unsigned char* cursor = in;
     const unsigned char* end = in + inlen;
+    const unsigned char* http1 = NULL;
 
     while (cursor < end)
     {
         unsigned int length = *cursor++;
         if ((size_t)(end - cursor) < length)
             break;
+
         if (length == 2 && cursor[0] == 'h' && cursor[1] == '2')
         {
             *out = cursor;
             *outlen = 2;
             return SSL_TLSEXT_ERR_OK;
         }
+
+        if (!http1 && length == 8 && memcmp(cursor, "http/1.1", 8) == 0)
+            http1 = cursor;
+
         cursor += length;
+    }
+
+    if (http1)
+    {
+        *out = http1;
+        *outlen = 8;
+        return SSL_TLSEXT_ERR_OK;
     }
 
     return SSL_TLSEXT_ERR_ALERT_FATAL;
@@ -171,7 +184,7 @@ int _chttpx_tls_server_init(chttpx_serv_t* server, const chttpx_tls_config_t* co
 
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
-    SSL_CTX_set_alpn_select_cb(ctx, chttpx_h2_alpn_select, NULL);
+    SSL_CTX_set_alpn_select_cb(ctx, chttpx_alpn_select, NULL);
 
     if (SSL_CTX_use_certificate_chain_file(ctx, server->tls.cert_file) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx, server->tls.key_file, SSL_FILETYPE_PEM) != 1 ||
@@ -321,13 +334,23 @@ int _chttpx_tls_accept_step(void* session)
 #else
     int result = SSL_accept((SSL*)session);
     if (result == 1)
-        return chttpx_tls_selected_h2((SSL*)session) ? cHTTPX_OK : cHTTPX_ERR_TLS;
+        return cHTTPX_OK;
     int error = SSL_get_error((SSL*)session, result);
     if (error == SSL_ERROR_WANT_READ)
         return CHTTPX_IO_WANT_READ;
     if (error == SSL_ERROR_WANT_WRITE)
         return CHTTPX_IO_WANT_WRITE;
     return cHTTPX_ERR_TLS;
+#endif
+}
+
+int _chttpx_tls_is_http2(void* session)
+{
+#ifdef CHTTPX_ENABLE_TLS
+    return session && chttpx_tls_selected_h2((SSL*)session);
+#else
+    (void)session;
+    return 0;
 #endif
 }
 
