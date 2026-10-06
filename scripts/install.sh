@@ -1,13 +1,31 @@
-#!/bin/bash
-# Usage: curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+#!/usr/bin/env bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | bash
+#
+# Run as the current user. The installer asks for sudo only for privileged
+# operations. This avoids macOS zsh suspending a "curl | sudo sh" pipeline
+# while sudo waits for terminal input.
 
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
 RELEASE_BASE="${RELEASE_BASE:-https://github.com/netcorelink/libchttpx/releases/latest/download}"
 
+run_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+    return
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Administrator privileges are required to install into ${PREFIX}, but sudo is not available." >&2
+    exit 1
+  fi
+
+  sudo "$@"
+}
+
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Warning: it's recommended to run with sudo to install into ${PREFIX}"
+  echo "Installing into ${PREFIX}; sudo may ask for your password when system files are written."
 fi
 
 os="$(uname -s)"
@@ -20,13 +38,13 @@ install_linux() {
   else
     echo "cjson not found. Installing...."
     if command -v apt >/dev/null 2>&1; then
-      sudo apt install -y libcjson-dev
+      run_root apt install -y libcjson-dev
     elif command -v pacman >/dev/null 2>&1; then
-      sudo pacman -Sy --noconfirm cjson
+      run_root pacman -Sy --noconfirm cjson
     elif command -v dnf >/dev/null 2>&1; then
-      sudo dnf install -y cjson-devel
+      run_root dnf install -y cjson-devel
     elif command -v zypper >/dev/null 2>&1; then
-      sudo zypper install -y cjson-devel
+      run_root zypper install -y cjson-devel
     else
       echo "Unsupported package manager. Install cjson manually."
       exit 1
@@ -38,13 +56,13 @@ install_linux() {
   else
     echo "zlib not found. Installing...."
     if command -v apt >/dev/null 2>&1; then
-      sudo apt install -y zlib1g-dev
+      run_root apt install -y zlib1g-dev
     elif command -v pacman >/dev/null 2>&1; then
-      sudo pacman -Sy --noconfirm zlib
+      run_root pacman -Sy --noconfirm zlib
     elif command -v dnf >/dev/null 2>&1; then
-      sudo dnf install -y zlib-devel
+      run_root dnf install -y zlib-devel
     elif command -v zypper >/dev/null 2>&1; then
-      sudo zypper install -y zlib-devel
+      run_root zypper install -y zlib-devel
     else
       echo "Unsupported package manager. Install zlib manually."
       exit 1
@@ -56,13 +74,13 @@ install_linux() {
   else
     echo "nghttp2 not found. Installing...."
     if command -v apt >/dev/null 2>&1; then
-      sudo apt install -y libnghttp2-dev
+      run_root apt install -y libnghttp2-dev
     elif command -v pacman >/dev/null 2>&1; then
-      sudo pacman -Sy --noconfirm nghttp2
+      run_root pacman -Sy --noconfirm nghttp2
     elif command -v dnf >/dev/null 2>&1; then
-      sudo dnf install -y libnghttp2-devel
+      run_root dnf install -y libnghttp2-devel
     elif command -v zypper >/dev/null 2>&1; then
-      sudo zypper install -y libnghttp2-devel
+      run_root zypper install -y libnghttp2-devel
     else
       echo "Unsupported package manager. Install nghttp2 manually."
       exit 1
@@ -84,20 +102,20 @@ install_linux() {
   fi
 
   echo "Installing headers...."
-  mkdir -p "${PREFIX}/include/libchttpx"
-  cp -R "${pkgdir}/include/"* "${PREFIX}/include/libchttpx/"
+  run_root mkdir -p "${PREFIX}/include/libchttpx"
+  run_root cp -R "${pkgdir}/include/"* "${PREFIX}/include/libchttpx/"
 
   echo "Installing shared library...."
-  mkdir -p "${PREFIX}/lib"
-  cp "${pkgdir}/libchttpx.so" "${PREFIX}/lib/"
+  run_root mkdir -p "${PREFIX}/lib"
+  run_root cp "${pkgdir}/libchttpx.so" "${PREFIX}/lib/"
 
   echo "Installing pkg-config file..."
-  mkdir -p "${PREFIX}/lib/pkgconfig"
-  cp "${pkgdir}/libchttpx.pc" "${PREFIX}/lib/pkgconfig/"
+  run_root mkdir -p "${PREFIX}/lib/pkgconfig"
+  run_root cp "${pkgdir}/libchttpx.pc" "${PREFIX}/lib/pkgconfig/"
 
   if command -v ldconfig >/dev/null 2>&1; then
     echo "Updating library cache..."
-    ldconfig
+    run_root ldconfig
   fi
 
   rm -rf "${tmpdir}"
@@ -105,13 +123,13 @@ install_linux() {
 
 # Compare dotted versions: version_ge A B  =>  A >= B
 version_ge() {
-  local IFS=.
-  # shellcheck disable=SC2086
-  set -- $1
-  local a1="${1:-0}" a2="${2:-0}" a3="${3:-0}"
-  # shellcheck disable=SC2086
-  set -- $2
-  local b1="${1:-0}" b2="${2:-0}" b3="${3:-0}"
+  local a1 a2 a3 b1 b2 b3
+
+  IFS=. read -r a1 a2 a3 <<< "$1"
+  IFS=. read -r b1 b2 b3 <<< "$2"
+
+  a1="${a1:-0}"; a2="${a2:-0}"; a3="${a3:-0}"
+  b1="${b1:-0}"; b2="${b2:-0}"; b3="${b3:-0}"
 
   if [ "${a1}" -ne "${b1}" ]; then [ "${a1}" -gt "${b1}" ]; return; fi
   if [ "${a2}" -ne "${b2}" ]; then [ "${a2}" -gt "${b2}" ]; return; fi
@@ -174,16 +192,16 @@ install_macos() {
   fi
 
   echo "Installing headers to ${PREFIX}/include/libchttpx ..."
-  mkdir -p "${PREFIX}/include/libchttpx"
-  cp -R "${pkgdir}/include/libchttpx/"* "${PREFIX}/include/libchttpx/"
+  run_root mkdir -p "${PREFIX}/include/libchttpx"
+  run_root cp -R "${pkgdir}/include/libchttpx/"* "${PREFIX}/include/libchttpx/"
 
   echo "Installing libraries to ${PREFIX}/lib ..."
-  mkdir -p "${PREFIX}/lib" "${PREFIX}/lib/pkgconfig" "${PREFIX}/share/libchttpx"
+  run_root mkdir -p "${PREFIX}/lib" "${PREFIX}/lib/pkgconfig" "${PREFIX}/share/libchttpx"
   # Bundled runtime deps ship beside libchttpx.dylib (@loader_path / @rpath).
-  cp -R "${pkgdir}/lib/"* "${PREFIX}/lib/"
+  run_root cp -R "${pkgdir}/lib/"* "${PREFIX}/lib/"
 
   if [ -f "${pkgdir}/share/libchttpx/manifest.txt" ]; then
-    cp "${pkgdir}/share/libchttpx/manifest.txt" "${PREFIX}/share/libchttpx/manifest.txt"
+    run_root cp "${pkgdir}/share/libchttpx/manifest.txt" "${PREFIX}/share/libchttpx/manifest.txt"
   fi
 
   rm -rf "${tmpdir}"

@@ -93,8 +93,10 @@ Download the package for your distribution from [GitHub Releases](https://github
 ### Installer script (Linux / macOS)
 
 ```bash
-curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | bash
 ```
+
+The installer runs as the current user and asks for `sudo` only when it needs to write system files. On macOS this avoids zsh suspending `sudo sh` with `tty input` while the script is piped from `curl`.
 
 ### Docker
 
