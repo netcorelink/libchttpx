@@ -23,6 +23,7 @@
 #include "cHTTPX_response.h"
 
 #include "cHTTPX_inet.h"
+#include "internal_logger.h"
 #include "cHTTPX_body.h"
 #include "cHTTPX_http.h"
 #include "cHTTPX_serv.h"
@@ -1370,15 +1371,22 @@ chttpx_response_t cHTTPX_ResBinary(uint16_t status, const char* content_type, co
 chttpx_response_t cHTTPX_ResFile(uint16_t status, const char* content_type, const char* path)
 {
     if (!path || !*path)
+    {
+        STDERROR("file lookup failed: empty path");
         return cHTTPX_ResError(cHTTPX_StatusNotFound, "file not found");
+    }
 
     FILE* file = fopen(path, "rb");
     if (!file)
+    {
+        STDERROR("file open failed path=%s errno=%d", path, errno);
         return cHTTPX_ResJson(cHTTPX_StatusNotFound, "{\"error\": \"file not found\"}");
+    }
 
     struct stat info;
     if (fstat(fileno(file), &info) != 0 || info.st_size < 0 || !S_ISREG(info.st_mode))
     {
+        STDERROR("file stat failed path=%s errno=%d", path, errno);
         fclose(file);
         return cHTTPX_ResError(cHTTPX_StatusInternalServerError, "failed to stat file");
     }

@@ -1,4 +1,5 @@
 #include "cHTTPX_event.h"
+#include "internal_logger.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -42,16 +43,24 @@ chttpx_event_loop_t* _chttpx_event_create(void)
 {
     chttpx_event_loop_t* loop = calloc(1, sizeof(*loop));
     if (!loop)
+    {
+        STDERROR("memory allocation failed: event loop");
         return NULL;
+    }
+
     loop->fd = epoll_create1(EPOLL_CLOEXEC);
     loop->wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
     if (loop->fd < 0 || loop->wake_fd < 0)
         goto error;
+
     struct epoll_event event = {.events = EPOLLIN, .data.ptr = NULL};
     if (epoll_ctl(loop->fd, EPOLL_CTL_ADD, loop->wake_fd, &event) != 0)
         goto error;
+    
     return loop;
 error:
+    STDERROR("event loop create failed backend=epoll errno=%d", errno);
     if (loop->wake_fd >= 0)
         close(loop->wake_fd);
     if (loop->fd >= 0)
@@ -234,10 +243,14 @@ chttpx_event_loop_t* _chttpx_event_create(void)
 {
     chttpx_event_loop_t* loop = calloc(1, sizeof(*loop));
     if (!loop)
+    {
+        STDERROR("memory allocation failed: event loop");
         return NULL;
+    }
     loop->fd = kqueue();
     if (loop->fd < 0)
     {
+        STDERROR("event loop create failed backend=kqueue errno=%d", errno);
         free(loop);
         return NULL;
     }
@@ -245,6 +258,7 @@ chttpx_event_loop_t* _chttpx_event_create(void)
     EV_SET(&wake, 1, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
     if (kevent(loop->fd, &wake, 1, NULL, 0, NULL) != 0)
     {
+        STDERROR("event loop wake filter failed backend=kqueue errno=%d", errno);
         close(loop->fd);
         free(loop);
         return NULL;

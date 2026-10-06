@@ -3,10 +3,12 @@
 #include "cHTTPX_event.h"
 #include "cHTTPX_worker.h"
 #include "cHTTPX_http.h"
+#include "cHTTPX_inet.h"
 #include "cHTTPX_metrics.h"
 #include "cHTTPX_tls.h"
 #include "cHTTPX_http2.h"
 #include "cHTTPX_utils.h"
+#include "internal_logger.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -307,6 +309,8 @@ static void connection_close(chttpx_runtime_t* runtime, chttpx_connection_t* con
     connection->state = CHTTPX_CONN_CLOSING;
     _chttpx_event_del(runtime->event_loop, connection->fd);
     connection_unlink(runtime, connection);
+
+    STDDEBUG("client disconnected fd=%d server=%s", connection->fd, connection->server && connection->server->name ? connection->server->name : "-");
 
     _chttpx_tls_session_close(connection->tls_session);
     connection->tls_session = NULL;
@@ -1171,6 +1175,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
         chttpx_connection_t* connection = calloc(1, sizeof(*connection));
         if (!connection)
         {
+            STDERROR("memory allocation failed: client connection");
             _chttpx_metrics_connection_rejected(server);
             chttpx_close(fd);
             continue;
@@ -1185,6 +1190,7 @@ static void accept_connections(chttpx_runtime_t* runtime)
         runtime->connections = connection;
         __atomic_fetch_add(&server->current_clients, 1, __ATOMIC_SEQ_CST);
         _chttpx_metrics_connection_opened(server);
+        STDINFO("client connected fd=%d ip=%s server=%s", fd, cHTTPX_ClientInetIP(fd), server->name ? server->name : "-");
 
         int tls_result = _chttpx_tls_accept_begin(server, fd, &connection->tls_session);
         if (tls_result != cHTTPX_OK)
@@ -1298,11 +1304,15 @@ int _chttpx_runtime_init(chttpx_serv_t* server)
 
     chttpx_runtime_t* runtime = calloc(1, sizeof(*runtime));
     if (!runtime)
+    {
+        STDERROR("memory allocation failed: runtime");
         return cHTTPX_ERR_MEMORY;
+    }
     runtime->server = server;
 
     if (sync_init(runtime) != 0)
     {
+        STDERROR("runtime sync init failed server=%s", server->name ? server->name : "-");
         free(runtime);
         return cHTTPX_ERR_IO;
     }
@@ -1316,9 +1326,11 @@ int _chttpx_runtime_init(chttpx_serv_t* server)
         goto error;
 
     server->runtime_state = runtime;
+    STDINFO("runtime ready server=%s max_clients=%u", server->name ? server->name : "-", (unsigned)server->max_clients);
     return cHTTPX_OK;
 
 error:
+    STDERROR("runtime init failed server=%s", server->name ? server->name : "-");
     _chttpx_worker_pool_destroy(runtime->worker_pool);
 
     if (runtime->event_loop)
