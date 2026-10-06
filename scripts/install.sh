@@ -193,7 +193,7 @@ install_macos() {
 
   echo "Installing headers to ${PREFIX}/include/libchttpx ..."
   run_root mkdir -p "${PREFIX}/include/libchttpx"
-  cp -R "${pkgdir}/include/libchttpx/"* "${PREFIX}/include/libchttpx/"
+  run_root cp -R "${pkgdir}/include/libchttpx/"* "${PREFIX}/include/libchttpx/"
 
   echo "Installing libraries to ${PREFIX}/lib ..."
   run_root mkdir -p "${PREFIX}/lib" "${PREFIX}/lib/pkgconfig" "${PREFIX}/share/libchttpx"
