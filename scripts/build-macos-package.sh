@@ -217,7 +217,21 @@ rewrite_to_rpath() {
 
 build_libchttpx() {
   echo "==> Building libchttpx with TLS (deployment target ${DEPLOYMENT_TARGET})"
-  make -C "${ROOT}" clean
+
+  # Do not call the top-level `make clean` here: that target removes
+  # .macos-build and dist/macos, including the dependencies and staging
+  # directories prepared earlier in this script.
+  rm -rf "${ROOT}/.out" "${ROOT}/.build"
+  rm -f "${ROOT}/libchttpx.so" "${ROOT}/libchttpx.dylib"
+
+  if [[ ! -f "${PREFIX}/include/nghttp2/nghttp2.h" ]]; then
+    echo "nghttp2 headers are missing from ${PREFIX}" >&2
+    exit 1
+  fi
+  if [[ ! -f "${PREFIX}/lib/libssl.3.dylib" || ! -f "${PREFIX}/lib/libcrypto.3.dylib" ]]; then
+    echo "OpenSSL libraries are missing from ${PREFIX}" >&2
+    exit 1
+  fi
 
   local link_flags="${ARCH_FLAGS[*]} ${MIN_FLAGS[*]} -L${PREFIX}/lib -lcjson -lz -lnghttp2 -lssl -lcrypto -pthread"
   make -C "${ROOT}" \
