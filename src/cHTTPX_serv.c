@@ -19,6 +19,7 @@
 #include "cHTTPX_metrics.h"
 #include "cHTTPX_runtime.h"
 #include "cHTTPX_websocket.h"
+#include "internal_logger.h"
 
 #include <errno.h>
 
@@ -203,7 +204,10 @@ int _chttpx_server_init(chttpx_serv_t* server, struct chttpx_app* app, const cha
     server->app = app;
     server->name = strdup(name);
     if (!server->name)
+    {
+        STDERROR("memory allocation failed: server name");
         return cHTTPX_ERR_MEMORY;
+    }
 
     server->port = config->port;
     server->network_mode = config->network_mode;

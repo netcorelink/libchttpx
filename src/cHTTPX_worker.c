@@ -1,4 +1,5 @@
 #include "cHTTPX_worker.h"
+#include "internal_logger.h"
 
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_utils.h"
@@ -219,11 +220,15 @@ int _chttpx_worker_pool_create(chttpx_worker_pool_t** pool, size_t queue_capacit
 
     chttpx_worker_pool_t* created = calloc(1, sizeof(*created));
     if (!created)
+    {
+        STDERROR("memory allocation failed: worker pool");
         return -1;
+    }
 
     created->queue = calloc(queue_capacity, sizeof(*created->queue));
     if (!created->queue)
     {
+        STDERROR("memory allocation failed: worker queue capacity=%zu", queue_capacity);
         free(created);
         return -1;
     }
@@ -243,6 +248,7 @@ int _chttpx_worker_pool_create(chttpx_worker_pool_t** pool, size_t queue_capacit
     {
         if (_thread_create(&created->threads[i], worker_main, created) != 0)
         {
+            STDERROR("failed to create worker thread index=%zu", i);
             _chttpx_worker_stop(created);
 
             for (size_t j = 0; j < created->threads_started; j++)

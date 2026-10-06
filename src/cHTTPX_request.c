@@ -23,6 +23,7 @@
 #include "cHTTPX_request.h"
 
 #include "cHTTPX_crosspltm.h"
+#include "internal_logger.h"
 #include "cHTTPX_headers.h"
 #include "cHTTPX_response.h"
 #include "cHTTPX_http.h"
@@ -188,10 +189,14 @@ void* cHTTPX_Alloc(chttpx_request_t* req, size_t size)
 
     void* memory = calloc(1, size);
     if (!memory)
+    {
+        STDERROR("memory allocation failed: request alloc size=%zu", size);
         return NULL;
+    }
 
     if (cHTTPX_Defer(req, memory, free) != 0)
     {
+        STDERROR("request defer registration failed size=%zu", size);
         free(memory);
         return NULL;
     }

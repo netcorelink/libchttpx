@@ -23,6 +23,7 @@
 #include "cHTTPX_media.h"
 
 #include "cHTTPX_headers.h"
+#include "internal_logger.h"
 #include "cHTTPX_queries.h"
 #include "cHTTPX_serv.h"
 #include "cHTTPX_utils.h"
@@ -31,7 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <errno.h>
 #include <unistd.h>
 
 #define MULTIPART_LINE_LIMIT 4096
@@ -109,10 +110,14 @@ static FILE* create_temporary_file(char* path, size_t path_size)
     snprintf(path, path_size, "/tmp/chttpx-upload-XXXXXX");
     int fd = mkstemp(path);
     if (fd < 0)
+    {
+        STDERROR("temp upload file create failed errno=%d", errno);
         return NULL;
+    }
     FILE* file = fdopen(fd, "w+b");
     if (!file)
     {
+        STDERROR("temp upload fdopen failed path=%s errno=%d", path, errno);
         close(fd);
         remove(path);
     }

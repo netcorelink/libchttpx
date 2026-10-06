@@ -24,6 +24,7 @@
 
 #include "cHTTPX_crosspltm.h"
 #include "cHTTPX_serv.h"
+#include "internal_logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,7 +48,10 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
 
     FILE* f = fopen(path, "rb");
     if (!f)
+    {
+        STDERROR("locale file open failed path=%s", path);
         return loc;
+    }
 
     if (fseek(f, 0, SEEK_END) != 0)
     {
@@ -64,6 +68,7 @@ static i18n_locale_t load_locale_file(const char* path, const char* locale)
     char* data = malloc(size + 1);
     if (!data)
     {
+        STDERROR("memory allocation failed: locale file size=%ld", size);
         fclose(f);
         return loc;
     }
