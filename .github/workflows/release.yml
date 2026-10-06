@@ -281,7 +281,7 @@ jobs:
             - `libchttpx-macos-11-arm64.tar.gz` — Apple Silicon, macOS 11+
 
             ```bash
-            curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+            curl -fsSL https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | bash
             ```
 
       - name: Checkout APT repository
