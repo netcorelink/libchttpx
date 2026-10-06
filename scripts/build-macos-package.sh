@@ -147,7 +147,7 @@ build_openssl() {
     ./Configure "${OPENSSL_PLATFORM}" \
       --prefix="${PREFIX}" \
       --libdir=lib \
-      shared no-tests no-docs \
+      shared no-tests \
       "${MIN_FLAGS[@]}"
     make -j"${JOBS}"
     make install_sw

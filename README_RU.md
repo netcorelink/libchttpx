@@ -90,26 +90,7 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Нужный пакет можно скачать из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Готовые пакеты для macOS (без Homebrew)
-
-В GitHub Releases публикуются self-contained архивы для macOS со всеми
-runtime-зависимостями (cJSON, nghttp2, OpenSSL). Это основной способ установки
-на Catalina и других системах, где современный Homebrew уже недоступен:
-
-- `libchttpx-macos-10.15-x86_64.tar.gz` — Intel, macOS 10.15 Catalina и новее
-- `libchttpx-macos-11-arm64.tar.gz` — Apple Silicon, macOS 11 Big Sur и новее
-
-```bash
-curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
-```
-
-Скрипт смотрит `sw_vers -productVersion` и `uname -m`, скачивает нужный архив и
-ставит библиотеку в `/usr/local` вместе с bundled-зависимостями.
-
-### Legacy install-скрипт (Linux)
-
-На Linux тот же скрипт ставит `libchttpx-dev.tar.gz` и системные зависимости
-через пакетный менеджер дистрибутива:
+### Скрипт установки (Linux / macOS)
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
