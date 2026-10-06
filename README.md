@@ -1,12 +1,12 @@
 # libchttpx
 
-`libchttpx` is a compact HTTP/2 server library for C on Linux. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
+`libchttpx` is a compact HTTP/2 server library for C on Linux and macOS. It provides an App-based runtime, routing, middleware, request parsing, JSON binding and responses, uploads, request-scoped memory, CORS, cookies, i18n, logging, rate limiting, and graceful shutdown while keeping a direct C-style API.
 
 The library is designed so handlers contain application logic instead of repetitive HTTP plumbing.
 
 ## Highlights
 
-- Linux support
+- Linux and macOS support
 - multiple independent HTTP servers inside one `cHTTPX_App`
 - local direct server-to-server calls and remote HTTP/HTTPS calls
 - route groups and `{parameter}` paths
@@ -22,7 +22,7 @@ The library is designed so handlers contain application logic instead of repetit
 - first-class HTTP/2 Server-Sent Events with retry, heartbeat, and disconnect handling
 - configurable server limits and graceful shutdown
 
-> `cHTTPX_ResFile()` currently reads the complete file into memory. SSE has its own streaming HTTP/2 path; a generic streaming response API, `sendfile()`, and zero-copy file output are not implemented yet.
+> `cHTTPX_ResFile()` is disk-backed and streams files in bounded 64 KiB chunks, so multi-gigabyte responses do not require an equally large RAM allocation. Generic zero-copy `sendfile()` output is still not implemented.
 
 ## Installation
 
@@ -90,9 +90,36 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Download the package for your distribution from [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Legacy installer script
+### macOS ready-made packages (no Homebrew)
 
-The existing shell installer is kept as a compatibility fallback:
+GitHub Releases ship self-contained macOS archives with bundled runtime
+dependencies (cJSON, nghttp2, OpenSSL). Use these on Catalina and other hosts
+where modern Homebrew is unavailable:
+
+- `libchttpx-macos-10.15-x86_64.tar.gz` — Intel, macOS 10.15 Catalina and newer
+- `libchttpx-macos-11-arm64.tar.gz` — Apple Silicon, macOS 11 Big Sur and newer
+
+```bash
+curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+```
+
+The installer reads `sw_vers -productVersion` and `uname -m`, downloads the
+matching archive, and installs:
+
+```text
+/usr/local/include/libchttpx/libchttpx.h
+/usr/local/lib/libchttpx.dylib
+/usr/local/lib/libnghttp2*.dylib
+/usr/local/lib/libcjson*.dylib
+/usr/local/lib/libssl*.dylib
+/usr/local/lib/libcrypto*.dylib
+/usr/local/lib/pkgconfig/libchttpx.pc
+```
+
+### Legacy installer script (Linux)
+
+On Linux the same script installs the `libchttpx-dev.tar.gz` release archive
+and system dependencies through the distro package manager:
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
@@ -115,45 +142,9 @@ COPY my-server /usr/local/bin/my-server
 CMD ["/usr/local/bin/my-server"]
 ```
 
-### Build from source on Linux
+Optional native TLS/HTTPS support uses OpenSSL. See [Native TLS / HTTPS](docs/tls/README.md) for server certificates, HTTPS remote calls, custom CA verification, and mTLS.
 
-Requirements: GCC, Make, pkg-config, cJSON development files, zlib development files, and nghttp2 development files.
-
-```bash
-sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev libnghttp2-dev
-
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make lin-lib
-sudo make lib-install PREFIX=/usr/local DESTDIR=
-```
-
-Tests:
-
-```bash
-make test
-make test-sanitize
-```
-
-Optional native TLS/HTTPS support uses OpenSSL and does not affect the default plain HTTP build:
-
-```bash
-sudo apt install -y libssl-dev openssl
-make TLS=1 libchttpx.so
-make test-tls
-```
-
-See [Native TLS / HTTPS](docs/tls/README.md) for server certificates, HTTPS remote calls, custom CA verification, and mTLS.
-
-Response compression is included in the standard build. zlib is a normal libchttpx dependency; applications enable compression at runtime with `cHTTPX_CompressionUse()` and configure minimum size, level, MIME policy, or custom providers in code.
-
-```bash
-make test-compression
-```
-
-TLS remains independently optional: `make TLS=1 libchttpx.so`. See [Response compression](docs/compression/README.md).
+Response compression is included in the standard build. Applications enable gzip at runtime with `cHTTPX_CompressionUse()`. See [Response compression](docs/compression/README.md).
 
 ## Documentation
 

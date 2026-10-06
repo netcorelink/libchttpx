@@ -21,8 +21,8 @@ extern "C"
 {
 #endif
 
-#if !defined(__linux__)
-#error "libchttpx supports Linux only"
+#if !defined(__linux__) && !defined(__APPLE__)
+#error "libchttpx supports Linux and macOS only"
 #endif
 
 #include <arpa/inet.h>
@@ -801,6 +801,14 @@ extern "C"
         size_t body_size;
 
         chttpx_body_ownership_t body_ownership;
+
+        /*
+         * Internal disk-backed file response state.
+         * cHTTPX_ResFile() keeps the file open and streams it in bounded chunks
+         * instead of allocating a buffer equal to the complete file size.
+         */
+        void* _file_stream;
+        uint64_t _file_size;
 
         /* Set when response compression must be bypassed. */
         bool compression_disabled;

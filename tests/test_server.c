@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static int handler_calls;
 static int options_handler_calls;
@@ -17,6 +18,7 @@ static char internal_observed_body[64];
 static uint16_t public_port;
 static uint16_t internal_port;
 static int last_remote_call_result;
+static char file_response_path[256];
 
 /** Records body, language, and request id; returns 200 "done". */
 static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
@@ -26,6 +28,13 @@ static void request_handler(chttpx_request_t* req, chttpx_response_t* res)
     snprintf(observed_language, sizeof(observed_language), "%s", req->language);
     snprintf(observed_request_id, sizeof(observed_request_id), "%s", req->request_id);
     *res = cHTTPX_ResMessage(cHTTPX_StatusOK, "done");
+}
+
+/** Returns a disk-backed file response for HTTP/1.1 and HTTP/2 integration coverage. */
+static void file_handler(chttpx_request_t* req, chttpx_response_t* res)
+{
+    (void)req;
+    *res = cHTTPX_ResFile(cHTTPX_StatusOK, cHTTPX_CTYPE_OCTET, file_response_path);
 }
 
 /** Emits a short SSE stream over the real HTTP/2 transport. */
@@ -296,6 +305,14 @@ static void wait_until_listening(chttpx_serv_t* server)
 /** Multi-server App integration: CORS, Call, remote proxies, and limits. */
 int main(void)
 {
+    static const char file_payload[] = "streamed-file-body";
+    char temp_path[] = "/tmp/libchttpx-server-file-XXXXXX";
+    int temp_fd = mkstemp(temp_path);
+    assert(temp_fd >= 0);
+    assert(write(temp_fd, file_payload, sizeof(file_payload) - 1) == (ssize_t)(sizeof(file_payload) - 1));
+    close(temp_fd);
+    snprintf(file_response_path, sizeof(file_response_path), "%s", temp_path);
+
     chttpx_app_t remote_app;
     assert(cHTTPX_AppInit(&remote_app) == cHTTPX_OK);
 
@@ -346,6 +363,7 @@ int main(void)
     assert(cHTTPX_Post(&public_router, "/body", request_handler));
     assert(cHTTPX_Get(&public_router, "/ip", ip_handler));
     assert(cHTTPX_Get(&public_router, "/events", sse_handler));
+    assert(cHTTPX_Get(&public_router, "/file", file_handler));
     assert(cHTTPX_Options(&public_router, "/body", options_handler));
     assert(cHTTPX_Get(&public_router, "/empty", empty_handler));
     assert(cHTTPX_Post(&public_router, "/proxy", proxy_handler));
@@ -395,6 +413,15 @@ int main(void)
 
     for (size_t i = 0; i < CHTTPX_ARRAY_LEN(idle_connections); i++)
         chttpx_close(idle_connections[i]);
+
+    exchange_http11(public_port, "GET /file HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/1.1 200 OK") != NULL);
+    assert(strstr(response, "Content-Length: 18") != NULL);
+    assert(strstr(response, file_payload) != NULL);
+
+    exchange(public_port, "GET /file HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
+    assert(strstr(response, "HTTP/2 200 OK") != NULL);
+    assert(strstr(response, file_payload) != NULL);
 
     exchange_ipv6(public_port, "GET /ip HTTP/2\r\nHost: localhost\r\n\r\n", response, sizeof(response));
     assert(strstr(response, "HTTP/2 204 No Content") != NULL);
@@ -482,6 +509,7 @@ int main(void)
 
     cHTTPX_AppShutdown(&app);
     cHTTPX_AppShutdown(&remote_app);
+    unlink(file_response_path);
 
     puts("multi-server App integration tests passed");
     return 0;

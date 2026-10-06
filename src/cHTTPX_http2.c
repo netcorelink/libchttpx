@@ -676,11 +676,17 @@ static int h2_sse_open(void* context, const struct chttpx_response* response)
     char status_text[4];
     snprintf(status_text, sizeof(status_text), "%03d", response->status);
 
-    nghttp2_nv headers[MAX_HEADERS + 2];
+    nghttp2_nv headers[MAX_HEADERS + 3];
     char names[MAX_HEADERS][MAX_HEADER_NAME];
+    char content_length[32];
     size_t count = 0;
     headers[count++] = h2_nv(":status", status_text);
     headers[count++] = h2_nv("content-type", response->content_type ? response->content_type : cHTTPX_CTYPE_SSE);
+    if (response->_file_stream)
+    {
+        snprintf(content_length, sizeof(content_length), "%llu", (unsigned long long)response->_file_size);
+        headers[count++] = h2_nv("content-length", content_length);
+    }
 
     for (size_t i = 0; i < response->headers_count && count < CHTTPX_ARRAY_LEN(headers); i++)
     {
@@ -1780,10 +1786,19 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
         }
     }
 
-    chttpx_h2_client_t client = {
-        .fd = fd,
-        .tls_session = tls_session,
-    };
+    /*
+     * This state owns a fixed header table and is intentionally heap-backed.
+     * macOS pthreads have a smaller default stack than Linux pthreads, and
+     * placing this object on the stack can overflow ordinary caller threads.
+     */
+    chttpx_h2_client_t* client = calloc(1, sizeof(*client));
+    if (!client)
+    {
+        result = cHTTPX_ERR_MEMORY;
+        goto done;
+    }
+    client->fd = fd;
+    client->tls_session = tls_session;
 
     nghttp2_session_callbacks* callbacks = NULL;
     if (nghttp2_session_callbacks_new(&callbacks) != 0)
@@ -1797,7 +1812,7 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
     nghttp2_session_callbacks_set_on_data_chunk_recv_callback(callbacks, h2_client_data);
     nghttp2_session_callbacks_set_on_stream_close_callback(callbacks, h2_client_stream_close);
 
-    if (nghttp2_session_client_new(&client.session, callbacks, &client) != 0)
+    if (nghttp2_session_client_new(&client->session, callbacks, client) != 0)
     {
         nghttp2_session_callbacks_del(callbacks);
         result = cHTTPX_ERR_MEMORY;
@@ -1805,7 +1820,7 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
     }
     nghttp2_session_callbacks_del(callbacks);
 
-    if (nghttp2_submit_settings(client.session, NGHTTP2_FLAG_NONE, NULL, 0) != 0)
+    if (nghttp2_submit_settings(client->session, NGHTTP2_FLAG_NONE, NULL, 0) != 0)
     {
         result = cHTTPX_ERR_PROTOCOL;
         goto done;
@@ -1885,15 +1900,15 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
         .read_callback = h2_client_body_read,
     };
 
-    client.stream_id = nghttp2_submit_request(client.session, NULL, headers, count, body_size ? &provider : NULL, NULL);
-    if (client.stream_id < 0 || nghttp2_session_send(client.session) != 0)
+    client->stream_id = nghttp2_submit_request(client->session, NULL, headers, count, body_size ? &provider : NULL, NULL);
+    if (client->stream_id < 0 || nghttp2_session_send(client->session) != 0)
     {
         result = cHTTPX_ERR_PROTOCOL;
         goto done;
     }
 
     unsigned char buffer[BUFFER_SIZE];
-    while (!client.done)
+    while (!client->done)
     {
         int received = _chttpx_io_recv(fd, tls_session, buffer, sizeof(buffer));
         if (received <= 0)
@@ -1905,7 +1920,7 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
         size_t offset = 0;
         while (offset < (size_t)received)
         {
-            ssize_t consumed = nghttp2_session_mem_recv(client.session, buffer + offset, (size_t)received - offset);
+            ssize_t consumed = nghttp2_session_mem_recv(client->session, buffer + offset, (size_t)received - offset);
             if (consumed <= 0)
             {
                 result = cHTTPX_ERR_PROTOCOL;
@@ -1914,29 +1929,29 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
             offset += (size_t)consumed;
         }
 
-        if (nghttp2_session_send(client.session) != 0)
+        if (nghttp2_session_send(client->session) != 0)
         {
             result = cHTTPX_ERR_IO;
             goto done;
         }
     }
 
-    if (client.status < 100 || client.status > 599)
+    if (client->status < 100 || client->status > 599)
     {
         result = cHTTPX_ERR_PROTOCOL;
         goto done;
     }
 
-    *res = cHTTPX_ResBinary((uint16_t)client.status, h2_stable_content_type(client.content_type), client.body, client.body_size);
+    *res = cHTTPX_ResBinary((uint16_t)client->status, h2_stable_content_type(client->content_type), client->body, client->body_size);
     if (!res->status)
     {
         result = cHTTPX_ERR_MEMORY;
         goto done;
     }
 
-    for (size_t i = 0; i < client.headers_count; i++)
+    for (size_t i = 0; i < client->headers_count; i++)
     {
-        if (cHTTPX_HeaderAdd(res, client.headers[i].name, client.headers[i].value) != 0)
+        if (cHTTPX_HeaderAdd(res, client->headers[i].name, client->headers[i].value) != 0)
         {
             cHTTPX_ResponseCleanup(res);
             memset(res, 0, sizeof(*res));
@@ -1947,9 +1962,13 @@ int _chttpx_http2_call(chttpx_request_t* source, const char* base_url, const cht
     result = cHTTPX_OK;
 
 done:
-    if (client.session)
-        nghttp2_session_del(client.session);
-    free(client.body);
+    if (client)
+    {
+        if (client->session)
+            nghttp2_session_del(client->session);
+        free(client->body);
+        free(client);
+    }
     _chttpx_tls_client_close(tls_context, tls_session);
     chttpx_close(fd);
     return result;

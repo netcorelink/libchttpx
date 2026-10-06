@@ -625,6 +625,13 @@ int _chttpx_io_send_nonblocking(chttpx_socket_t fd, void* tls_session, const voi
 #else
     (void)tls_session;
 #endif
+#ifdef SO_NOSIGPIPE
+    if (!tls_session)
+    {
+        int no_sigpipe = 1;
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+    }
+#endif
     int flags = 0;
 #ifdef MSG_NOSIGNAL
     flags |= MSG_NOSIGNAL;

@@ -1,13 +1,9 @@
-# Runs when a tag is pushed manually (local: git push origin v1.5.6).
-# Tags created by Auto Release Tag do NOT trigger this workflow (GitHub limitation).
-# Use "Run workflow" below to publish an existing tag without re-pushing it.
-
 name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main, master]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -19,14 +15,142 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  release:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.plan.outputs.should_release }}
+      version_tag: ${{ steps.plan.outputs.version_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Plan release
+        id: plan
+        shell: python
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_TAG: ${{ github.event.inputs.tag || '' }}
+        run: |
+          import os
+          import re
+          import subprocess
+
+          SEMVER = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+          BREAKING_SUBJECT = re.compile(r"^[a-z]+(?:\([^\r\n]+\))?!:", re.IGNORECASE)
+          FEATURE_SUBJECT = re.compile(r"^feat(?:\([^\r\n]+\))?:", re.IGNORECASE)
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          def parse_version(tag):
+              match = SEMVER.fullmatch(tag)
+              return tuple(map(int, match.groups())) if match else None
+
+          def write(should_release, version_tag):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write(f"should_release={should_release}\n")
+                  output.write(f"version_tag={version_tag}\n")
+
+          event_name = os.environ["EVENT_NAME"]
+          ref = os.environ["REF"]
+          input_tag = os.environ["INPUT_TAG"].strip()
+
+          if event_name == "workflow_dispatch":
+              if not SEMVER.fullmatch(input_tag):
+                  raise SystemExit(f"Invalid tag: {input_tag}")
+              print(f"Manual publish for {input_tag}")
+              write("true", input_tag)
+              raise SystemExit(0)
+
+          if event_name == "push" and ref.startswith("refs/tags/"):
+              tag = ref.removeprefix("refs/tags/")
+              if not SEMVER.fullmatch(tag):
+                  print(f"Ignoring non-semver tag {tag}")
+                  write("false", tag)
+                  raise SystemExit(0)
+              print(f"Tag push publish for {tag}")
+              write("true", tag)
+              raise SystemExit(0)
+
+          # Branch push on main/master: compute next version and create tag.
+          git("fetch", "origin", "--tags")
+          head = git("rev-parse", "HEAD")
+
+          tags = {}
+          for tag in git("tag", "--list").splitlines():
+              parsed = parse_version(tag)
+              if parsed is not None:
+                  tags[tag] = parsed
+
+          existing = [tag for tag in tags if git("rev-list", "-1", tag) == head]
+          if existing:
+              release_tag = max(existing, key=lambda tag: tags[tag])
+              print(f"Commit already released as {release_tag}; skipping.")
+              write("false", release_tag)
+              raise SystemExit(0)
+
+          latest_tag = max(tags, key=lambda tag: tags[tag]) if tags else None
+          latest = tags[latest_tag] if latest_tag else (0, 0, 0)
+          revision_range = f"{latest_tag}..HEAD" if latest_tag else "HEAD"
+          log = git("log", revision_range, "--format=%s%x1f%b%x1e")
+
+          breaking = False
+          feature = False
+          for record in log.split("\x1e"):
+              if not record.strip():
+                  continue
+              subject, _, body = record.partition("\x1f")
+              subject = subject.strip()
+              body = body.strip()
+              if BREAKING_SUBJECT.search(subject) or re.search(
+                  r"(^|\n)BREAKING(?: |-)?CHANGE:\s*",
+                  body,
+                  re.IGNORECASE,
+              ):
+                  breaking = True
+              if FEATURE_SUBJECT.search(subject):
+                  feature = True
+
+          major, minor, patch = latest
+          if breaking:
+              next_version = (major + 1, 0, 0)
+              bump = "major"
+          elif feature:
+              next_version = (major, minor + 1, 0)
+              bump = "minor"
+          else:
+              next_version = (major, minor, patch + 1)
+              bump = "patch"
+
+          release_tag = "v" + ".".join(map(str, next_version))
+          print(f"Latest release: {latest_tag or 'none'}")
+          print(f"Detected bump: {bump}")
+          print(f"Release tag: {release_tag}")
+
+          git("config", "user.name", "github-actions[bot]")
+          git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+          subprocess.check_call(["git", "tag", release_tag])
+          subprocess.check_call(["git", "push", "origin", f"refs/tags/{release_tag}"])
+          write("true", release_tag)
+
+  build-linux:
+    needs: decide
+    if: needs.decide.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.decide.outputs.version_tag }}
 
       - name: Install dependencies
         run: |
@@ -39,28 +163,100 @@ jobs:
       - name: Build native Linux packages
         uses: ./.github/actions/build-linux-packages
         with:
-          version: ${{ github.event.inputs.tag || github.ref_name }}
+          version: ${{ needs.decide.outputs.version_tag }}
 
-      - name: Create Release
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            libchttpx-dev.tar.gz
+            dist/packages/*
+
+  build-macos:
+    needs: decide
+    if: needs.decide.outputs.should_release == 'true'
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [10.15-x86_64, 11-arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.version_tag }}
+
+      - name: Build macOS package
+        uses: ./.github/actions/build-macos-packages
+        with:
+          version: ${{ needs.decide.outputs.version_tag }}
+          variant: ${{ matrix.variant }}
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.variant }}
+          path: dist/macos/*.tar.gz
+
+  publish:
+    needs: [decide, build-linux, build-macos]
+    if: needs.decide.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.version_tag }}
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: release-assets
+
+      - name: Download macOS 10.15 x86_64 package
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-10.15-x86_64
+          path: release-assets
+
+      - name: Download macOS 11 arm64 package
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-11-arm64
+          path: release-assets
+
+      - name: Flatten release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/packages
+          find release-assets -type f -name 'libchttpx-dev.tar.gz' -exec cp {} . \;
+          find release-assets -type f -name 'libchttpx-macos-*.tar.gz' -exec cp {} . \;
+          find release-assets -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.pkg.tar.zst' -o -name '*.apk' \) \
+            -exec cp {} dist/packages/ \;
+          ls -lh libchttpx-dev.tar.gz libchttpx-macos-*.tar.gz dist/packages
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: libchttpx ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.decide.outputs.version_tag }}
+          name: libchttpx ${{ needs.decide.outputs.version_tag }}
           files: |
             libchttpx-dev.tar.gz
+            libchttpx-macos-*.tar.gz
             dist/packages/*
           body: |
             <p align="center">
-              <img alt="golangci-lint logo" src="https://avatars.githubusercontent.com/u/252895549?s=400&u=6c747c431c2844620af7772fcd716ef423a6ab1d&v=4" height="150" />
+              <img alt="netcorelink" src="https://avatars.githubusercontent.com/u/252895549?s=400&u=6c747c431c2844620af7772fcd716ef423a6ab1d&v=4" height="150" />
               <h3 align="center">netcorelink/libchttpx</h3>
-              <p align="center">A powerful HTTP/2 server library in C/C++ for Linux</p>
+              <p align="center">A compact HTTP/2 server library for C on Linux and macOS</p>
             </p>
 
             ---
 
             ## Linux native packages
-
-            Download the package for your distribution from this release, then install it with the system package manager:
 
             ```bash
             # Debian / Ubuntu (APT repository)
@@ -79,7 +275,10 @@ jobs:
             sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
             ```
 
-            The legacy install script remains available as a fallback:
+            ## macOS ready-made packages
+
+            - `libchttpx-macos-10.15-x86_64.tar.gz` — Intel, macOS 10.15+
+            - `libchttpx-macos-11-arm64.tar.gz` — Apple Silicon, macOS 11+
 
             ```bash
             curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
@@ -95,7 +294,7 @@ jobs:
       - name: Publish Debian package to APT repository
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.decide.outputs.version_tag }}
         run: |
           set -euo pipefail
 

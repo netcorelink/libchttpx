@@ -6,8 +6,8 @@ extern "C"
 {
 #endif
 
-#if !defined(__linux__)
-#error "libchttpx supports Linux only"
+#if !defined(__linux__) && !defined(__APPLE__)
+#error "libchttpx supports Linux and macOS only"
 #endif
 
 #include <arpa/inet.h>

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master, develop]
   pull_request:
-    branches: [main, master, develop, audit/core-safety-hardening]
+    branches: [main, master, develop]
 
 permissions:
   contents: read
@@ -81,6 +81,29 @@ jobs:
       - name: Run tests
         run: make test
 
+  build-macos:
+    name: Build and test (macOS)
+    needs: [style, static-analysis]
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cjson nghttp2 pkg-config
+
+      - name: Build binary
+        run: make mac
+
+      - name: Build examples
+        run: make examples
+
+      - name: Build dynamic library
+        run: make libchttpx.dylib
+
+      - name: Run tests
+        run: make test
+
   sanitizers:
     name: ASan, UBSan and TSan
     needs: build-linux
@@ -141,6 +164,11 @@ jobs:
           grep -q '^libchttpx-dev/include/libchttpx.h$' /tmp/libchttpx-package-files.txt
           grep -q '^libchttpx-dev/libchttpx.so$' /tmp/libchttpx-package-files.txt
 
+      - name: Build native Linux packages
+        uses: ./.github/actions/build-linux-packages
+        with:
+          version: 0.0.0-ci.${{ github.run_number }}
+
   build-linux-tls:
     name: Build + HTTPS integration (Linux, OpenSSL)
     needs: style
@@ -152,7 +180,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libnghttp2-dev libssl-dev openssl
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libssl-dev openssl
 
       - name: Build TLS-enabled shared library
         run: make TLS=1 libchttpx.so
@@ -174,7 +202,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libnghttp2-dev libssl-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libssl-dev
 
       - name: Build shared library
         run: make libchttpx.so
