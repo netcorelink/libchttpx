@@ -1,0 +1,26 @@
+name: Build macOS packages
+description: Build self-contained macOS libchttpx tarballs with bundled dependencies
+
+inputs:
+  version:
+    description: Package version or git tag (v prefix is accepted)
+    required: true
+  variant:
+    description: Package variant (10.15-x86_64 or 11-arm64)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build macOS package
+      shell: bash
+      env:
+        LIBCHTTPX_PACKAGE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        VERSION="${LIBCHTTPX_PACKAGE_VERSION#v}"
+        export LIBCHTTPX_PACKAGE_VERSION="${VERSION}"
+        echo "Building macOS package version ${VERSION} (${{ inputs.variant }})"
+        chmod +x scripts/build-macos-package.sh
+        scripts/build-macos-package.sh "${{ inputs.variant }}"
+        ls -lh dist/macos/

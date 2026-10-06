@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master, develop]
   pull_request:
-    branches: [main, master, develop, audit/core-safety-hardening]
+    branches: [main, master, develop]
 
 permissions:
   contents: read
@@ -164,6 +164,11 @@ jobs:
           grep -q '^libchttpx-dev/include/libchttpx.h$' /tmp/libchttpx-package-files.txt
           grep -q '^libchttpx-dev/libchttpx.so$' /tmp/libchttpx-package-files.txt
 
+      - name: Build native Linux packages
+        uses: ./.github/actions/build-linux-packages
+        with:
+          version: 0.0.0-ci.${{ github.run_number }}
+
   build-linux-tls:
     name: Build + HTTPS integration (Linux, OpenSSL)
     needs: style
@@ -175,7 +180,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libnghttp2-dev libssl-dev openssl
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libssl-dev openssl
 
       - name: Build TLS-enabled shared library
         run: make TLS=1 libchttpx.so
@@ -197,7 +202,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libnghttp2-dev libssl-dev
+          sudo apt install -y gcc make libcjson-dev zlib1g-dev libnghttp2-dev libssl-dev
 
       - name: Build shared library
         run: make libchttpx.so

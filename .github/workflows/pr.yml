@@ -1,0 +1,46 @@
+name: PR
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  title:
+    name: Conventional title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate conventional PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if echo "$TITLE" | grep -qiE '^\[wip\]'; then
+            echo "Skipped: WIP PR"
+            exit 0
+          fi
+
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'
+
+          if echo "$TITLE" | grep -qiE "$pattern"; then
+            echo "PR title is valid: $TITLE"
+            exit 0
+          fi
+
+          echo "::error::Invalid PR title: \"$TITLE\""
+          echo "Use conventional commit format, e.g. feat: add auth middleware"
+          exit 1
+
+  label:
+    name: Labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply labels
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

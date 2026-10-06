@@ -1,5 +1,10 @@
 - Unreleased
 
+Added self-contained macOS release packages with bundled cJSON, nghttp2 and
+OpenSSL (`libchttpx-macos-10.15-x86_64` and `libchttpx-macos-11-arm64`). The
+install script selects the archive from `sw_vers` / `uname -m` so Catalina and
+other Homebrew-less Macs can install without compiling dependencies.
+
 Replaced per-connection blocking socket handling with a non-blocking event-driven runtime. Linux uses epoll, macOS/BSD uses kqueue and Windows uses WSAPoll; complete requests are dispatched to a fixed internal 32-thread worker pool and responses return to the event loop for non-blocking writes. Worker count is intentionally not configurable through the public server config.
 
 Added request-scoped memory and contexts, response ownership, config-based initialization, typed values, JSON binding and builder APIs, route groups and scoped middleware, multipart/form parsing, upload policies, request IDs, Accept-Language selection, callback logging, chunked request decoding, body limits, graceful shutdown, and expanded tests/documentation.

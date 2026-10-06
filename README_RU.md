@@ -90,9 +90,26 @@ sudo apk add --allow-untrusted ./libchttpx-dev_*.apk
 
 Нужный пакет можно скачать из [GitHub Releases](https://github.com/netcorelink/libchttpx/releases).
 
-### Старый install-скрипт
+### Готовые пакеты для macOS (без Homebrew)
 
-Bash-скрипт остаётся как запасной способ установки:
+В GitHub Releases публикуются self-contained архивы для macOS со всеми
+runtime-зависимостями (cJSON, nghttp2, OpenSSL). Это основной способ установки
+на Catalina и других системах, где современный Homebrew уже недоступен:
+
+- `libchttpx-macos-10.15-x86_64.tar.gz` — Intel, macOS 10.15 Catalina и новее
+- `libchttpx-macos-11-arm64.tar.gz` — Apple Silicon, macOS 11 Big Sur и новее
+
+```bash
+curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
+```
+
+Скрипт смотрит `sw_vers -productVersion` и `uname -m`, скачивает нужный архив и
+ставит библиотеку в `/usr/local` вместе с bundled-зависимостями.
+
+### Legacy install-скрипт (Linux)
+
+На Linux тот же скрипт ставит `libchttpx-dev.tar.gz` и системные зависимости
+через пакетный менеджер дистрибутива:
 
 ```bash
 curl -s https://raw.githubusercontent.com/netcorelink/libchttpx/main/scripts/install.sh | sudo sh
@@ -113,59 +130,9 @@ COPY my-server /usr/local/bin/my-server
 CMD ["/usr/local/bin/my-server"]
 ```
 
-### Самостоятельная сборка на Linux
+Native TLS/HTTPS через OpenSSL описан в [Native TLS / HTTPS](docs/tls/README_RU.md).
 
-```bash
-sudo apt update
-sudo apt install -y build-essential pkg-config libcjson-dev zlib1g-dev libnghttp2-dev
-
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make lin-lib
-sudo make lib-install PREFIX=/usr/local DESTDIR=
-```
-
-### Самостоятельная сборка на macOS
-
-Понадобятся Xcode Command Line Tools, Homebrew, Make, pkg-config, cJSON, zlib и nghttp2.
-
-```bash
-xcode-select --install
-brew install cjson nghttp2 pkg-config
-
-git clone https://github.com/netcorelink/libchttpx.git
-cd libchttpx
-
-make mac
-make libchttpx.dylib
-make test
-```
-
-Тесты:
-
-```bash
-make test
-make test-sanitize
-```
-
-Native TLS/HTTPS через OpenSSL включается отдельно и не добавляет OpenSSL-зависимость обычной HTTP-сборке:
-
-```bash
-sudo apt install -y libssl-dev openssl
-make TLS=1 libchttpx.so
-make test-tls
-```
-
-Настройка server certificate, HTTPS remote calls, custom CA и mTLS описана в [Native TLS / HTTPS](docs/tls/README_RU.md).
-
-Сжатие ответов входит в обычную сборку libchttpx. zlib — стандартная зависимость библиотеки, а включение gzip выполняется уже в коде приложения через `cHTTPX_CompressionUse()`. Размер, level, MIME policy и providers тоже задаются через config.
-
-```bash
-make test-compression
-```
-
-TLS остаётся отдельной опцией сборки: `make TLS=1 libchttpx.so`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
+Сжатие ответов входит в обычную сборку; gzip включается в коде через `cHTTPX_CompressionUse()`. Подробнее: [Сжатие HTTP-ответов](docs/compression/README_RU.md).
 
 ## Документация
 

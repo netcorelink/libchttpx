@@ -101,6 +101,18 @@ libchttpx.dylib: $(LIN_OBJS)
 
 mac-lib: clean libchttpx.dylib
 
+# Self-contained macOS release packages (Catalina Intel / Big Sur Apple Silicon).
+# Requires macOS host. Builds bundled cJSON, nghttp2 and OpenSSL from source.
+#   make macos-package VARIANT=10.15-x86_64
+#   make macos-package VARIANT=11-arm64
+VARIANT ?= 10.15-x86_64
+macos-package:
+	bash scripts/build-macos-package.sh $(VARIANT)
+
+macos-packages:
+	bash scripts/build-macos-package.sh 10.15-x86_64
+	bash scripts/build-macos-package.sh 11-arm64
+
 # Linux lib install
 # -
 
@@ -234,3 +246,4 @@ clean:
 	rm -rf $(OBJDIR) $(BINDIR) *.a
 	rm -rf $(RELEASE_DIR)
 	rm -rf libchttpx.so libchttpx.dylib
+	rm -rf .macos-build dist/macos
