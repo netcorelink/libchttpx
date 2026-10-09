@@ -166,7 +166,7 @@ jobs:
           version: ${{ needs.decide.outputs.version_tag }}
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-packages
           path: |
@@ -194,7 +194,7 @@ jobs:
           variant: ${{ matrix.variant }}
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.variant }}
           path: dist/macos/*.tar.gz
