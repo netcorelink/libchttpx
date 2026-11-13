@@ -506,6 +506,8 @@ chttpx_event_loop_t* _chttpx_event_create(void)
     {
         close(loop->wake_pipe[0]);
         close(loop->wake_pipe[1]);
+        free(loop->pollfds);
+        free(loop->data);
         free(loop);
         return NULL;
     }
